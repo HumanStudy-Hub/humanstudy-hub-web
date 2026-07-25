@@ -7,7 +7,7 @@ const links = [
   { name: "Datasets", href: "/dataset" },
   { name: "Build Study", href: "/pipeline" },
   { name: "Agent Evaluations", href: "/results" },
-  { name: "Research Projects", href: "/collaboration" },
+  { name: "Partnerships", href: "/collaboration" },
   { name: "GitHub", href: "https://github.com/HumanStudy-Hub/HumanStudy-Bench" },
 ];
 

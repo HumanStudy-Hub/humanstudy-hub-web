@@ -94,7 +94,7 @@ export default function CollaborationMap() {
 
   return (
     <div className="h-[430px] w-full sm:h-[560px]">
-      <div ref={mapRef} className="h-full w-full" aria-label="World map of HumanStudy-Hub research projects" />
+      <div ref={mapRef} className="h-full w-full" aria-label="World map of HumanStudy-Hub partnerships" />
     </div>
   );
 }

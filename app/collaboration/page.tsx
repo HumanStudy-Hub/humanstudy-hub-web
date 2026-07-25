@@ -16,9 +16,9 @@ export default function CollaborationPage() {
       <header className="border-b border-gray-200 bg-white">
         <div className="mx-auto max-w-6xl px-6 py-12 sm:px-8 sm:py-16">
           <p className="text-xs font-bold uppercase text-cyan-800">HumanStudy-Hub</p>
-          <h1 className="mt-3 font-serif text-4xl font-bold text-gray-950 sm:text-5xl">Research Projects</h1>
+          <h1 className="mt-3 font-serif text-4xl font-bold text-gray-950 sm:text-5xl">Partnerships</h1>
           <p className="mt-5 max-w-3xl text-lg leading-8 text-gray-600">
-            We help social-science teams design and implement the AI components of ongoing research projects.
+            We work with social-science teams and research institutes around the world to develop the AI components of ongoing research.
           </p>
         </div>
       </header>
@@ -28,11 +28,11 @@ export default function CollaborationPage() {
           <CollaborationMap />
         </section>
 
-        <div className="partner-ticker border-y border-cyan-200 bg-cyan-50/60">
+        <div className="partner-ticker">
           <div className="partner-ticker-track">
             {tickerItems.map((institution, index) => (
               <span key={`${institution}-${index}`} className="inline-flex items-center gap-6 whitespace-nowrap text-xs font-semibold text-cyan-800">
-                {institution}<span className="h-1 w-1 rounded-full bg-cyan-500" />
+                {institution}<span className="text-cyan-500">·</span>
               </span>
             ))}
           </div>
@@ -40,12 +40,12 @@ export default function CollaborationPage() {
 
         <section className="bg-white">
           <div className="mx-auto max-w-6xl px-6 py-12 text-center sm:px-8">
-            <p className="text-xs font-bold uppercase text-cyan-800">Sponsorship & support</p>
-            <h2 className="mt-2 font-serif text-2xl font-bold text-gray-950">Support open human-study infrastructure</h2>
+            <p className="text-xs font-bold uppercase text-cyan-800">Sponsorship</p>
+            <h2 className="mt-2 font-serif text-2xl font-bold text-gray-950">Work with HumanStudy-Hub</h2>
             <p className="mx-auto mt-4 max-w-2xl text-sm leading-6 text-gray-600">
-              For research collaboration, project support, or sponsorship, contact:
+              We welcome research partnerships, institutional support, and sponsorship. Please contact the HumanStudy-Hub team at{" "}
+              <a href="mailto:xul049@ucsd.edu" className="text-gray-700 underline decoration-gray-300 underline-offset-2 hover:text-gray-950">xul049@ucsd.edu</a>.
             </p>
-            <a href="mailto:xul049@ucsd.edu" className="mt-3 inline-block text-base font-semibold text-cyan-800 hover:underline">xul049@ucsd.edu</a>
           </div>
         </section>
       </main>
