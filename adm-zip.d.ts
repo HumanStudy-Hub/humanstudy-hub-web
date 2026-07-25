@@ -8,6 +8,8 @@ declare module "adm-zip" {
   class AdmZip {
     constructor(buffer?: Buffer);
     getEntries(): ZipEntry[];
+    addLocalFolder(localPath: string, zipPath?: string): void;
+    toBuffer(): Buffer;
   }
 
   export default AdmZip;
