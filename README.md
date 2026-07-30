@@ -19,9 +19,10 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-Set `HUMANSTUDY_BENCH_ROOT` to a HumanStudy-Bench checkout, and use a Python
-environment with its `llm` and `pdf` extras installed. Build Study jobs and
-review decisions are persisted under `HUMANSTUDY_JOBS_ROOT`.
+Build Study jobs are stored in the private `HumanStudy-Hub/humanstudy-hub-jobs`
+repository. The Vercel API dispatches the HumanStudy-Bench GitHub Actions
+workflow; Python and PDF dependencies run on the Actions runner, not inside
+Vercel.
 
 ## Verification
 
@@ -32,10 +33,11 @@ npm run build
 
 ## Build Study backend
 
-The Node server starts the existing Python pipeline one stage at a time. Each
-successful stage pauses for researcher approval. Stage 4 produces the downloadable
-ZIP. Set `GITHUB_TOKEN` to enable publishing that package as a contribution branch
-and pull request.
+The Node server creates a private job branch, starts the existing Python
+pipeline through GitHub Actions, and polls the saved stage state. Each
+successful stage pauses for researcher approval. Stage 4 produces the
+downloadable ZIP. Set `GITHUB_TOKEN` to enable job storage, pipeline dispatch,
+and publishing the final package as a contribution branch and pull request.
 
-The production server needs a persistent filesystem and access to the benchmark
-checkout or an equivalent pipeline worker image.
+The production server only needs GitHub API access. Do not add PDF files,
+pipeline outputs, or tokens to the public web repository.

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createJob } from "@/lib/pipeline-jobs";
+import { createJob } from "@/lib/github-jobs";
 
 export const runtime = "nodejs";
 

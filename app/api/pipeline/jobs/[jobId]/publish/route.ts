@@ -1,20 +1,8 @@
-import path from "node:path";
-import { readFile, readdir } from "node:fs/promises";
 import { Octokit } from "@octokit/rest";
 import { NextResponse } from "next/server";
-import { readJob } from "@/lib/pipeline-jobs";
+import { listPackageFiles, readJob } from "@/lib/github-jobs";
 
 export const runtime = "nodejs";
-
-async function filesUnder(root: string, current = root): Promise<Array<{ path: string; content: Buffer }>> {
-  const result: Array<{ path: string; content: Buffer }> = [];
-  for (const entry of await readdir(current, { withFileTypes: true })) {
-    const absolute = path.join(current, entry.name);
-    if (entry.isDirectory()) result.push(...(await filesUnder(root, absolute)));
-    else result.push({ path: path.relative(root, absolute).split(path.sep).join("/"), content: await readFile(absolute) });
-  }
-  return result;
-}
 
 export async function POST(
   _request: Request,
@@ -25,7 +13,7 @@ export async function POST(
     if (!token) return NextResponse.json({ error: "GITHUB_TOKEN is not configured." }, { status: 503 });
     const { jobId } = await context.params;
     const job = await readJob(jobId);
-    if (job.status !== "complete" || !job.packageDir) {
+    if (job.status !== "complete") {
       return NextResponse.json({ error: "Package is not ready." }, { status: 409 });
     }
 
@@ -38,7 +26,7 @@ export async function POST(
     const branch = `contribute/${job.experimentId}-${job.id.slice(-8)}`;
 
     const tree = [];
-    for (const file of await filesUnder(job.packageDir)) {
+    for (const file of await listPackageFiles(jobId)) {
       const blob = await octokit.git.createBlob({
         owner,
         repo,

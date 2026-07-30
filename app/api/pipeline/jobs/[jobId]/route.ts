@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readJob, readLog } from "@/lib/pipeline-jobs";
+import { readJob, readLog } from "@/lib/github-jobs";
 
 export const runtime = "nodejs";
 

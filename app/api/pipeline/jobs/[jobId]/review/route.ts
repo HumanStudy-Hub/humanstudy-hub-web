@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { approveStage } from "@/lib/pipeline-jobs";
+import { approveStage } from "@/lib/github-jobs";
 
 export const runtime = "nodejs";
 
