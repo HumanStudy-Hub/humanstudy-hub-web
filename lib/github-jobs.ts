@@ -47,6 +47,13 @@ async function branchSha(branch: string) {
   return ref.data.object.sha;
 }
 
+async function defaultBranch(repo: string) {
+  const api = octokit();
+  const target = splitRepo(repo);
+  const result = await api.repos.get({ ...target });
+  return result.data.default_branch;
+}
+
 async function ensureBranch(branch: string) {
   const api = octokit();
   const target = splitRepo(jobsRepo);
@@ -54,9 +61,27 @@ async function ensureBranch(branch: string) {
     await branchSha(branch);
     return;
   } catch {
-    const sha = await branchSha("main");
+    let sha: string;
+    try {
+      sha = await branchSha(await defaultBranch(jobsRepo));
+    } catch {
+      throw new Error(`GitHub cannot access ${jobsRepo}. Add this repository to the fine-grained token and grant Contents read/write.`);
+    }
     await api.git.createRef({ ...target, ref: `refs/heads/${branch}`, sha });
   }
+}
+
+async function nextStudyId() {
+  const api = octokit();
+  const target = splitRepo(pipelineRepo);
+  const branch = process.env.GITHUB_PIPELINE_REF || await defaultBranch(pipelineRepo);
+  const result = await api.repos.getContent({ ...target, path: "studies", ref: branch });
+  const entries = Array.isArray(result.data) ? result.data : [];
+  const ids = entries.flatMap((entry) => {
+    const match = entry.name.match(/^study_(\d+)$/);
+    return match ? [Number(match[1])] : [];
+  });
+  return `study_${String(Math.max(0, ...ids) + 1).padStart(3, "0")}`;
 }
 
 async function putFile(branch: string, filePath: string, content: Buffer | string, message: string) {
@@ -126,10 +151,10 @@ export async function readJob(id: string): Promise<PipelineJob> {
   return data;
 }
 
-export async function createJob(input: { paper: File; experimentId: string; contributorName: string; contributorGithub?: string; osfUrl?: string }) {
-  const experimentId = safe(input.experimentId);
-  if (!experimentId || !input.contributorName.trim()) throw new Error("Experiment ID and contributor name are required.");
+export async function createJob(input: { paper: File; contributorName: string; contributorGithub?: string; osfUrl?: string }) {
+  if (!input.contributorName.trim()) throw new Error("Contributor name is required.");
   if (input.paper.size > 50 * 1024 * 1024 || !input.paper.name.toLowerCase().endsWith(".pdf")) throw new Error("Please upload a PDF up to 50 MB.");
+  const experimentId = await nextStudyId();
   const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
   const branch = `jobs/${id}`;
   await ensureBranch(branch);

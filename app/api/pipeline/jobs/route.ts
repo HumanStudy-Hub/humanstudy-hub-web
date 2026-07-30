@@ -12,7 +12,6 @@ export async function POST(request: Request) {
     }
     const job = await createJob({
       paper,
-      experimentId: String(form.get("experimentId") || ""),
       contributorName: String(form.get("contributorName") || ""),
       contributorGithub: String(form.get("contributorGithub") || ""),
       osfUrl: String(form.get("osfUrl") || ""),

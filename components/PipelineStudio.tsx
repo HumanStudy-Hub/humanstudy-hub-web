@@ -26,7 +26,6 @@ export default function PipelineStudio() {
   const fileInput = useRef<HTMLInputElement>(null);
   const [paper, setPaper] = useState<File | null>(null);
   const [osf, setOsf] = useState("");
-  const [experimentId, setExperimentId] = useState("study_new");
   const [contributorName, setContributorName] = useState("");
   const [contributorId, setContributorId] = useState("");
   const [job, setJob] = useState<Job | null>(null);
@@ -65,7 +64,6 @@ export default function PipelineStudio() {
     const form = new FormData();
     form.append("paper", paper);
     form.append("osfUrl", osf);
-    form.append("experimentId", experimentId);
     form.append("contributorName", contributorName);
     form.append("contributorGithub", contributorId);
     try {
@@ -144,10 +142,9 @@ export default function PipelineStudio() {
             <label className="mt-6 block text-sm font-semibold text-gray-900" htmlFor="osf-url">Open materials <span className="font-normal text-gray-400">optional</span></label>
             <input id="osf-url" value={osf} onChange={(event) => setOsf(event.target.value)} placeholder="https://osf.io/..." className="mt-2 h-10 w-full border border-gray-300 px-3 text-sm outline-none focus:border-cyan-700" />
 
-            <label className="mt-6 block text-sm font-semibold text-gray-900" htmlFor="experiment-id">Experiment ID</label>
-            <div className="mt-2 flex h-10 border border-gray-300">
-              <span className="flex items-center border-r border-gray-200 bg-gray-50 px-3 font-mono text-xs text-gray-500">studies/</span>
-              <input id="experiment-id" value={experimentId} onChange={(event) => setExperimentId(event.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))} className="min-w-0 flex-1 px-3 font-mono text-sm outline-none" />
+            <div className="mt-6 border border-gray-200 bg-gray-50 px-3 py-3">
+              <p className="text-sm font-semibold text-gray-900">Study ID</p>
+              <p className="mt-1 text-xs leading-5 text-gray-500">Assigned automatically from the next available study number in HumanStudy-Bench after you submit.</p>
             </div>
 
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -165,7 +162,7 @@ export default function PipelineStudio() {
             <div className="mt-7 flex justify-end border-t border-gray-100 pt-5">
               <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center">
                 <a href="https://github.com/HumanStudy-Hub/HumanStudy-Bench/blob/main/docs/submit_study.md" target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-cyan-700 hover:underline">Contribute manually on GitHub</a>
-                <button type="button" disabled={!paper || !experimentId || !contributorName.trim() || busy} onClick={start} className="h-10 bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300">
+                <button type="button" disabled={!paper || !contributorName.trim() || busy} onClick={start} className="h-10 bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300">
                   {busy ? "Uploading..." : "Start conversion"}
                 </button>
               </div>
