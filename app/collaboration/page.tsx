@@ -2,7 +2,7 @@ import CollaborationMap from "@/components/CollaborationMap";
 
 const institutions = [
   "University of California San Diego",
-  "Massachusetts Institute of Technology",
+  "University of Lausanne, Switzerland",
   "Carnegie Mellon University",
   "The University of Hong Kong",
   "IRIDeS, Tohoku University",

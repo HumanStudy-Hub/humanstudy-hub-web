@@ -8,7 +8,6 @@ const links = [
   { name: "Build Study", href: "/pipeline" },
   { name: "Agent Evaluations", href: "/results" },
   { name: "Partnerships", href: "/collaboration" },
-  { name: "GitHub", href: "https://github.com/HumanStudy-Hub/HumanStudy-Bench" },
 ];
 
 export default function Navbar() {

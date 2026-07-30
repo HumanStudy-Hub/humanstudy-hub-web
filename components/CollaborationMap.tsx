@@ -5,7 +5,7 @@ import type { Config, Data, Layout } from "plotly.js";
 
 const collaborators = [
   { name: "University of California San Diego", city: "San Diego, United States", lat: 32.8801, lon: -117.234 },
-  { name: "Massachusetts Institute of Technology", city: "Cambridge, United States", lat: 42.3601, lon: -71.0942 },
+  { name: "University of Lausanne", city: "Lausanne, Switzerland", lat: 46.5197, lon: 6.6323 },
   { name: "Carnegie Mellon University", city: "Pittsburgh, United States", lat: 40.4433, lon: -79.9436 },
   { name: "The University of Hong Kong", city: "Hong Kong", lat: 22.283, lon: 114.1371 },
   { name: "IRIDeS, Tohoku University", city: "Sendai, Japan", lat: 38.2506, lon: 140.856 },
@@ -15,8 +15,8 @@ const data: Data[] = [
   {
     type: "scattergeo",
     mode: "lines",
-    lon: [-117.234, -71.0942, null, -117.234, -79.9436, null, -117.234, 114.1371, null, -117.234, 140.856],
-    lat: [32.8801, 42.3601, null, 32.8801, 40.4433, null, 32.8801, 22.283, null, 32.8801, 38.2506],
+    lon: [-117.234, 6.6323, null, -117.234, -79.9436, null, -117.234, 114.1371, null, -117.234, 140.856],
+    lat: [32.8801, 46.5197, null, 32.8801, 40.4433, null, 32.8801, 22.283, null, 32.8801, 38.2506],
     line: { width: 1, color: "rgba(8, 145, 178, 0.35)" },
     hoverinfo: "skip",
   },

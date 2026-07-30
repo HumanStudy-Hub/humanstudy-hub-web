@@ -163,9 +163,12 @@ export default function PipelineStudio() {
 
             {error && <p className="mt-5 border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
             <div className="mt-7 flex justify-end border-t border-gray-100 pt-5">
-              <button type="button" disabled={!paper || !experimentId || !contributorName.trim() || busy} onClick={start} className="h-10 bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300">
-                {busy ? "Uploading..." : "Start conversion"}
-              </button>
+              <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center">
+                <a href="https://github.com/HumanStudy-Hub/HumanStudy-Bench/blob/main/docs/submit_study.md" target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-cyan-700 hover:underline">Contribute manually on GitHub</a>
+                <button type="button" disabled={!paper || !experimentId || !contributorName.trim() || busy} onClick={start} className="h-10 bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300">
+                  {busy ? "Uploading..." : "Start conversion"}
+                </button>
+              </div>
             </div>
           </section>
 
