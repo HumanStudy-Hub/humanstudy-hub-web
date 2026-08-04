@@ -14,6 +14,7 @@ type Job = {
   error?: string;
   updatedAt: string;
 };
+type ReviewFile = { path: string; content: string };
 
 const stages = [
   ["Study inventory", "Map studies, samples, and comparison groups"],
@@ -34,6 +35,9 @@ export default function PipelineStudio() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [prUrl, setPrUrl] = useState("");
+  const [reviewFiles, setReviewFiles] = useState<ReviewFile[]>([]);
+  const [selectedFile, setSelectedFile] = useState("");
+  const [editedContent, setEditedContent] = useState("");
 
   useEffect(() => {
     if (!job || (job.status !== "queued" && job.status !== "running")) return;
@@ -43,8 +47,20 @@ export default function PipelineStudio() {
       const data = (await response.json()) as { job: Job; log: string };
       setJob(data.job);
       setLog(data.log);
+      if (data.job.status === "review") {
+        const filesResponse = await fetch(`/api/pipeline/jobs/${data.job.id}/files`, { cache: "no-store" });
+        if (filesResponse.ok) setReviewFiles((await filesResponse.json()).files);
+      }
     }, 2000);
     return () => window.clearInterval(timer);
+  }, [job]);
+
+  useEffect(() => {
+    if (!job || job.status !== "review") return;
+    fetch(`/api/pipeline/jobs/${job.id}/files`, { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => { if (data?.files) setReviewFiles(data.files); })
+      .catch(() => undefined);
   }, [job]);
 
   function chooseFile(file?: File) {
@@ -91,12 +107,25 @@ export default function PipelineStudio() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Review could not be saved.");
       setJob({ ...data.job, status: decision === "approved" ? "queued" : "review" });
+      setReviewFiles([]);
       if (decision === "approved") setNote("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Review could not be saved.");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function saveFile() {
+    if (!job || !selectedFile) return;
+    setBusy(true); setError("");
+    try {
+      const response = await fetch(`/api/pipeline/jobs/${job.id}/files`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: selectedFile, content: editedContent }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not save file.");
+      setReviewFiles((files) => files.map((file) => file.path === selectedFile ? { ...file, content: editedContent } : file));
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not save file."); }
+    finally { setBusy(false); }
   }
 
   async function publish() {
@@ -122,7 +151,7 @@ export default function PipelineStudio() {
           <div className="mx-auto max-w-6xl px-5 py-12 sm:px-8">
             <p className="text-xs font-semibold uppercase text-cyan-700">Study builder</p>
             <h1 className="mt-3 max-w-3xl font-serif text-4xl font-bold text-gray-950">Turn a paper into an AI-agent study</h1>
-            <p className="mt-3 max-w-2xl text-base leading-7 text-gray-600">Upload a paper. The builder runs the HumanStudy-Bench pipeline and pauses after each stage for researcher review.</p>
+            <p className="mt-3 max-w-2xl text-base leading-7 text-gray-600">Upload a paper. The builder completes the extraction, then opens one final review panel for researcher edits.</p>
           </div>
         </header>
 
@@ -231,6 +260,20 @@ export default function PipelineStudio() {
             <div className="p-6">
               <div className="border-l-2 border-amber-500 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
                 Inspect the generated stage files and record your decision. Approval starts the next pipeline stage; requesting changes saves your note without advancing.
+              </div>
+              <div className="mt-6 space-y-4">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Final extraction files</p>
+                  <p className="mt-1 text-sm text-gray-500">Review the complete extraction before approving the runnable study package.</p>
+                </div>
+                {reviewFiles.length === 0 ? <p className="border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">Loading generated files...</p> : <div className="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)]">
+                  <div className="border border-gray-200 bg-gray-50 p-2">
+                    {reviewFiles.map((file) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); }} className={`block w-full border-l-2 px-3 py-2 text-left font-mono text-xs ${selectedFile === file.path ? "border-cyan-700 bg-white font-semibold text-cyan-800" : "border-transparent text-gray-600 hover:bg-white"}`}>{file.path}</button>)}
+                  </div>
+                  <div className="min-w-0 border border-gray-200">
+                    {selectedFile ? <><div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2"><span className="font-mono text-xs font-semibold text-gray-700">{selectedFile}</span><button disabled={busy} onClick={saveFile} className="h-8 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : "Save changes"}</button></div><textarea value={editedContent} onChange={(event) => setEditedContent(event.target.value)} spellCheck={false} className="min-h-[28rem] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" /></> : <p className="p-6 text-sm text-gray-500">Select a file to inspect and edit.</p>}
+                  </div>
+                </div>}
               </div>
               <label htmlFor="review-note" className="mt-6 block text-sm font-semibold">Review note</label>
               <textarea id="review-note" value={note} onChange={(event) => setNote(event.target.value)} className="mt-2 h-32 w-full border border-gray-300 p-3 text-sm outline-none focus:border-cyan-700" placeholder="Corrections, missing evidence, or approval rationale" />

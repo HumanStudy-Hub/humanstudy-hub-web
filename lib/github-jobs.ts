@@ -172,6 +172,12 @@ export async function approveStage(id: string, input: { decision: "approved" | "
   job.reviews[String(job.currentStage)] = { ...input, at: new Date().toISOString() };
   if (input.decision === "changes_requested") { job.message = "Changes requested; review note saved"; await saveJob(job, `pipeline: review ${id}`); return job; }
   job.currentStage += 1;
+  if (job.currentStage > 4) {
+    job.status = "complete";
+    job.message = "Study package is ready";
+    await saveJob(job, `pipeline: approve final review ${id}`);
+    return job;
+  }
   job.status = "queued";
   job.message = `Waiting to start stage ${job.currentStage}`;
   await saveJob(job, `pipeline: approve stage ${job.currentStage - 1}`);
@@ -182,6 +188,35 @@ export async function approveStage(id: string, input: { decision: "approved" | "
 export async function readLog(id: string) {
   const job = await readJob(id);
   try { return (await getFile(`jobs/${safe(id)}`, jobPath(id, `logs/stage${job.currentStage}.log`))).toString("utf8").slice(-12000); } catch { return ""; }
+}
+
+export async function readReviewFiles(id: string, stage: number) {
+  const api = octokit();
+  const target = splitRepo(jobsRepo);
+  const branch = `jobs/${safe(id)}`;
+  const root = jobPath(id, "output/paper");
+  const names = stage === 4
+    ? [1, 2, 3].flatMap((number) => [`${root}/stage${number}.md`, `${root}/stage${number}.json`])
+    : [`${root}/stage${stage}.md`, `${root}/stage${stage}.json`];
+  const files: Array<{ path: string; content: string }> = [];
+  for (const path of names) {
+    try {
+      const result = await api.repos.getContent({ ...target, path, ref: branch });
+      if (!Array.isArray(result.data) && "content" in result.data) {
+        files.push({ path: path.slice(`${root}/`.length), content: Buffer.from(result.data.content, "base64").toString("utf8") });
+      }
+    } catch {
+      // A stage may only produce one of the two human-readable formats.
+    }
+  }
+  return files;
+}
+
+export async function saveReviewFile(id: string, filePath: string, content: string) {
+  if (!/^stage[1-4]\.(json|md)$/.test(filePath)) throw new Error("Only generated stage files can be edited.");
+  if (filePath.endsWith(".json")) JSON.parse(content);
+  const branch = `jobs/${safe(id)}`;
+  await putFile(branch, jobPath(id, `output/paper/${filePath}`), content, `pipeline: edit ${filePath}`);
 }
 
 export async function readPackageZip(id: string) {
