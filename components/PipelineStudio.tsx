@@ -15,6 +15,30 @@ type Job = {
   updatedAt: string;
 };
 type ReviewFile = { path: string; content: string };
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; onChange: (value: JsonValue) => void; path?: string }) {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    return <div className="space-y-3">{Object.entries(value).map(([key, child]) => <div key={key} className="border-l border-gray-200 pl-3"><p className="mb-1 text-xs font-semibold text-gray-700">{key}</p><JsonEditor value={child} path={`${path}.${key}`} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} /></div>)}</div>;
+  }
+  if (Array.isArray(value)) {
+    return <div className="space-y-2">{value.map((child, index) => <div key={`${path}.${index}`} className="border-l border-gray-200 pl-3"><p className="mb-1 text-[11px] text-gray-500">Item {index + 1}</p><JsonEditor value={child} path={`${path}.${index}`} onChange={(next) => onChange(value.map((item, itemIndex) => itemIndex === index ? next : item))} /></div>)}</div>;
+  }
+  return <input value={value === null ? "" : String(value)} onChange={(event) => { const raw = event.target.value; const next = typeof value === "number" ? (raw === "" ? 0 : Number(raw)) : typeof value === "boolean" ? raw === "true" : raw; onChange(next); }} className="w-full border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-cyan-700" />;
+}
+
+function fileGuide(path: string) {
+  if (path.endsWith("specification.json")) return "Study design, participants, conditions, and procedure";
+  if (path.endsWith("ground_truth.json")) return "Expected findings and evaluation targets";
+  if (path.endsWith("metadata.json")) return "Paper title, authors, domain, and study description";
+  if (path.includes("/materials/")) return "Survey, stimulus, or task material used by the study";
+  if (path.endsWith("index.json")) return "Study entry point and file index";
+  if (path.endsWith("audit.json")) return "Generation and completeness checks";
+  if (path.includes("source_extraction")) return "Evidence extracted from the paper";
+  if (path.startsWith("stage")) return "Intermediate extraction record for traceability";
+  if (path.endsWith("README.md")) return "Human-readable study documentation";
+  return "Supporting study file";
+}
 
 const stages = [
   ["Study inventory", "Map studies, samples, and comparison groups"],
@@ -24,6 +48,7 @@ const stages = [
 ] as const;
 
 export default function PipelineStudio() {
+  const STORAGE_KEY = "humanstudy-hub-active-job";
   const fileInput = useRef<HTMLInputElement>(null);
   const [paper, setPaper] = useState<File | null>(null);
   const [osf, setOsf] = useState("");
@@ -38,6 +63,23 @@ export default function PipelineStudio() {
   const [reviewFiles, setReviewFiles] = useState<ReviewFile[]>([]);
   const [selectedFile, setSelectedFile] = useState("");
   const [editedContent, setEditedContent] = useState("");
+  const [editedJson, setEditedJson] = useState<JsonValue | null>(null);
+  const [saved, setSaved] = useState(true);
+
+  useEffect(() => {
+    const requestedJobId = new URLSearchParams(window.location.search).get("job");
+    const savedJobId = requestedJobId || window.localStorage.getItem(STORAGE_KEY);
+    if (!savedJobId) return;
+    window.localStorage.setItem(STORAGE_KEY, savedJobId);
+    fetch(`/api/pipeline/jobs/${savedJobId}`, { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => { if (data?.job) { setJob(data.job); setLog(data.log || ""); } else window.localStorage.removeItem(STORAGE_KEY); })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (job) window.localStorage.setItem(STORAGE_KEY, job.id);
+  }, [job]);
 
   useEffect(() => {
     if (!job || (job.status !== "queued" && job.status !== "running")) return;
@@ -120,10 +162,13 @@ export default function PipelineStudio() {
     if (!job || !selectedFile) return;
     setBusy(true); setError("");
     try {
-      const response = await fetch(`/api/pipeline/jobs/${job.id}/files`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: selectedFile, content: editedContent }) });
+      const content = selectedFile.endsWith(".json") ? JSON.stringify(editedJson, null, 2) + "\n" : editedContent;
+      const response = await fetch(`/api/pipeline/jobs/${job.id}/files`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: selectedFile, content }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not save file.");
-      setReviewFiles((files) => files.map((file) => file.path === selectedFile ? { ...file, content: editedContent } : file));
+      setEditedContent(content);
+      setReviewFiles((files) => files.map((file) => file.path === selectedFile ? { ...file, content } : file));
+      setSaved(true);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not save file."); }
     finally { setBusy(false); }
   }
@@ -162,6 +207,12 @@ export default function PipelineStudio() {
               <p className="mt-1 text-sm text-gray-500">Only the published paper is required.</p>
             </div>
 
+            <div className="mt-5 border border-cyan-200 bg-cyan-50 p-4">
+              <p className="text-sm font-semibold text-cyan-950">Already have a study ZIP?</p>
+              <p className="mt-1 text-xs leading-5 text-cyan-900">Upload a previously downloaded package to contribute it without extracting the paper again.</p>
+              <a href="/contribute" className="mt-3 inline-flex h-9 items-center bg-cyan-700 px-4 text-xs font-semibold text-white hover:bg-cyan-600">Upload existing ZIP</a>
+            </div>
+
             <button type="button" onClick={() => fileInput.current?.click()} className={`mt-6 flex min-h-48 w-full flex-col items-center justify-center border border-dashed px-6 text-center ${paper ? "border-emerald-300 bg-emerald-50" : "border-gray-300 bg-gray-50 hover:border-cyan-500"}`}>
               <span className="text-sm font-semibold text-gray-900">{paper?.name || "Choose a paper PDF"}</span>
               <span className="mt-2 text-xs text-gray-500">{paper ? `${(paper.size / 1024 / 1024).toFixed(1)} MB` : "PDF, up to 50 MB"}</span>
@@ -170,11 +221,6 @@ export default function PipelineStudio() {
 
             <label className="mt-6 block text-sm font-semibold text-gray-900" htmlFor="osf-url">Open materials <span className="font-normal text-gray-400">optional</span></label>
             <input id="osf-url" value={osf} onChange={(event) => setOsf(event.target.value)} placeholder="https://osf.io/..." className="mt-2 h-10 w-full border border-gray-300 px-3 text-sm outline-none focus:border-cyan-700" />
-
-            <div className="mt-6 border border-gray-200 bg-gray-50 px-3 py-3">
-              <p className="text-sm font-semibold text-gray-900">Study ID</p>
-              <p className="mt-1 text-xs leading-5 text-gray-500">Assigned automatically from the next available study number in HumanStudy-Bench after you submit.</p>
-            </div>
 
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <div>
@@ -221,7 +267,7 @@ export default function PipelineStudio() {
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-gray-950">{job.paperName}</p>
-            <p className="mt-1 font-mono text-xs text-gray-500">studies/{job.experimentId}/</p>
+            <p className="mt-1 font-mono text-xs text-gray-500">{job.experimentId.startsWith("draft_") ? "Draft study" : `studies/${job.experimentId}/`}</p>
           </div>
           <span className={`px-2 py-1 text-xs font-semibold ${job.status === "failed" ? "bg-red-100 text-red-800" : job.status === "complete" ? "bg-emerald-100 text-emerald-800" : job.status === "review" ? "bg-amber-100 text-amber-800" : "bg-cyan-100 text-cyan-800"}`}>{job.status}</span>
         </div>
@@ -263,15 +309,21 @@ export default function PipelineStudio() {
               </div>
               <div className="mt-6 space-y-4">
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">Final extraction files</p>
-                  <p className="mt-1 text-sm text-gray-500">Review the complete extraction before approving the runnable study package.</p>
+                  <p className="text-sm font-semibold text-gray-900">Final study package review</p>
+                  <p className="mt-1 text-sm text-gray-500">Choose a file to inspect. Edit only values that are missing or incorrect, then save before approving.</p>
+                  <div className="mt-3 border-l-2 border-cyan-700 bg-cyan-50 p-3 text-xs leading-5 text-cyan-950">Start with the files under <code>package/</code>. These are the files that will go into the runnable study ZIP. The stage files are evidence and extraction notes.</div>
                 </div>
                 {reviewFiles.length === 0 ? <p className="border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">Loading generated files...</p> : <div className="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)]">
                   <div className="border border-gray-200 bg-gray-50 p-2">
-                    {reviewFiles.map((file) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); }} className={`block w-full border-l-2 px-3 py-2 text-left font-mono text-xs ${selectedFile === file.path ? "border-cyan-700 bg-white font-semibold text-cyan-800" : "border-transparent text-gray-600 hover:bg-white"}`}>{file.path}</button>)}
+                    {(() => {
+                      const priority = reviewFiles.filter((file) => file.path.includes("/source/specification.json") || file.path.includes("/source/ground_truth.json") || file.path.includes("/source/metadata.json") || file.path.includes("/source/materials/"));
+                      const additional = reviewFiles.filter((file) => !priority.includes(file));
+                      const fileButton = (file: ReviewFile) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); setEditedJson(file.path.endsWith(".json") ? JSON.parse(file.content) : null); setSaved(true); }} className={`block w-full border-l-2 px-3 py-2 text-left ${selectedFile === file.path ? "border-cyan-700 bg-white text-cyan-800" : "border-transparent text-gray-600 hover:bg-white"}`}><span className="block break-all font-mono text-xs font-semibold">{file.path}</span><span className="mt-1 block text-[11px] leading-4 text-gray-500">{fileGuide(file.path)}</span></button>;
+                      return <><p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wide text-cyan-800">Review first</p>{priority.map(fileButton)}<details className="mt-2 border-t border-gray-200 pt-2"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-gray-600">Additional files ({additional.length})</summary>{additional.map(fileButton)}</details></>;
+                    })()}
                   </div>
                   <div className="min-w-0 border border-gray-200">
-                    {selectedFile ? <><div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2"><span className="font-mono text-xs font-semibold text-gray-700">{selectedFile}</span><button disabled={busy} onClick={saveFile} className="h-8 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : "Save changes"}</button></div><textarea value={editedContent} onChange={(event) => setEditedContent(event.target.value)} spellCheck={false} className="min-h-[28rem] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" /></> : <p className="p-6 text-sm text-gray-500">Select a file to inspect and edit.</p>}
+                    {selectedFile ? <><div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2"><div><span className="font-mono text-xs font-semibold text-gray-700">{selectedFile}</span>{!saved && <span className="ml-3 text-xs text-amber-700">Unsaved changes</span>}</div><button disabled={busy || saved} onClick={saveFile} className="h-8 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : saved ? "Saved" : "Save changes"}</button></div>{selectedFile.endsWith(".json") && editedJson !== null ? <div className="max-h-[34rem] space-y-4 overflow-auto p-4"><JsonEditor value={editedJson} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[28rem] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}</> : <p className="p-6 text-sm text-gray-500">Select a file to inspect and edit.</p>}
                   </div>
                 </div>}
               </div>
@@ -296,7 +348,7 @@ export default function PipelineStudio() {
               <div className="border-l-2 border-emerald-600 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">The reviewed HumanStudy-Bench package is ready for download and can be used by the Run Experiment workspace.</div>
               <div className="mt-5 flex flex-wrap gap-2">
                 <a href={`/api/pipeline/jobs/${job.id}/download`} className="inline-flex h-10 items-center bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600">Download experiment ZIP</a>
-                <button disabled={busy || Boolean(prUrl)} onClick={publish} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Saving..." : prUrl ? "Saved to GitHub" : "Save to GitHub"}</button>
+                <button disabled={busy || Boolean(prUrl)} onClick={publish} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Saving..." : prUrl ? "Contributed to benchmark" : "Contribute this study to benchmark"}</button>
               </div>
               {prUrl && <a href={prUrl} target="_blank" rel="noreferrer" className="mt-4 block text-sm font-semibold text-cyan-700 hover:underline">Open pull request</a>}
             </div>

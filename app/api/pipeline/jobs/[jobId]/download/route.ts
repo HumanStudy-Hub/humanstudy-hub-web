@@ -17,7 +17,7 @@ export async function GET(
     return new NextResponse(new Uint8Array(zip), {
       headers: {
         "Content-Type": "application/zip",
-        "Content-Disposition": `attachment; filename="${job.experimentId}.zip"`,
+        "Content-Disposition": `attachment; filename="${job.paperName.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/\.pdf$/i, "")}.zip"`,
       },
     });
   } catch {

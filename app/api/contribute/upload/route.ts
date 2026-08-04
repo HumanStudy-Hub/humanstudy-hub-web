@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { nextStudyId } from "@/lib/github-jobs";
 
 const MAX_ZIP_BYTES = 50 * 1024 * 1024; // 50MB
 
 function getStudyIdFromPath(entryName: string): string | null {
-  const m = entryName.match(/^(?:data\/studies\/)?(study_\d{3})\//) || entryName.match(/^(study_\d{3})\//);
+  const m = entryName.match(/^(?:data\/studies\/)?((?:study_\d{3})|(?:draft_[A-Za-z0-9_-]+))\//) || entryName.match(/^((?:study_\d{3})|(?:draft_[A-Za-z0-9_-]+))\//);
   return m ? m[1] : null;
 }
 
@@ -144,12 +145,6 @@ export async function POST(request: NextRequest) {
     if (!file || !(file instanceof File)) {
       return NextResponse.json({ success: false, errors: ["No file provided."] }, { status: 400 });
     }
-    if (!contributorGithub) {
-      return NextResponse.json(
-        { success: false, errors: ["GitHub ID or profile URL is required."] },
-        { status: 400 }
-      );
-    }
     if (!file.name.endsWith(".zip")) {
       return NextResponse.json({ success: false, errors: ["File must be a .zip archive."] }, { status: 400 });
     }
@@ -170,7 +165,8 @@ export async function POST(request: NextRequest) {
     if (!result.ok) {
       return NextResponse.json({ success: false, errors: result.errors }, { status: 400 });
     }
-    const { studyId, files: validatedFiles } = result;
+    const { studyId: sourceStudyId, files: validatedFiles } = result;
+    const studyId = sourceStudyId.startsWith("draft_") ? await nextStudyId() : sourceStudyId;
 
     const token = process.env.GITHUB_TOKEN;
     const repo = process.env.GITHUB_REPO || "HumanStudy-Hub/HumanStudy-Bench";
@@ -196,10 +192,10 @@ export async function POST(request: NextRequest) {
 
     function zipEntryToRepoPath(entryName: string): string | null {
       const sid = studyId;
-      if (entryName.startsWith(`studies/${sid}/`)) return entryName;
-      if (entryName.startsWith(`${sid}/`)) return `studies/${entryName}`;
-      if (entryName === `src/studies/${sid}_config.py` || entryName.endsWith(`/${sid}_config.py`)) return `src/studies/${sid}_config.py`;
-      if (entryName === `src/studies/${sid}_evaluator.py` || entryName.endsWith(`/${sid}_evaluator.py`)) return `src/studies/${sid}_evaluator.py`;
+      if (entryName.startsWith(`studies/${sourceStudyId}/`)) return `studies/${sid}/${entryName.slice(`studies/${sourceStudyId}/`.length)}`;
+      if (entryName.startsWith(`${sourceStudyId}/`)) return `studies/${sid}/${entryName.slice(`${sourceStudyId}/`.length)}`;
+      if (entryName === `src/studies/${sourceStudyId}_config.py` || entryName.endsWith(`/${sourceStudyId}_config.py`)) return `src/studies/${sid}_config.py`;
+      if (entryName === `src/studies/${sourceStudyId}_evaluator.py` || entryName.endsWith(`/${sourceStudyId}_evaluator.py`)) return `src/studies/${sid}_evaluator.py`;
       if (entryName.includes("specification.json")) return `studies/${sid}/specification.json`;
       if (entryName.includes("metadata.json")) return `studies/${sid}/metadata.json`;
       if (entryName.includes("ground_truth.json")) return `studies/${sid}/ground_truth.json`;

@@ -1,6 +1,6 @@
 import { Octokit } from "@octokit/rest";
 import { NextResponse } from "next/server";
-import { listPackageFiles, readJob } from "@/lib/github-jobs";
+import { assignStudyId, listPackageFiles } from "@/lib/github-jobs";
 
 export const runtime = "nodejs";
 
@@ -12,7 +12,7 @@ export async function POST(
     const token = process.env.GITHUB_TOKEN;
     if (!token) return NextResponse.json({ error: "GITHUB_TOKEN is not configured." }, { status: 503 });
     const { jobId } = await context.params;
-    const job = await readJob(jobId);
+    const job = await assignStudyId(jobId);
     if (job.status !== "complete") {
       return NextResponse.json({ error: "Package is not ready." }, { status: 409 });
     }

@@ -36,6 +36,11 @@ function safe(value: string) {
   return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
 }
 
+function draftId(fileName: string, jobId: string) {
+  const stem = fileName.replace(/\.pdf$/i, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 36) || "study";
+  return `draft_${stem}_${safe(jobId).slice(-8)}`;
+}
+
 function jobPath(id: string, suffix: string) {
   return `jobs/${safe(id)}/${suffix}`;
 }
@@ -71,7 +76,7 @@ async function ensureBranch(branch: string) {
   }
 }
 
-async function nextStudyId() {
+export async function nextStudyId() {
   const api = octokit();
   const target = splitRepo(pipelineRepo);
   const branch = process.env.GITHUB_PIPELINE_REF || await defaultBranch(pipelineRepo);
@@ -121,10 +126,12 @@ export async function listPackageFiles(id: string) {
   async function walk(prefix: string) {
     const result = await api.repos.getContent({ ...target, path: prefix, ref: branch });
     if (!Array.isArray(result.data)) return;
-    for (const item of result.data) {
+    await Promise.all(result.data.map(async (item) => {
       if (item.type === "dir") await walk(item.path);
-      if (item.type === "file") files.push({ path: item.path.slice(`${root}/`.length), content: await getFile(branch, item.path) });
-    }
+      if (item.type === "file" && (item.name.endsWith(".json") || item.name.endsWith(".md"))) {
+        files.push({ path: item.path.slice(`${root}/`.length), content: await getFile(branch, item.path) });
+      }
+    }));
   }
   await walk(root);
   return files;
@@ -154,12 +161,11 @@ export async function readJob(id: string): Promise<PipelineJob> {
 export async function createJob(input: { paper: File; contributorName: string; contributorGithub?: string; osfUrl?: string }) {
   if (!input.contributorName.trim()) throw new Error("Contributor name is required.");
   if (input.paper.size > 50 * 1024 * 1024 || !input.paper.name.toLowerCase().endsWith(".pdf")) throw new Error("Please upload a PDF up to 50 MB.");
-  const experimentId = await nextStudyId();
   const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
   const branch = `jobs/${id}`;
   await ensureBranch(branch);
   const now = new Date().toISOString();
-  const job: PipelineJob = { id, experimentId, contributorName: input.contributorName.trim(), contributorGithub: input.contributorGithub?.trim() || undefined, osfUrl: input.osfUrl?.trim() || undefined, paperName: input.paper.name, currentStage: 1, status: "queued", message: "Waiting to start study inventory", createdAt: now, updatedAt: now, reviews: {} };
+  const job: PipelineJob = { id, experimentId: draftId(input.paper.name, id), contributorName: input.contributorName.trim(), contributorGithub: input.contributorGithub?.trim() || undefined, osfUrl: input.osfUrl?.trim() || undefined, paperName: input.paper.name, currentStage: 1, status: "queued", message: "Waiting to start study inventory", createdAt: now, updatedAt: now, reviews: {} };
   await putFile(branch, jobPath(id, "job.json"), JSON.stringify(job, null, 2) + "\n", `pipeline: create ${id}`);
   await putFile(branch, jobPath(id, "input/paper.pdf"), Buffer.from(await input.paper.arrayBuffer()), `pipeline: upload paper ${id}`);
   await dispatch(job, 1);
@@ -199,7 +205,7 @@ export async function readReviewFiles(id: string, stage: number) {
     ? [1, 2, 3].flatMap((number) => [`${root}/stage${number}.md`, `${root}/stage${number}.json`])
     : [`${root}/stage${stage}.md`, `${root}/stage${stage}.json`];
   const files: Array<{ path: string; content: string }> = [];
-  for (const path of names) {
+  await Promise.all(names.map(async (path) => {
     try {
       const result = await api.repos.getContent({ ...target, path, ref: branch });
       if (!Array.isArray(result.data) && "content" in result.data) {
@@ -208,17 +214,35 @@ export async function readReviewFiles(id: string, stage: number) {
     } catch {
       // A stage may only produce one of the two human-readable formats.
     }
+  }));
+  if (stage === 4) {
+    for (const file of await listPackageFiles(id)) {
+      if (file.path.endsWith(".json") || file.path.endsWith(".md")) {
+        files.push({ path: `package/${file.path}`, content: file.content.toString("utf8") });
+      }
+    }
   }
   return files;
 }
 
 export async function saveReviewFile(id: string, filePath: string, content: string) {
-  if (!/^stage[1-4]\.(json|md)$/.test(filePath)) throw new Error("Only generated stage files can be edited.");
+  const editable = /^stage[1-4]\.(json|md)$/.test(filePath)
+    || (/^package\/.+\.(json|md)$/.test(filePath) && !filePath.includes(".."));
+  if (!editable) throw new Error("Only review JSON and Markdown files can be edited.");
   if (filePath.endsWith(".json")) JSON.parse(content);
   const branch = `jobs/${safe(id)}`;
-  await putFile(branch, jobPath(id, `output/paper/${filePath}`), content, `pipeline: edit ${filePath}`);
+  const targetPath = filePath.startsWith("package/") ? filePath.slice("package/".length) : `output/paper/${filePath}`;
+  await putFile(branch, jobPath(id, targetPath), content, `pipeline: edit ${filePath}`);
 }
 
 export async function readPackageZip(id: string) {
   return getFile(`jobs/${safe(id)}`, jobPath(id, "output/study.zip"));
+}
+
+export async function assignStudyId(id: string) {
+  const job = await readJob(id);
+  if (!job.experimentId.startsWith("draft_")) return job;
+  job.experimentId = await nextStudyId();
+  await saveJob(job, `pipeline: assign ${job.experimentId}`);
+  return job;
 }
