@@ -325,7 +325,7 @@ export default function PipelineStudio() {
         <section className="min-w-0 border border-gray-200 bg-white">
           <div className="border-b border-gray-200 p-6">
             <p className="text-xs font-semibold uppercase text-cyan-700">Agent study builder</p>
-            <h1 className="mt-2 font-serif text-2xl font-bold">{job.message}</h1>
+            <h1 className="mt-2 font-serif text-2xl font-bold">{job.message.replace("Claude Code", "Our agent")}</h1>
             <p className="mt-2 text-sm text-gray-500">Progress and review decisions are saved under job {job.id}.</p>
           </div>
 
