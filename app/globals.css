@@ -26,35 +26,6 @@ body {
   color: var(--foreground);
 }
 
-.partner-ticker {
-  overflow: hidden;
-}
-
-.partner-ticker-track {
-  display: flex;
-  width: max-content;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 0.9rem 0;
-  animation: partner-ticker-scroll 28s linear infinite;
-}
-
-.partner-ticker:hover .partner-ticker-track {
-  animation-play-state: paused;
-}
-
-@keyframes partner-ticker-scroll {
-  to {
-    transform: translateX(-50%);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .partner-ticker-track {
-    animation: none;
-  }
-}
-
 /* GitHub-style callouts (Note / Tip / Warning) */
 .callout {
   border-left: 3px solid;

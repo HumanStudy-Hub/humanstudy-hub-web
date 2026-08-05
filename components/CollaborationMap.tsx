@@ -9,14 +9,20 @@ const collaborators = [
   { name: "Carnegie Mellon University", city: "Pittsburgh, United States", lat: 40.4433, lon: -79.9436 },
   { name: "The University of Hong Kong", city: "Hong Kong", lat: 22.283, lon: 114.1371 },
   { name: "IRIDeS, Tohoku University", city: "Sendai, Japan", lat: 38.2506, lon: 140.856 },
+  { name: "Stanford University", city: "Stanford, United States", lat: 37.4275, lon: -122.1697 },
+  { name: "Massachusetts Institute of Technology", city: "Cambridge, United States", lat: 42.3601, lon: -71.0942 },
 ];
+
+const hub = collaborators[0];
+const partnershipLongitudes = collaborators.slice(1).flatMap((item) => [hub.lon, item.lon, null]);
+const partnershipLatitudes = collaborators.slice(1).flatMap((item) => [hub.lat, item.lat, null]);
 
 const data: Data[] = [
   {
     type: "scattergeo",
     mode: "lines",
-    lon: [-117.234, 6.6323, null, -117.234, -79.9436, null, -117.234, 114.1371, null, -117.234, 140.856],
-    lat: [32.8801, 46.5197, null, 32.8801, 40.4433, null, 32.8801, 22.283, null, 32.8801, 38.2506],
+    lon: partnershipLongitudes,
+    lat: partnershipLatitudes,
     line: { width: 1, color: "rgba(8, 145, 178, 0.35)" },
     hoverinfo: "skip",
   },
