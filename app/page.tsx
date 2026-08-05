@@ -11,7 +11,7 @@ export default function Home() {
         priority
         className="object-cover object-center opacity-72"
       />
-      <div className="absolute inset-0 bg-white/35" />
+      {/* <div className="absolute inset-0 bg-white/35" /> */}
       <main className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-7xl items-end px-6 pb-14 pt-20 sm:px-10 sm:pb-20">
         <div className="max-w-3xl [text-shadow:0_1px_12px_rgba(255,255,255,0.9)]">
           <p className="text-xs font-bold uppercase text-cyan-800">Open infrastructure for human-study research</p>
