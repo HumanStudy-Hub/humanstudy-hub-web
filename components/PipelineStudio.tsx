@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 type JobStatus = "queued" | "running" | "review" | "complete" | "failed";
+type PipelineProgress = {
+  phase: "building_package" | "validating_package" | "ready_for_review" | "timed_out" | "failed";
+  completedRequired: number;
+  totalRequired: number;
+  totalFiles: number;
+  missing: string[];
+  updatedAt: string;
+};
 type Job = {
   id: string;
   experimentId: string;
@@ -14,6 +22,7 @@ type Job = {
   message: string;
   error?: string;
   packageReady?: boolean;
+  progress?: PipelineProgress;
   updatedAt: string;
 };
 type ReviewFile = { path: string; content: string };
@@ -54,6 +63,14 @@ const agentTasks = [
   ["Build the study", "Organize materials and create the runnable agent task"],
   ["Check the package", "Validate files and flag everything requiring researcher input"],
 ] as const;
+
+const progressLabels: Record<PipelineProgress["phase"], string> = {
+  building_package: "Building study files",
+  validating_package: "Checking the runnable package",
+  ready_for_review: "Preparing researcher review",
+  timed_out: "Agent time limit reached",
+  failed: "Package build stopped",
+};
 
 export default function PipelineStudio() {
   const STORAGE_KEY = "humanstudy-hub-active-job";
@@ -314,8 +331,15 @@ export default function PipelineStudio() {
 
           {(job.status === "running" || job.status === "queued") && (
             <div className="p-6">
-              <div className="h-1.5 overflow-hidden bg-gray-100"><div className="h-full w-1/2 animate-pulse bg-cyan-700" /></div>
-              <p className="mt-4 text-sm leading-6 text-gray-600">The agent is reading the paper, searching for open materials, building the study files, and running package checks. You can leave this page and return to the same job.</p>
+              {job.progress ? <>
+                <div className="flex items-end justify-between gap-4">
+                  <div><p className="text-sm font-semibold text-gray-950">{progressLabels[job.progress.phase]}</p><p className="mt-1 text-xs text-gray-500">{job.progress.completedRequired} of {job.progress.totalRequired} required files · {job.progress.totalFiles} total files</p></div>
+                  <p className="font-mono text-sm font-semibold text-cyan-800">{Math.round((job.progress.completedRequired / Math.max(1, job.progress.totalRequired)) * 100)}%</p>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden bg-gray-100"><div className="h-full bg-cyan-700 transition-[width] duration-500" style={{ width: `${Math.min(100, (job.progress.completedRequired / Math.max(1, job.progress.totalRequired)) * 100)}%` }} /></div>
+                {job.progress.missing.length > 0 && <details className="mt-4 border-t border-gray-200 pt-3"><summary className="cursor-pointer text-xs font-semibold text-gray-600">Remaining required files ({job.progress.missing.length})</summary><ul className="mt-2 grid gap-1 sm:grid-cols-2">{job.progress.missing.map((file) => <li key={file} className="break-all font-mono text-[11px] text-gray-500">{file}</li>)}</ul></details>}
+              </> : <div className="h-1.5 overflow-hidden bg-gray-100"><div className="h-full w-1/2 animate-pulse bg-cyan-700" /></div>}
+              <p className="mt-4 text-sm leading-6 text-gray-600">The agent is reading the paper, {job.osfUrl ? "processing the supplied open materials, " : ""}building the study files, and running package checks. You can leave this page and return to the same job.</p>
               {log && <pre className="mt-5 max-h-80 overflow-auto bg-gray-950 p-4 text-xs leading-5 text-gray-200">{log}</pre>}
             </div>
           )}

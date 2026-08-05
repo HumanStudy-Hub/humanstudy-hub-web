@@ -2,6 +2,14 @@ import crypto from "node:crypto";
 import { Octokit } from "@octokit/rest";
 
 export type JobStatus = "queued" | "running" | "review" | "complete" | "failed";
+export type PipelineProgress = {
+  phase: "building_package" | "validating_package" | "ready_for_review" | "timed_out" | "failed";
+  completedRequired: number;
+  totalRequired: number;
+  totalFiles: number;
+  missing: string[];
+  updatedAt: string;
+};
 export type PipelineJob = {
   id: string;
   experimentId: string;
@@ -14,6 +22,7 @@ export type PipelineJob = {
   message: string;
   error?: string;
   packageReady?: boolean;
+  progress?: PipelineProgress;
   createdAt: string;
   updatedAt: string;
   reviews: Record<string, { decision: "approved" | "changes_requested"; note?: string; at: string }>;
@@ -155,7 +164,13 @@ async function saveJob(job: PipelineJob, message: string) {
 }
 
 export async function readJob(id: string): Promise<PipelineJob> {
-  const data = JSON.parse((await getFile(`jobs/${safe(id)}`, jobPath(id, "job.json"))).toString("utf8")) as PipelineJob;
+  const branch = `jobs/${safe(id)}`;
+  const data = JSON.parse((await getFile(branch, jobPath(id, "job.json"))).toString("utf8")) as PipelineJob;
+  try {
+    data.progress = JSON.parse((await getFile(branch, jobPath(id, "progress.json"))).toString("utf8")) as PipelineProgress;
+  } catch {
+    // The first progress snapshot is published after the agent starts.
+  }
   return data;
 }
 
