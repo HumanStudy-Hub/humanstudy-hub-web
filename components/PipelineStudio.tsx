@@ -12,6 +12,7 @@ type Job = {
   status: JobStatus;
   message: string;
   error?: string;
+  packageReady?: boolean;
   updatedAt: string;
 };
 type ReviewFile = { path: string; content: string };
@@ -19,12 +20,19 @@ type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string
 
 function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; onChange: (value: JsonValue) => void; path?: string }) {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-    return <div className="space-y-3">{Object.entries(value).map(([key, child]) => <div key={key} className="border-l border-gray-200 pl-3"><p className="mb-1 text-xs font-semibold text-gray-700">{key}</p><JsonEditor value={child} path={`${path}.${key}`} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} /></div>)}</div>;
+    const technicalKeys = new Set(["source_trace", "readiness", "coverage_ledger", "derivation_contract", "audit", "selection", "verification"]);
+    const entries = Object.entries(value);
+    const visible = entries.filter(([key]) => !technicalKeys.has(key));
+    const technical = entries.filter(([key]) => technicalKeys.has(key));
+    const renderEntry = ([key, child]: [string, JsonValue]) => <div key={key} className="border-l border-gray-200 pl-3"><p className="mb-1 text-xs font-semibold text-gray-700">{key.replaceAll("_", " ")}</p><JsonEditor value={child} path={`${path}.${key}`} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} /></div>;
+    return <div className="space-y-3">{visible.map(renderEntry)}{technical.length > 0 && <details className="border-t border-gray-200 pt-2"><summary className="cursor-pointer text-xs font-semibold text-gray-500">Technical extraction details</summary><div className="mt-3 space-y-3">{technical.map(renderEntry)}</div></details>}</div>;
   }
   if (Array.isArray(value)) {
     return <div className="space-y-2">{value.map((child, index) => <div key={`${path}.${index}`} className="border-l border-gray-200 pl-3"><p className="mb-1 text-[11px] text-gray-500">Item {index + 1}</p><JsonEditor value={child} path={`${path}.${index}`} onChange={(next) => onChange(value.map((item, itemIndex) => itemIndex === index ? next : item))} /></div>)}</div>;
   }
-  return <input value={value === null ? "" : String(value)} onChange={(event) => { const raw = event.target.value; const next = typeof value === "number" ? (raw === "" ? 0 : Number(raw)) : typeof value === "boolean" ? raw === "true" : raw; onChange(next); }} className="w-full border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-cyan-700" />;
+  const rawValue = value === null ? "" : String(value);
+  const placeholder = /^\s*(\[填写\]|tbd|unknown|not available|n\/a)?\s*$/i.test(rawValue);
+  return <div><input value={rawValue} onChange={(event) => { const raw = event.target.value; const next = typeof value === "number" ? (raw === "" ? 0 : Number(raw)) : typeof value === "boolean" ? raw === "true" : raw; onChange(next); }} className={`w-full border bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-cyan-700 ${placeholder ? "border-amber-400" : "border-gray-300"}`} />{placeholder && <p className="mt-1 text-[11px] text-amber-700">Needs researcher input</p>}</div>;
 }
 
 function fileGuide(path: string) {
@@ -43,7 +51,7 @@ function fileGuide(path: string) {
 const stages = [
   ["Study inventory", "Map studies, samples, and comparison groups"],
   ["Findings & effects", "Extract claims, statistics, and source evidence"],
-  ["Study materials", "Recover surveys, stimuli, and instructions"],
+  ["Study materials", "Extract surveys, stimuli, and instructions"],
   ["Build package", "Assemble the runnable benchmark folder"],
 ] as const;
 
@@ -189,6 +197,15 @@ export default function PipelineStudio() {
     }
   }
 
+  function exitJob() {
+    window.localStorage.removeItem(STORAGE_KEY);
+    setJob(null);
+    setLog("");
+    setReviewFiles([]);
+    setSelectedFile("");
+    window.history.replaceState({}, "", "/pipeline");
+  }
+
   if (!job) {
     return (
       <div className="min-h-[calc(100vh-4rem)] bg-[#f7f9fa]">
@@ -269,7 +286,7 @@ export default function PipelineStudio() {
             <p className="text-sm font-semibold text-gray-950">{job.paperName}</p>
             <p className="mt-1 font-mono text-xs text-gray-500">{job.experimentId.startsWith("draft_") ? "Draft study" : `studies/${job.experimentId}/`}</p>
           </div>
-          <span className={`px-2 py-1 text-xs font-semibold ${job.status === "failed" ? "bg-red-100 text-red-800" : job.status === "complete" ? "bg-emerald-100 text-emerald-800" : job.status === "review" ? "bg-amber-100 text-amber-800" : "bg-cyan-100 text-cyan-800"}`}>{job.status}</span>
+          <div className="flex items-center gap-3"><a href="/" className="text-xs font-semibold text-gray-500 hover:text-gray-950">Back to Hub</a><button type="button" onClick={exitJob} className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">Start another study</button><span className={`px-2 py-1 text-xs font-semibold ${job.status === "failed" ? "bg-red-100 text-red-800" : job.status === "complete" ? "bg-emerald-100 text-emerald-800" : job.status === "review" ? "bg-amber-100 text-amber-800" : "bg-cyan-100 text-cyan-800"}`}>{job.status}</span></div>
         </div>
       </header>
 
@@ -305,7 +322,7 @@ export default function PipelineStudio() {
           {job.status === "review" && (
             <div className="p-6">
               <div className="border-l-2 border-amber-500 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-                Inspect the generated stage files and record your decision. Approval starts the next pipeline stage; requesting changes saves your note without advancing.
+                {job.currentStage === 3 ? "Review materials extracted from the paper, appendices, and any open-material links. Correct missing or inaccurate content before building the runnable package." : "Inspect the generated files and record your decision. Approval completes the package review; requesting changes saves your note without advancing."}
               </div>
               <div className="mt-6 space-y-4">
                 <div>
@@ -345,12 +362,7 @@ export default function PipelineStudio() {
 
           {job.status === "complete" && (
             <div className="p-6">
-              <div className="border-l-2 border-emerald-600 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">The reviewed HumanStudy-Bench package is ready for download and can be used by the Run Experiment workspace.</div>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <a href={`/api/pipeline/jobs/${job.id}/download`} className="inline-flex h-10 items-center bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600">Download experiment ZIP</a>
-                <button disabled={busy || Boolean(prUrl)} onClick={publish} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Saving..." : prUrl ? "Contributed to benchmark" : "Contribute this study to benchmark"}</button>
-              </div>
-              {prUrl && <a href={prUrl} target="_blank" rel="noreferrer" className="mt-4 block text-sm font-semibold text-cyan-700 hover:underline">Open pull request</a>}
+              {job.packageReady ? <><div className="border-l-2 border-emerald-600 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">The reviewed HumanStudy-Bench package is ready for download and can be used by the Run Experiment workspace.</div><div className="mt-5 flex flex-wrap gap-2"><a href={`/api/pipeline/jobs/${job.id}/download`} className="inline-flex h-10 items-center bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600">Download experiment ZIP</a><button disabled={busy || Boolean(prUrl)} onClick={publish} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Saving..." : prUrl ? "Contributed to benchmark" : "Contribute this study to benchmark"}</button></div>{prUrl && <a href={prUrl} target="_blank" rel="noreferrer" className="mt-4 block text-sm font-semibold text-cyan-700 hover:underline">Open pull request</a>}</> : <div className="border-l-2 border-cyan-700 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">The extraction is saved, but the study is not yet a runnable package.</div>}
             </div>
           )}
 

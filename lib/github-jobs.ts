@@ -13,6 +13,7 @@ export type PipelineJob = {
   status: JobStatus;
   message: string;
   error?: string;
+  packageReady?: boolean;
   createdAt: string;
   updatedAt: string;
   reviews: Record<string, { decision: "approved" | "changes_requested"; note?: string; at: string }>;
