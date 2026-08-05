@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { readJob, readReviewFiles, saveReviewFile } from "@/lib/github-jobs";
+import { readReviewFiles, saveReviewFile } from "@/lib/github-jobs";
 
 export const runtime = "nodejs";
 
 export async function GET(_request: Request, context: { params: Promise<{ jobId: string }> }) {
   try {
     const { jobId } = await context.params;
-    const job = await readJob(jobId);
-    return NextResponse.json({ files: await readReviewFiles(jobId, job.currentStage) });
+    return NextResponse.json({ files: await readReviewFiles(jobId) });
   } catch {
     return NextResponse.json({ error: "Review files not found." }, { status: 404 });
   }

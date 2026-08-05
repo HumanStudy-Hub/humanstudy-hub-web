@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 type JobStatus = "queued" | "running" | "review" | "complete" | "failed";
 type Job = {
@@ -36,23 +37,22 @@ function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; onChange
 }
 
 function fileGuide(path: string) {
-  if (path.endsWith("specification.json")) return "Study design, participants, conditions, and procedure";
-  if (path.endsWith("ground_truth.json")) return "Expected findings and evaluation targets";
-  if (path.endsWith("metadata.json")) return "Paper title, authors, domain, and study description";
-  if (path.includes("/materials/")) return "Survey, stimulus, or task material used by the study";
-  if (path.endsWith("index.json")) return "Study entry point and file index";
-  if (path.endsWith("audit.json")) return "Generation and completeness checks";
-  if (path.includes("source_extraction")) return "Evidence extracted from the paper";
-  if (path.startsWith("stage")) return "Intermediate extraction record for traceability";
-  if (path.endsWith("README.md")) return "Human-readable study documentation";
+  if (path.endsWith("/study.json")) return "Study overview, participant flow, conditions, and outcomes";
+  if (path.endsWith("/materials/materials.json")) return "Questionnaires, stimuli, instructions, and response formats";
+  if (path.endsWith("/task/task.json")) return "Runnable agent interaction and condition assignment";
+  if (path.endsWith("/audit/missing_information.json")) return "Decisions or source material that still need researcher input";
+  if (path.endsWith("/source/evidence.json")) return "Evidence supporting the extracted study content";
+  if (path.endsWith("/source/open_materials.json")) return "OSF, supplementary files, and other sources searched";
+  if (path.endsWith("/audit/agent_report.md")) return "Agent summary and recommended review order";
+  if (path.endsWith("README.md")) return "Human-readable package documentation";
   return "Supporting study file";
 }
 
-const stages = [
-  ["Study inventory", "Map studies, samples, and comparison groups"],
-  ["Findings & effects", "Extract claims, statistics, and source evidence"],
-  ["Study materials", "Extract surveys, stimuli, and instructions"],
-  ["Build package", "Assemble the runnable benchmark folder"],
+const agentTasks = [
+  ["Read the paper", "Identify studies, samples, procedures, and reported findings"],
+  ["Find open materials", "Search OSF, supplements, repositories, and author pages"],
+  ["Build the study", "Organize materials and create the runnable agent task"],
+  ["Check the package", "Validate files and flag everything requiring researcher input"],
 ] as const;
 
 export default function PipelineStudio() {
@@ -156,8 +156,8 @@ export default function PipelineStudio() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Review could not be saved.");
-      setJob({ ...data.job, status: decision === "approved" ? "queued" : "review" });
-      setReviewFiles([]);
+      setJob(data.job);
+      if (decision === "approved") setReviewFiles([]);
       if (decision === "approved") setNote("");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Review could not be saved.");
@@ -262,9 +262,9 @@ export default function PipelineStudio() {
           </section>
 
           <aside>
-            <p className="text-xs font-semibold uppercase text-gray-500">Researcher checkpoints</p>
+            <p className="text-xs font-semibold uppercase text-gray-500">Agent workflow</p>
             <ol className="mt-4 border-l border-gray-300">
-              {stages.map(([label, detail], index) => (
+              {agentTasks.map(([label, detail], index) => (
                 <li key={label} className="relative pb-7 pl-6">
                   <span className="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white text-[11px] font-bold">{index + 1}</span>
                   <p className="text-sm font-semibold text-gray-800">{label}</p>
@@ -286,28 +286,24 @@ export default function PipelineStudio() {
             <p className="text-sm font-semibold text-gray-950">{job.paperName}</p>
             <p className="mt-1 font-mono text-xs text-gray-500">{job.experimentId.startsWith("draft_") ? "Draft study" : `studies/${job.experimentId}/`}</p>
           </div>
-          <div className="flex items-center gap-3"><a href="/" className="text-xs font-semibold text-gray-500 hover:text-gray-950">Back to Hub</a><button type="button" onClick={exitJob} className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">Start another study</button><span className={`px-2 py-1 text-xs font-semibold ${job.status === "failed" ? "bg-red-100 text-red-800" : job.status === "complete" ? "bg-emerald-100 text-emerald-800" : job.status === "review" ? "bg-amber-100 text-amber-800" : "bg-cyan-100 text-cyan-800"}`}>{job.status}</span></div>
+          <div className="flex items-center gap-3"><Link href="/" className="text-xs font-semibold text-gray-500 hover:text-gray-950">Back to Hub</Link><button type="button" onClick={exitJob} className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">Start another study</button><span className={`px-2 py-1 text-xs font-semibold ${job.status === "failed" ? "bg-red-100 text-red-800" : job.status === "complete" ? "bg-emerald-100 text-emerald-800" : job.status === "review" ? "bg-amber-100 text-amber-800" : "bg-cyan-100 text-cyan-800"}`}>{job.status}</span></div>
         </div>
       </header>
 
       <main className="mx-auto grid max-w-6xl gap-6 px-5 py-8 lg:grid-cols-[240px_minmax(0,1fr)]">
         <nav className="border border-gray-200 bg-white p-3">
-          {stages.map(([label, detail], index) => {
-            const number = index + 1;
-            const done = number < job.currentStage || job.status === "complete";
-            const active = number === job.currentStage && job.status !== "complete";
-            return (
-              <div key={label} className={`flex gap-3 p-3 ${active ? "bg-cyan-50" : ""}`}>
-                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${done ? "bg-emerald-600 text-white" : active ? "bg-cyan-700 text-white" : "bg-gray-100 text-gray-400"}`}>{done ? "✓" : number}</span>
-                <div><p className="text-xs font-semibold">{label}</p><p className="mt-1 text-[11px] leading-4 text-gray-500">{detail}</p></div>
-              </div>
-            );
-          })}
+          <p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase text-gray-500">Agent workflow</p>
+          {agentTasks.map(([label, detail]) => (
+            <div key={label} className="flex gap-3 p-3">
+              <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${job.status === "failed" ? "bg-gray-300" : job.status === "review" || job.status === "complete" ? "bg-emerald-600" : "animate-pulse bg-cyan-700"}`} />
+              <div><p className="text-xs font-semibold">{label}</p><p className="mt-1 text-[11px] leading-4 text-gray-500">{detail}</p></div>
+            </div>
+          ))}
         </nav>
 
         <section className="min-w-0 border border-gray-200 bg-white">
           <div className="border-b border-gray-200 p-6">
-            <p className="text-xs font-semibold uppercase text-cyan-700">Stage {job.currentStage} of 4</p>
+            <p className="text-xs font-semibold uppercase text-cyan-700">Agent study builder</p>
             <h1 className="mt-2 font-serif text-2xl font-bold">{job.message}</h1>
             <p className="mt-2 text-sm text-gray-500">Progress and review decisions are saved under job {job.id}.</p>
           </div>
@@ -315,25 +311,27 @@ export default function PipelineStudio() {
           {(job.status === "running" || job.status === "queued") && (
             <div className="p-6">
               <div className="h-1.5 overflow-hidden bg-gray-100"><div className="h-full w-1/2 animate-pulse bg-cyan-700" /></div>
-              <pre className="mt-5 max-h-80 overflow-auto bg-gray-950 p-4 text-xs leading-5 text-gray-200">{log || "Starting pipeline..."}</pre>
+              <p className="mt-4 text-sm leading-6 text-gray-600">The agent is reading the paper, searching for open materials, building the study files, and running package checks. You can leave this page and return to the same job.</p>
+              {log && <pre className="mt-5 max-h-80 overflow-auto bg-gray-950 p-4 text-xs leading-5 text-gray-200">{log}</pre>}
             </div>
           )}
 
           {job.status === "review" && (
             <div className="p-6">
               <div className="border-l-2 border-amber-500 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-                {job.currentStage === 3 ? "Review materials extracted from the paper, appendices, and any open-material links. Correct missing or inaccurate content before building the runnable package." : "Inspect the generated files and record your decision. Approval completes the package review; requesting changes saves your note without advancing."}
+                Review the extracted study and materials. Correct inaccurate values, resolve highlighted missing information when possible, then approve the package for download.
               </div>
               <div className="mt-6 space-y-4">
                 <div>
                   <p className="text-sm font-semibold text-gray-900">Final study package review</p>
                   <p className="mt-1 text-sm text-gray-500">Choose a file to inspect. Edit only values that are missing or incorrect, then save before approving.</p>
-                  <div className="mt-3 border-l-2 border-cyan-700 bg-cyan-50 p-3 text-xs leading-5 text-cyan-950">Start with the files under <code>package/</code>. These are the files that will go into the runnable study ZIP. The stage files are evidence and extraction notes.</div>
+                  <div className="mt-3 border-l-2 border-cyan-700 bg-cyan-50 p-3 text-xs leading-5 text-cyan-950">Start with the study overview, materials, task definition, and missing-information checklist. Supporting evidence and technical records are available under Additional files.</div>
                 </div>
                 {reviewFiles.length === 0 ? <p className="border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">Loading generated files...</p> : <div className="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)]">
                   <div className="border border-gray-200 bg-gray-50 p-2">
                     {(() => {
-                      const priority = reviewFiles.filter((file) => file.path.includes("/source/specification.json") || file.path.includes("/source/ground_truth.json") || file.path.includes("/source/metadata.json") || file.path.includes("/source/materials/"));
+                      const priorityPaths = ["/study.json", "/materials/materials.json", "/task/task.json", "/audit/missing_information.json", "/audit/agent_report.md"];
+                      const priority = reviewFiles.filter((file) => priorityPaths.some((suffix) => file.path.endsWith(suffix)));
                       const additional = reviewFiles.filter((file) => !priority.includes(file));
                       const fileButton = (file: ReviewFile) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); setEditedJson(file.path.endsWith(".json") ? JSON.parse(file.content) : null); setSaved(true); }} className={`block w-full border-l-2 px-3 py-2 text-left ${selectedFile === file.path ? "border-cyan-700 bg-white text-cyan-800" : "border-transparent text-gray-600 hover:bg-white"}`}><span className="block break-all font-mono text-xs font-semibold">{file.path}</span><span className="mt-1 block text-[11px] leading-4 text-gray-500">{fileGuide(file.path)}</span></button>;
                       return <><p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wide text-cyan-800">Review first</p>{priority.map(fileButton)}<details className="mt-2 border-t border-gray-200 pt-2"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-gray-600">Additional files ({additional.length})</summary>{additional.map(fileButton)}</details></>;
@@ -348,7 +346,7 @@ export default function PipelineStudio() {
               <textarea id="review-note" value={note} onChange={(event) => setNote(event.target.value)} className="mt-2 h-32 w-full border border-gray-300 p-3 text-sm outline-none focus:border-cyan-700" placeholder="Corrections, missing evidence, or approval rationale" />
               <div className="mt-4 flex justify-end gap-2">
                 <button disabled={busy || !note.trim()} onClick={() => review("changes_requested")} className="h-10 border border-gray-300 px-4 text-sm font-semibold text-gray-700 disabled:text-gray-300">Request changes</button>
-                <button disabled={busy} onClick={() => review("approved")} className="h-10 bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-600 disabled:bg-gray-300">Approve and continue</button>
+                <button disabled={busy || !saved} onClick={() => review("approved")} className="h-10 bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-600 disabled:bg-gray-300">Approve package</button>
               </div>
             </div>
           )}
