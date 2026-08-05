@@ -1,6 +1,5 @@
-import { promises as fs } from "fs";
-import path from "path";
 import Link from "next/link";
+import { getStudies } from "@/lib/studies";
 
 type Contributor = { name: string; github?: string; institution?: string };
 type StudySummary = {
@@ -12,15 +11,7 @@ type StudySummary = {
 };
 
 export default async function StudiesPage() {
-  const filePath = path.join(process.cwd(), "data/studies_index.json");
-  let studies: StudySummary[] = [];
-  try {
-    const raw = await fs.readFile(filePath, "utf8");
-    const data = JSON.parse(raw);
-    studies = data.studies ?? [];
-  } catch (e) {
-    console.error("Could not read studies index", e);
-  }
+  const studies: StudySummary[] = await getStudies();
 
   return (
     <div className="bg-white min-h-screen">

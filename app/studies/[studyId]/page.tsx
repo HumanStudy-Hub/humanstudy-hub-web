@@ -1,29 +1,10 @@
-import { promises as fs } from "fs";
-import path from "path";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { getStudies, type StudyEntry } from "@/lib/studies";
 
 export async function generateStaticParams() {
-  const filePath = path.join(process.cwd(), "data/studies_index.json");
-  try {
-    const raw = await fs.readFile(filePath, "utf8");
-    const data = JSON.parse(raw);
-    const studies = data.studies ?? [];
-    return studies.map((s: { study_id: string }) => ({ studyId: s.study_id }));
-  } catch {
-    return [];
-  }
+  return (await getStudies()).map((study) => ({ studyId: study.study_id }));
 }
-
-type Contributor = { name: string; github?: string; institution?: string };
-type StudyEntry = {
-  study_id: string;
-  title: string;
-  authors: string[];
-  year: number | null;
-  description: string;
-  contributors?: Contributor[];
-};
 
 export default async function StudyDetailPage({
   params,
@@ -31,15 +12,7 @@ export default async function StudyDetailPage({
   params: Promise<{ studyId: string }>;
 }) {
   const { studyId } = await params;
-  const filePath = path.join(process.cwd(), "data/studies_index.json");
-  let studies: StudyEntry[] = [];
-  try {
-    const raw = await fs.readFile(filePath, "utf8");
-    const data = JSON.parse(raw);
-    studies = data.studies ?? [];
-  } catch (e) {
-    console.error("Could not read studies index", e);
-  }
+  const studies: StudyEntry[] = await getStudies();
 
   const study = studies.find((s) => s.study_id === studyId);
   if (!study) notFound();

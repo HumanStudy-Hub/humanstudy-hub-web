@@ -25,16 +25,31 @@ export async function POST(
     const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseRef.data.object.sha });
     const branch = `contribute/${job.experimentId}-${job.id.slice(-8)}`;
 
+    const packageFiles = await listPackageFiles(jobId);
+    const firstSegments = new Set(packageFiles.map((file) => file.path.split("/")[0]));
+    const packageRoot = firstSegments.size === 1 ? [...firstSegments][0] : "";
     const tree = [];
-    for (const file of await listPackageFiles(jobId)) {
+    for (const file of packageFiles) {
+      const relativePath = packageRoot && file.path.startsWith(`${packageRoot}/`)
+        ? file.path.slice(packageRoot.length + 1)
+        : file.path;
+      let content = file.content;
+      if (relativePath === "study.json") {
+        const study = JSON.parse(content.toString("utf8"));
+        study.contributors = [{
+          name: job.contributorName,
+          ...(job.contributorGithub ? { github: `https://github.com/${job.contributorGithub.replace(/^@/, "")}` } : {}),
+        }];
+        content = Buffer.from(`${JSON.stringify(study, null, 2)}\n`);
+      }
       const blob = await octokit.git.createBlob({
         owner,
         repo,
-        content: file.content.toString("base64"),
+        content: content.toString("base64"),
         encoding: "base64",
       });
       tree.push({
-        path: `studies/${job.experimentId}/${file.path}`,
+        path: `studies/${job.experimentId}/${relativePath}`,
         mode: "100644" as const,
         type: "blob" as const,
         sha: blob.data.sha,
