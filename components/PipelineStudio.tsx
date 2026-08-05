@@ -92,14 +92,18 @@ export default function PipelineStudio() {
   useEffect(() => {
     if (!job || (job.status !== "queued" && job.status !== "running")) return;
     const timer = window.setInterval(async () => {
-      const response = await fetch(`/api/pipeline/jobs/${job.id}`, { cache: "no-store" });
-      if (!response.ok) return;
-      const data = (await response.json()) as { job: Job; log: string };
-      setJob(data.job);
-      setLog(data.log);
-      if (data.job.status === "review") {
-        const filesResponse = await fetch(`/api/pipeline/jobs/${data.job.id}/files`, { cache: "no-store" });
-        if (filesResponse.ok) setReviewFiles((await filesResponse.json()).files);
+      try {
+        const response = await fetch(`/api/pipeline/jobs/${job.id}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const data = (await response.json()) as { job: Job; log: string };
+        setJob(data.job);
+        setLog(data.log);
+        if (data.job.status === "review") {
+          const filesResponse = await fetch(`/api/pipeline/jobs/${data.job.id}/files`, { cache: "no-store" });
+          if (filesResponse.ok) setReviewFiles((await filesResponse.json()).files);
+        }
+      } catch {
+        // A transient local-server or network interruption is retried on the next poll.
       }
     }, 2000);
     return () => window.clearInterval(timer);
