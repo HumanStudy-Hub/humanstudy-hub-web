@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { upload } from "@vercel/blob/client";
+
+const MAX_PAPER_BYTES = 50 * 1024 * 1024;
+// A dispatched run normally reports back within a minute. Longer than this and
+// GitHub most likely never gave the job a runner.
+const STALL_MS = 5 * 60 * 1000;
 
 type JobStatus = "queued" | "running" | "review" | "complete" | "failed";
 type PipelineProgress = {
@@ -17,6 +23,7 @@ type Job = {
   experimentId: string;
   paperName: string;
   osfUrl?: string;
+  createdAt?: string;
   currentStage: number;
   status: JobStatus;
   message: string;
@@ -90,6 +97,8 @@ export default function PipelineStudio() {
   const [editedContent, setEditedContent] = useState("");
   const [editedJson, setEditedJson] = useState<JsonValue | null>(null);
   const [saved, setSaved] = useState(true);
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
+  const [stalled, setStalled] = useState(false);
 
   useEffect(() => {
     const requestedJobId = new URLSearchParams(window.location.search).get("job");
@@ -134,10 +143,29 @@ export default function PipelineStudio() {
       .catch(() => undefined);
   }, [job]);
 
+  // A job that never leaves "queued" means no runner picked up the dispatched run.
+  useEffect(() => {
+    setStalled(false);
+    if (!job || job.status !== "queued" || !job.createdAt) return;
+    const since = Date.parse(job.createdAt);
+    if (Number.isNaN(since)) return;
+    const remaining = since + STALL_MS - Date.now();
+    if (remaining <= 0) {
+      setStalled(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setStalled(true), remaining);
+    return () => window.clearTimeout(timer);
+  }, [job]);
+
   function chooseFile(file?: File) {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".pdf")) {
       setError("Please choose a PDF.");
+      return;
+    }
+    if (file.size > MAX_PAPER_BYTES) {
+      setError(`This PDF is ${(file.size / 1024 / 1024).toFixed(1)} MB. Please upload a PDF up to 50 MB.`);
       return;
     }
     setError("");
@@ -148,18 +176,46 @@ export default function PipelineStudio() {
     if (!paper) return;
     setBusy(true);
     setError("");
-    const form = new FormData();
-    form.append("paper", paper);
-    form.append("osfUrl", osf);
-    form.append("contributorName", contributorName);
-    form.append("contributorGithub", contributorId);
+    setUploadPercent(0);
     try {
-      const response = await fetch("/api/pipeline/jobs", { method: "POST", body: form });
+      // Upload straight to Vercel Blob; a function request body caps out at 4.5 MB.
+      const blob = await upload(paper.name, paper, {
+        access: "public",
+        handleUploadUrl: "/api/pipeline/upload",
+        contentType: "application/pdf",
+        // Large papers upload in parallel parts, and failed parts are retried.
+        multipart: paper.size > 8 * 1024 * 1024,
+        onUploadProgress: ({ percentage }) => setUploadPercent(percentage),
+      });
+      setUploadPercent(null);
+      const response = await fetch("/api/pipeline/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paperUrl: blob.url, paperName: paper.name, osfUrl: osf, contributorName, contributorGithub: contributorId }),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not start conversion.");
       setJob(data.job);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not start conversion.");
+    } finally {
+      setUploadPercent(null);
+      setBusy(false);
+    }
+  }
+
+  async function retry() {
+    if (!job) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/pipeline/jobs/${job.id}/retry`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not restart this job.");
+      setJob(data.job);
+      setStalled(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not restart this job.");
     } finally {
       setBusy(false);
     }
@@ -272,11 +328,17 @@ export default function PipelineStudio() {
             </div>
 
             {error && <p className="mt-5 border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+            {uploadPercent !== null && (
+              <div className="mt-5">
+                <div className="flex items-center justify-between text-xs text-gray-600"><span>Uploading {paper?.name}</span><span className="font-mono font-semibold text-cyan-800">{Math.round(uploadPercent)}%</span></div>
+                <div className="mt-2 h-2 overflow-hidden bg-gray-100"><div className="h-full bg-cyan-700 transition-[width] duration-300" style={{ width: `${uploadPercent}%` }} /></div>
+              </div>
+            )}
             <div className="mt-7 flex justify-end border-t border-gray-100 pt-5">
               <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center">
                 <a href="https://github.com/HumanStudy-Hub/HumanStudy-Bench/blob/main/docs/submit_study.md" target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-cyan-700 hover:underline">Contribute manually on GitHub</a>
                 <button type="button" disabled={!paper || !contributorName.trim() || busy} onClick={start} className="h-10 bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300">
-                  {busy ? "Uploading..." : "Start conversion"}
+                  {busy ? (uploadPercent !== null ? `Uploading ${Math.round(uploadPercent)}%` : "Starting...") : "Start conversion"}
                 </button>
               </div>
             </div>
@@ -331,6 +393,14 @@ export default function PipelineStudio() {
 
           {(job.status === "running" || job.status === "queued") && (
             <div className="p-6">
+              {stalled && (
+                <div className="mb-5 border-l-2 border-amber-500 bg-amber-50 p-4">
+                  <p className="text-sm font-semibold text-amber-950">The build has not started yet</p>
+                  <p className="mt-1 text-sm leading-6 text-amber-900">GitHub Actions has not given this job a runner. Your paper is saved, so restarting does not require another upload.</p>
+                  <button type="button" disabled={busy} onClick={retry} className="mt-3 h-9 bg-amber-700 px-4 text-xs font-semibold text-white hover:bg-amber-600 disabled:bg-gray-300">{busy ? "Restarting..." : "Restart the build"}</button>
+                </div>
+              )}
+              {error && <p className="mb-5 border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
               {job.progress ? <>
                 <div className="flex items-end justify-between gap-4">
                   <div><p className="text-sm font-semibold text-gray-950">{progressLabels[job.progress.phase]}</p><p className="mt-1 text-xs text-gray-500">{job.progress.completedRequired} of {job.progress.totalRequired} required files · {job.progress.totalFiles} total files</p></div>

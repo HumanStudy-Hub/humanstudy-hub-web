@@ -17,6 +17,7 @@ export type PipelineJob = {
   contributorGithub?: string;
   osfUrl?: string;
   paperName: string;
+  paperUrl?: string;
   currentStage: number;
   status: JobStatus;
   message: string;
@@ -147,15 +148,42 @@ export async function listPackageFiles(id: string) {
   return files;
 }
 
+const workflowFile = "run-humanstudy-pipeline.yml";
+
+// createWorkflowDispatch returns 204 without telling us whether a run was queued,
+// so confirm one appeared. A silent miss leaves the job stuck on "queued" forever.
+async function dispatchStarted(after: Date) {
+  const api = octokit();
+  const target = splitRepo(pipelineRepo);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      const runs = await api.actions.listWorkflowRuns({
+        ...target,
+        workflow_id: workflowFile,
+        event: "workflow_dispatch",
+        per_page: 20,
+      });
+      if (runs.data.workflow_runs.some((run) => new Date(run.created_at) >= after)) return true;
+    } catch {
+      // Keep polling; a transient list failure is not proof the run is missing.
+    }
+  }
+  return false;
+}
+
 async function dispatch(job: PipelineJob) {
   const api = octokit();
   const target = splitRepo(pipelineRepo);
+  // GitHub matches runs by created_at at second precision, so allow for clock skew.
+  const after = new Date(Date.now() - 5000);
   await api.actions.createWorkflowDispatch({
     ...target,
-    workflow_id: "run-humanstudy-pipeline.yml",
+    workflow_id: workflowFile,
     ref: process.env.GITHUB_PIPELINE_REF || "main",
     inputs: { job_id: job.id, jobs_repo: jobsRepo },
   });
+  return dispatchStarted(after);
 }
 
 async function saveJob(job: PipelineJob, message: string) {
@@ -174,17 +202,62 @@ export async function readJob(id: string): Promise<PipelineJob> {
   return data;
 }
 
-export async function createJob(input: { paper: File; contributorName: string; contributorGithub?: string; osfUrl?: string }) {
+// The paper is already in Vercel Blob; the Actions runner downloads it from
+// paperUrl and commits it to the job branch.
+export async function createJob(input: { paperUrl: string; paperName: string; contributorName: string; contributorGithub?: string; osfUrl?: string }) {
   if (!input.contributorName.trim()) throw new Error("Contributor name is required.");
-  if (input.paper.size > 50 * 1024 * 1024 || !input.paper.name.toLowerCase().endsWith(".pdf")) throw new Error("Please upload a PDF up to 50 MB.");
+  if (!input.paperName.toLowerCase().endsWith(".pdf")) throw new Error("Please upload a PDF.");
+  let paperUrl: URL;
+  try {
+    paperUrl = new URL(input.paperUrl);
+  } catch {
+    throw new Error("The uploaded paper could not be located. Please try the upload again.");
+  }
+  if (paperUrl.protocol !== "https:" || !paperUrl.hostname.endsWith(".vercel-storage.com")) {
+    throw new Error("The uploaded paper could not be located. Please try the upload again.");
+  }
   const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
   const branch = `jobs/${id}`;
   await ensureBranch(branch);
   const now = new Date().toISOString();
-  const job: PipelineJob = { id, experimentId: draftId(input.paper.name, id), contributorName: input.contributorName.trim(), contributorGithub: input.contributorGithub?.trim() || undefined, osfUrl: input.osfUrl?.trim() || undefined, paperName: input.paper.name, currentStage: 1, status: "queued", message: "Waiting for the study-building agent", packageReady: false, createdAt: now, updatedAt: now, reviews: {} };
+  const job: PipelineJob = { id, experimentId: draftId(input.paperName, id), contributorName: input.contributorName.trim(), contributorGithub: input.contributorGithub?.trim() || undefined, osfUrl: input.osfUrl?.trim() || undefined, paperName: input.paperName, paperUrl: paperUrl.toString(), currentStage: 1, status: "queued", message: "Waiting for the study-building agent", packageReady: false, createdAt: now, updatedAt: now, reviews: {} };
   await putFile(branch, jobPath(id, "job.json"), JSON.stringify(job, null, 2) + "\n", `pipeline: create ${id}`);
-  await putFile(branch, jobPath(id, "input/paper.pdf"), Buffer.from(await input.paper.arrayBuffer()), `pipeline: upload paper ${id}`);
-  await dispatch(job);
+  if (await dispatch(job)) return job;
+  job.status = "failed";
+  job.message = "The study-building agent could not be started";
+  job.error = "GitHub Actions did not start a run for this job. Please try again.";
+  job.updatedAt = new Date().toISOString();
+  await saveJob(job, `pipeline: dispatch failed ${id}`);
+  return job;
+}
+
+async function hasPaper(id: string) {
+  try {
+    await getFile(`jobs/${safe(id)}`, jobPath(id, "input/paper.pdf"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// A run that no hosted runner ever picks up writes nothing back, so the job sits
+// on "queued" forever. Re-dispatching is the only way to recover it.
+export async function retryJob(id: string) {
+  const job = await readJob(id);
+  if (job.status === "review" || job.status === "complete") throw new Error("This job has already finished building.");
+  // Jobs created before direct uploads carry the PDF on the branch instead.
+  if (!job.paperUrl && !(await hasPaper(id))) throw new Error("The paper for this job is no longer available. Please start a new build.");
+  job.status = "queued";
+  job.message = "Waiting for the study-building agent";
+  job.error = undefined;
+  job.updatedAt = new Date().toISOString();
+  await saveJob(job, `pipeline: retry ${id}`);
+  if (await dispatch(job)) return job;
+  job.status = "failed";
+  job.message = "The study-building agent could not be started";
+  job.error = "GitHub Actions did not start a run for this job. Please try again.";
+  job.updatedAt = new Date().toISOString();
+  await saveJob(job, `pipeline: dispatch failed ${id}`);
   return job;
 }
 

@@ -33,6 +33,14 @@ npm run build
 
 ## Build Study backend
 
+The browser uploads the paper directly to Vercel Blob and posts only the
+resulting URL to the API, because Vercel rejects any function request body over
+4.5 MB and most journal PDFs are larger than that. Create a Blob store in the
+Vercel project and set `BLOB_READ_WRITE_TOKEN`; Build Study cannot accept
+uploads without it. The Actions runner downloads the paper from that URL and
+commits it to the job branch. Blobs are not deleted automatically, so prune the
+store periodically.
+
 The Node server creates a private job branch and starts a Claude Code agent
 through GitHub Actions. The agent uses the paper and optional open-material URL
 to build and validate the complete package, then pauses once for final
