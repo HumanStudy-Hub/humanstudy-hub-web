@@ -55,8 +55,10 @@ researcher review. Approval enables ZIP download and optional benchmark
 contribution. Set `GITHUB_TOKEN` to enable job storage, workflow dispatch, and
 publishing the final package as a contribution branch and pull request.
 
-`OPENROUTER_API_KEY` is not a Vercel environment variable. Store it as an
-Actions secret in `HumanStudy-Hub/HumanStudy-Bench`. The workflow also expects
+Build Study never calls OpenRouter from Vercel. Store `OPENROUTER_API_KEY` as an
+Actions secret in `HumanStudy-Hub/HumanStudy-Bench`; the one Vercel variable of
+the same name is used only by the playground's persona designer, described
+below. The workflow also expects
 the `HUMANSTUDY_PIPELINE_TOKEN` Actions secret and accepts an optional
 `OPENROUTER_MODEL` Actions variable, which defaults to `moonshotai/kimi-k3`.
 
@@ -79,6 +81,26 @@ holds ciphertext and the workflow drops it when the run ends. Set
 `PLAYGROUND_KEY_SECRET` here and as an Actions secret in HumanStudy-Bench with
 the same value — without it, the playground still runs on the shared key and
 only refuses researcher-supplied keys.
+
+## Persona groups
+
+A persona group describes *who* the agents in a run are. It is a population
+rather than a fixed cast: each segment carries a share of the participants and
+the ranges its members are drawn from, so one saved group fits a run of any size
+and any study. `lib/persona-groups.ts` mirrors `playground/personas.py` in
+HumanStudy-Bench, which does the sampling — the two validators and the
+largest-remainder split must stay in step, so the mix a researcher previews is
+the mix the run produces.
+
+The designer chat calls OpenRouter directly from the server and requires
+`OPENROUTER_API_KEY` here. It is the one part of the product that does, because
+a design conversation needs replies in seconds; everything that touches a study
+still runs in Actions. The model returns a whole group as JSON, which is
+validated before it reaches the editor, and every field stays editable by hand.
+Groups can be downloaded as JSON, loaded back, or contributed to the benchmark,
+which opens a pull request adding
+`playground/profiles/<study>-<contributor>-<n>.json` with the number rising each
+time the same contributor saves another.
 
 The production server only needs GitHub API access. Do not add PDF files,
 pipeline outputs, or tokens to the public web repository.

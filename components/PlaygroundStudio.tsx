@@ -2,7 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import PersonaDesigner from "@/components/PersonaDesigner";
 import PlaygroundCharts, { type PlaygroundChartSet } from "@/components/PlaygroundCharts";
+import type { PersonaGroup } from "@/lib/persona-groups";
+
+type CastMode = "simple" | "personas";
 
 const STORAGE_KEY = "humanstudy-hub-playground-run";
 // A dispatched run reports back within a minute or so. Longer than this and no
@@ -121,6 +125,8 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   const [temperature, setTemperature] = useState(1);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [castMode, setCastMode] = useState<CastMode>("simple");
+  const [personaGroup, setPersonaGroup] = useState<PersonaGroup | null>(null);
 
   const [run, setRun] = useState<Run | null>(null);
   const [charts, setCharts] = useState<PlaygroundChartSet | null>(null);
@@ -235,7 +241,8 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
           model: chosenModel,
           preset,
           systemPrompt: preset === "custom" ? systemPrompt : "",
-          demographics: { age, gender, background, persona },
+          demographics: castMode === "personas" ? {} : { age, gender, background, persona },
+          personaGroup: castMode === "personas" ? personaGroup : null,
           participantsPerScenario: participants,
           temperature,
           apiKey: apiKey.trim(),
@@ -376,12 +383,50 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                 ))}
               </div>
 
-              {preset === "custom" ? (
+              {preset === "custom" && (
                 <div className="mt-4">
                   <label className="block text-sm font-semibold text-gray-900" htmlFor="prompt">Your participant prompt</label>
-                  <textarea id="prompt" value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} rows={8} className="mt-2 w-full border border-gray-300 p-3 font-mono text-xs leading-5 outline-none focus:border-cyan-700" placeholder="You are a 34-year-old nurse taking part in a decision-making study…" />
-                  <p className="mt-1 text-xs text-gray-400">{systemPrompt.length}/6000 characters</p>
+                  <textarea id="prompt" value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} rows={8} className="mt-2 w-full border border-gray-300 p-3 font-mono text-xs leading-5 outline-none focus:border-cyan-700" placeholder="You are a {{age}}-year-old {{background}} taking part in a decision-making study…" />
+                  <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="text-xs text-gray-500">
+                      Write <code className="bg-gray-100 px-1 font-mono">{"{{age}}"}</code>, <code className="bg-gray-100 px-1 font-mono">{"{{gender}}"}</code>,{" "}
+                      <code className="bg-gray-100 px-1 font-mono">{"{{background}}"}</code>, or <code className="bg-gray-100 px-1 font-mono">{"{{persona}}"}</code> to
+                      fill in each agent&apos;s own details. Without a placeholder, every agent gets this same prompt.
+                    </p>
+                    <p className="text-xs text-gray-400">{systemPrompt.length}/6000</p>
+                  </div>
                 </div>
+              )}
+            </div>
+
+            <div className="mt-8 border-t border-gray-100 pt-6">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-950">Who the agents are</p>
+                  <p className="mt-1 text-sm text-gray-500">{participants} participants per condition. The study decides how many conditions it runs, so the total is set when the run starts.</p>
+                </div>
+                <div className="flex border border-gray-300">
+                  {[["simple", "One identity"], ["personas", "A mix of personas"]].map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setCastMode(id as CastMode)}
+                      className={`px-3 py-2 text-xs font-semibold ${castMode === id ? "bg-cyan-700 text-white" : "bg-white text-gray-600 hover:text-gray-900"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {castMode === "personas" ? (
+                <PersonaDesigner
+                  studyId={studyId}
+                  studyTitle={study?.title || studyId}
+                  participants={0}
+                  group={personaGroup}
+                  onChange={setPersonaGroup}
+                />
               ) : (
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2">
