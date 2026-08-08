@@ -62,7 +62,7 @@ export default function ContributeUploadForm() {
       try {
         // Upload straight to Vercel Blob; a function request body caps out at 4.5 MB.
         const blob = await upload(file.name, file, {
-          access: "public",
+          access: "private",
           handleUploadUrl: "/api/contribute/upload-url",
           multipart: file.size > 8 * 1024 * 1024,
           onUploadProgress: ({ percentage }) => setUploadPercent(percentage),
@@ -72,7 +72,7 @@ export default function ContributeUploadForm() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            fileUrl: blob.url,
+            filePathname: blob.pathname,
             fileName: file.name,
             contributor_github: contributorGithub.trim(),
             contributor_name: contributorName.trim(),
