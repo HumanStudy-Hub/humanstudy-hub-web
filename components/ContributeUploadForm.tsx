@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { upload } from "@vercel/blob/client";
 
 type Result = { success: true; pr_url: string } | { success: false; errors: string[] };
+
+const MAX_ZIP_BYTES = 50 * 1024 * 1024;
 
 export default function ContributeUploadForm() {
   const [file, setFile] = useState<File | null>(null);
@@ -12,6 +15,20 @@ export default function ContributeUploadForm() {
   const [dragActive, setDragActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
+
+  const chooseFile = useCallback((f: File) => {
+    if (!f.name.endsWith(".zip")) {
+      setResult({ success: false, errors: ["Please upload a .zip file."] });
+      return;
+    }
+    if (f.size > MAX_ZIP_BYTES) {
+      setResult({ success: false, errors: [`This zip is ${(f.size / 1024 / 1024).toFixed(1)} MB. The limit is 50 MB.`] });
+      return;
+    }
+    setFile(f);
+    setResult(null);
+  }, []);
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -24,19 +41,13 @@ export default function ContributeUploadForm() {
     e.stopPropagation();
     setDragActive(false);
     const f = e.dataTransfer.files?.[0];
-    if (f?.name.endsWith(".zip")) setFile(f);
-    else setResult({ success: false, errors: ["Please upload a .zip file."] });
-  }, []);
+    if (f) chooseFile(f);
+  }, [chooseFile]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f?.name.endsWith(".zip")) {
-      setFile(f);
-      setResult(null);
-    } else if (f) {
-      setResult({ success: false, errors: ["Please select a .zip file."] });
-    }
-  }, []);
+    if (f) chooseFile(f);
+  }, [chooseFile]);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -47,22 +58,34 @@ export default function ContributeUploadForm() {
       }
       setLoading(true);
       setResult(null);
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("contributor_github", contributorGithub.trim());
-      formData.append("contributor_name", contributorName.trim());
-      formData.append("contributor_institution", contributorInstitution.trim() || "Independent Researcher");
+      setUploadPercent(0);
       try {
+        // Upload straight to Vercel Blob; a function request body caps out at 4.5 MB.
+        const blob = await upload(file.name, file, {
+          access: "public",
+          handleUploadUrl: "/api/contribute/upload-url",
+          multipart: file.size > 8 * 1024 * 1024,
+          onUploadProgress: ({ percentage }) => setUploadPercent(percentage),
+        });
+        setUploadPercent(null);
         const res = await fetch("/api/contribute/upload", {
           method: "POST",
-          body: formData,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileUrl: blob.url,
+            fileName: file.name,
+            contributor_github: contributorGithub.trim(),
+            contributor_name: contributorName.trim(),
+            contributor_institution: contributorInstitution.trim() || "Independent Researcher",
+          }),
         });
         const data = await res.json();
         if (data.success) setResult({ success: true, pr_url: data.pr_url });
         else setResult({ success: false, errors: data.errors || [data.error] || ["Upload failed."] });
-      } catch {
-        setResult({ success: false, errors: ["Network error. Please try again."] });
+      } catch (caught) {
+        setResult({ success: false, errors: [caught instanceof Error ? caught.message : "Network error. Please try again."] });
       } finally {
+        setUploadPercent(null);
         setLoading(false);
       }
     },
@@ -114,15 +137,23 @@ export default function ContributeUploadForm() {
           <p className="text-sm font-medium text-gray-700">
             {file ? file.name : "Drag and drop your study .zip here, or click to choose"}
           </p>
-          <p className="text-xs text-gray-500 mt-1">Max 50MB. Zip should contain index.json, source/, scripts/, and README.md.</p>
+          <p className="text-xs text-gray-500 mt-1">
+            {file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "Max 50MB. Zip should contain a study_XXX directory with specification.json, metadata.json, and ground_truth.json."}
+          </p>
         </label>
       </div>
+      {uploadPercent !== null && (
+        <div>
+          <div className="flex items-center justify-between text-xs text-gray-600"><span>Uploading {file?.name}</span><span className="font-mono font-semibold text-cyan-700">{Math.round(uploadPercent)}%</span></div>
+          <div className="mt-2 h-2 overflow-hidden rounded bg-gray-100"><div className="h-full bg-cyan-600 transition-[width] duration-300" style={{ width: `${uploadPercent}%` }} /></div>
+        </div>
+      )}
       <button
         type="submit"
         disabled={!file || loading}
         className="w-full rounded-md bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {loading ? "Validating and creating PR…" : "Upload and create PR"}
+        {loading ? (uploadPercent !== null ? `Uploading ${Math.round(uploadPercent)}%` : "Validating and creating PR…") : "Upload and create PR"}
       </button>
       {result && (
         <div

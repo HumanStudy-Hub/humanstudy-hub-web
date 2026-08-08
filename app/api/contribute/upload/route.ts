@@ -135,20 +135,31 @@ function validateZip(entries: { name: string; data: Buffer }[]): ValidationResul
   return { ok: true, studyId, files: fileMap };
 }
 
+// The browser uploads the ZIP to Vercel Blob and posts only its URL here.
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get("file") as File | null;
-    const contributorGithub = normalizeGithub(String(formData.get("contributor_github") || ""));
-    const contributorName = String(formData.get("contributor_name") || "").trim();
-    const contributorInstitution = String(formData.get("contributor_institution") || "Independent Researcher").trim();
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json({ success: false, errors: ["No file provided."] }, { status: 400 });
-    }
-    if (!file.name.endsWith(".zip")) {
+    const body = await request.json();
+    const fileName = String(body.fileName || "");
+    const contributorGithub = normalizeGithub(String(body.contributor_github || ""));
+    const contributorName = String(body.contributor_name || "").trim();
+    const contributorInstitution = String(body.contributor_institution || "Independent Researcher").trim();
+    if (!fileName.endsWith(".zip")) {
       return NextResponse.json({ success: false, errors: ["File must be a .zip archive."] }, { status: 400 });
     }
-    const buf = Buffer.from(await file.arrayBuffer());
+    let fileUrl: URL;
+    try {
+      fileUrl = new URL(String(body.fileUrl || ""));
+    } catch {
+      return NextResponse.json({ success: false, errors: ["No file provided."] }, { status: 400 });
+    }
+    if (fileUrl.protocol !== "https:" || !fileUrl.hostname.endsWith(".vercel-storage.com")) {
+      return NextResponse.json({ success: false, errors: ["The uploaded zip could not be located. Please try again."] }, { status: 400 });
+    }
+    const download = await fetch(fileUrl);
+    if (!download.ok) {
+      return NextResponse.json({ success: false, errors: ["The uploaded zip could not be read. Please try again."] }, { status: 400 });
+    }
+    const buf = Buffer.from(await download.arrayBuffer());
     if (buf.length > MAX_ZIP_BYTES) {
       return NextResponse.json({ success: false, errors: ["Zip file exceeds 50MB limit."] }, { status: 400 });
     }
