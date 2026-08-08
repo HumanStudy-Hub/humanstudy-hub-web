@@ -66,7 +66,10 @@ const workflowFile = "run-playground.yml";
 // Kept in step with playground/settings.py; the runner enforces them again.
 export const SHARED_KEY_MAX_PER_SCENARIO = 10;
 export const OWN_KEY_MAX_PER_SCENARIO = 80;
-export const PROMPT_PRESETS = ["v1_empty", "v2_human", "v3_human_plus_demo", "v4_background", "custom"] as const;
+// v4_background is supported by the runner but not offered here: it reads
+// per-participant background files that no study ships yet, so it would silently
+// behave as plain demographics.
+export const PROMPT_PRESETS = ["v1_empty", "v2_human", "v3_human_plus_demo", "custom"] as const;
 
 function octokit() {
   if (!process.env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN is not configured.");
