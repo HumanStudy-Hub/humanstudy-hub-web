@@ -180,7 +180,7 @@ export default function PipelineStudio() {
     try {
       // Upload straight to Vercel Blob; a function request body caps out at 4.5 MB.
       const blob = await upload(paper.name, paper, {
-        access: "public",
+        access: "private",
         handleUploadUrl: "/api/pipeline/upload",
         contentType: "application/pdf",
         // Large papers upload in parallel parts, and failed parts are retried.
@@ -191,7 +191,7 @@ export default function PipelineStudio() {
       const response = await fetch("/api/pipeline/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paperUrl: blob.url, paperName: paper.name, osfUrl: osf, contributorName, contributorGithub: contributorId }),
+        body: JSON.stringify({ paperPathname: blob.pathname, paperName: paper.name, osfUrl: osf, contributorName, contributorGithub: contributorId }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not start conversion.");

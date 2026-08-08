@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { nextStudyId } from "@/lib/github-jobs";
+import { blobUpload, safePathname, signedBlobUrl } from "@/lib/blob-paper";
 
 const MAX_ZIP_BYTES = 50 * 1024 * 1024; // 50MB
 
@@ -146,16 +147,19 @@ export async function POST(request: NextRequest) {
     if (!fileName.endsWith(".zip")) {
       return NextResponse.json({ success: false, errors: ["File must be a .zip archive."] }, { status: 400 });
     }
-    let fileUrl: URL;
-    try {
-      fileUrl = new URL(String(body.fileUrl || ""));
-    } catch {
+    const pathname = safePathname(body.filePathname);
+    if (!pathname) {
       return NextResponse.json({ success: false, errors: ["No file provided."] }, { status: 400 });
     }
-    if (fileUrl.protocol !== "https:" || !fileUrl.hostname.endsWith(".vercel-storage.com")) {
+    const uploaded = await blobUpload(pathname);
+    if (!uploaded) {
       return NextResponse.json({ success: false, errors: ["The uploaded zip could not be located. Please try again."] }, { status: 400 });
     }
-    const download = await fetch(fileUrl);
+    if (uploaded.size > MAX_ZIP_BYTES) {
+      return NextResponse.json({ success: false, errors: ["Zip file exceeds 50MB limit."] }, { status: 400 });
+    }
+    // The store is private, so read it back through a short-lived signed link.
+    const download = await fetch(await signedBlobUrl(pathname));
     if (!download.ok) {
       return NextResponse.json({ success: false, errors: ["The uploaded zip could not be read. Please try again."] }, { status: 400 });
     }

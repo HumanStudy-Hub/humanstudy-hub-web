@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { Octokit } from "@octokit/rest";
+import { blobUpload, safePathname, signedBlobUrl } from "@/lib/blob-paper";
 
 export type JobStatus = "queued" | "running" | "review" | "complete" | "failed";
 export type PipelineProgress = {
@@ -17,6 +18,9 @@ export type PipelineJob = {
   contributorGithub?: string;
   osfUrl?: string;
   paperName: string;
+  // Durable location in the private Blob store; paperUrl is a signed link that
+  // expires, so a retry re-signs from this.
+  paperPathname?: string;
   paperUrl?: string;
   currentStage: number;
   status: JobStatus;
@@ -202,25 +206,20 @@ export async function readJob(id: string): Promise<PipelineJob> {
   return data;
 }
 
-// The paper is already in Vercel Blob; the Actions runner downloads it from
-// paperUrl and commits it to the job branch.
-export async function createJob(input: { paperUrl: string; paperName: string; contributorName: string; contributorGithub?: string; osfUrl?: string }) {
+// The paper is already in the private Blob store; the Actions runner downloads
+// it from the signed paperUrl and commits it to the job branch.
+export async function createJob(input: { paperPathname: string; paperName: string; contributorName: string; contributorGithub?: string; osfUrl?: string }) {
   if (!input.contributorName.trim()) throw new Error("Contributor name is required.");
   if (!input.paperName.toLowerCase().endsWith(".pdf")) throw new Error("Please upload a PDF.");
-  let paperUrl: URL;
-  try {
-    paperUrl = new URL(input.paperUrl);
-  } catch {
-    throw new Error("The uploaded paper could not be located. Please try the upload again.");
-  }
-  if (paperUrl.protocol !== "https:" || !paperUrl.hostname.endsWith(".vercel-storage.com")) {
+  const pathname = safePathname(input.paperPathname);
+  if (!pathname || !(await blobUpload(pathname))) {
     throw new Error("The uploaded paper could not be located. Please try the upload again.");
   }
   const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
   const branch = `jobs/${id}`;
   await ensureBranch(branch);
   const now = new Date().toISOString();
-  const job: PipelineJob = { id, experimentId: draftId(input.paperName, id), contributorName: input.contributorName.trim(), contributorGithub: input.contributorGithub?.trim() || undefined, osfUrl: input.osfUrl?.trim() || undefined, paperName: input.paperName, paperUrl: paperUrl.toString(), currentStage: 1, status: "queued", message: "Waiting for the study-building agent", packageReady: false, createdAt: now, updatedAt: now, reviews: {} };
+  const job: PipelineJob = { id, experimentId: draftId(input.paperName, id), contributorName: input.contributorName.trim(), contributorGithub: input.contributorGithub?.trim() || undefined, osfUrl: input.osfUrl?.trim() || undefined, paperName: input.paperName, paperPathname: pathname, paperUrl: await signedBlobUrl(pathname), currentStage: 1, status: "queued", message: "Waiting for the study-building agent", packageReady: false, createdAt: now, updatedAt: now, reviews: {} };
   await putFile(branch, jobPath(id, "job.json"), JSON.stringify(job, null, 2) + "\n", `pipeline: create ${id}`);
   if (await dispatch(job)) return job;
   job.status = "failed";
@@ -246,7 +245,11 @@ export async function retryJob(id: string) {
   const job = await readJob(id);
   if (job.status === "review" || job.status === "complete") throw new Error("This job has already finished building.");
   // Jobs created before direct uploads carry the PDF on the branch instead.
-  if (!job.paperUrl && !(await hasPaper(id))) throw new Error("The paper for this job is no longer available. Please start a new build.");
+  if (!job.paperPathname && !job.paperUrl && !(await hasPaper(id))) {
+    throw new Error("The paper for this job is no longer available. Please start a new build.");
+  }
+  // The stored link is only valid for a day, so a later retry needs a fresh one.
+  if (job.paperPathname) job.paperUrl = await signedBlobUrl(job.paperPathname);
   job.status = "queued";
   job.message = "Waiting for the study-building agent";
   job.error = undefined;
