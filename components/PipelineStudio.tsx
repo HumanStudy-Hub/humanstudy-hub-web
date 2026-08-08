@@ -35,21 +35,215 @@ type Job = {
 type ReviewFile = { path: string; content: string };
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
-function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; onChange: (value: JsonValue) => void; path?: string }) {
+const TECHNICAL_KEYS = new Set(["source_trace", "readiness", "coverage_ledger", "derivation_contract", "audit", "selection", "verification"]);
+
+function label(key: string) {
+  return key.replaceAll("_", " ");
+}
+
+function isPlaceholder(raw: string) {
+  return /^\s*(\[填写\]|tbd|unknown|not available|n\/a)?\s*$/i.test(raw);
+}
+
+// What the reviewer is actually here to do is fill in what the agent could not
+// determine, so every section reports how much of that it still holds.
+function needsInputCount(value: JsonValue): number {
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).reduce<number>((total, child) => total + needsInputCount(child as JsonValue), 0);
+  }
+  return isPlaceholder(value === null ? "" : String(value)) ? 1 : 0;
+}
+
+function LeafField({ value, onChange }: { value: JsonValue; onChange: (value: JsonValue) => void }) {
+  const raw = value === null ? "" : String(value);
+  const placeholder = isPlaceholder(raw);
+  const border = placeholder ? "border-amber-400 bg-amber-50/40" : "border-gray-300 bg-white";
+  const commit = (next: string) => onChange(typeof value === "number" ? (next === "" ? 0 : Number(next)) : typeof value === "boolean" ? next === "true" : next);
+  // Long prose in a single-line input is unreadable and unrepairable, and study
+  // material is full of it.
+  const long = raw.length > 80 || raw.includes("\n");
+  return (
+    <div className="min-w-0">
+      {long ? (
+        <textarea
+          value={raw}
+          onChange={(event) => commit(event.target.value)}
+          rows={Math.min(10, Math.max(3, raw.split("\n").length + Math.floor(raw.length / 90)))}
+          className={`w-full resize-y border px-3 py-2 text-sm leading-6 text-gray-800 outline-none focus:border-cyan-700 ${border}`}
+        />
+      ) : (
+        <input
+          value={raw}
+          onChange={(event) => commit(event.target.value)}
+          className={`w-full border px-3 py-2 text-sm text-gray-800 outline-none focus:border-cyan-700 ${border}`}
+        />
+      )}
+      {placeholder && <p className="mt-1 text-[11px] font-semibold text-amber-700">Needs researcher input</p>}
+    </div>
+  );
+}
+
+function JsonNode({ value, onChange, path = "", depth = 1 }: { value: JsonValue; onChange: (value: JsonValue) => void; path?: string; depth?: number }) {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-    const technicalKeys = new Set(["source_trace", "readiness", "coverage_ledger", "derivation_contract", "audit", "selection", "verification"]);
     const entries = Object.entries(value);
-    const visible = entries.filter(([key]) => !technicalKeys.has(key));
-    const technical = entries.filter(([key]) => technicalKeys.has(key));
-    const renderEntry = ([key, child]: [string, JsonValue]) => <div key={key} className="border-l border-gray-200 pl-3"><p className="mb-1 text-xs font-semibold text-gray-700">{key.replaceAll("_", " ")}</p><JsonEditor value={child} path={`${path}.${key}`} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} /></div>;
-    return <div className="space-y-3">{visible.map(renderEntry)}{technical.length > 0 && <details className="border-t border-gray-200 pt-2"><summary className="cursor-pointer text-xs font-semibold text-gray-500">Technical extraction details</summary><div className="mt-3 space-y-3">{technical.map(renderEntry)}</div></details>}</div>;
+    const visible = entries.filter(([key]) => !TECHNICAL_KEYS.has(key));
+    const technical = entries.filter(([key]) => TECHNICAL_KEYS.has(key));
+    const field = ([key, child]: [string, JsonValue]) => {
+      const missing = needsInputCount(child);
+      return (
+        <div key={key} className="min-w-0">
+          <p className="mb-1 flex items-center gap-2 text-xs font-semibold text-gray-700">
+            <span className="break-words">{label(key)}</span>
+            {missing > 0 && <span className="shrink-0 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{missing}</span>}
+          </p>
+          <div className={depth < 3 ? "border-l-2 border-gray-100 pl-3" : ""}>
+            <JsonNode value={child} path={`${path}.${key}`} depth={depth + 1} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} />
+          </div>
+        </div>
+      );
+    };
+    return (
+      <div className="min-w-0 space-y-3">
+        {visible.map(field)}
+        {technical.length > 0 && (
+          <details className="border-t border-gray-200 pt-2">
+            <summary className="cursor-pointer text-xs font-semibold text-gray-500">Technical extraction details</summary>
+            <div className="mt-3 space-y-3">{technical.map(field)}</div>
+          </details>
+        )}
+      </div>
+    );
   }
+
   if (Array.isArray(value)) {
-    return <div className="space-y-2">{value.map((child, index) => <div key={`${path}.${index}`} className="border-l border-gray-200 pl-3"><p className="mb-1 text-[11px] text-gray-500">Item {index + 1}</p><JsonEditor value={child} path={`${path}.${index}`} onChange={(next) => onChange(value.map((item, itemIndex) => itemIndex === index ? next : item))} /></div>)}</div>;
+    const update = (index: number, next: JsonValue) => onChange(value.map((item, at) => (at === index ? next : item)));
+    // A long list of expanded items is where the panel turns into a wall, so
+    // past a few they start folded with their own count of what is unfilled.
+    if (value.length > 3) {
+      return (
+        <div className="min-w-0 space-y-1">
+          {value.map((child, index) => {
+            const missing = needsInputCount(child);
+            return (
+              <details key={`${path}.${index}`} className="border border-gray-200 bg-white">
+                <summary className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50">
+                  <span className="truncate">Item {index + 1}</span>
+                  {missing > 0 && <span className="shrink-0 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{missing} to fill</span>}
+                </summary>
+                <div className="border-t border-gray-100 p-3">
+                  <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onChange={(next) => update(index, next)} />
+                </div>
+              </details>
+            );
+          })}
+        </div>
+      );
+    }
+    return (
+      <div className="min-w-0 space-y-2">
+        {value.map((child, index) => (
+          <div key={`${path}.${index}`} className="min-w-0">
+            <p className="mb-1 text-[11px] text-gray-500">Item {index + 1}</p>
+            <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onChange={(next) => update(index, next)} />
+          </div>
+        ))}
+      </div>
+    );
   }
-  const rawValue = value === null ? "" : String(value);
-  const placeholder = /^\s*(\[填写\]|tbd|unknown|not available|n\/a)?\s*$/i.test(rawValue);
-  return <div><input value={rawValue} onChange={(event) => { const raw = event.target.value; const next = typeof value === "number" ? (raw === "" ? 0 : Number(raw)) : typeof value === "boolean" ? raw === "true" : raw; onChange(next); }} className={`w-full border bg-white px-3 py-2 text-sm text-gray-800 outline-none focus:border-cyan-700 ${placeholder ? "border-amber-400" : "border-gray-300"}`} />{placeholder && <p className="mt-1 text-[11px] text-amber-700">Needs researcher input</p>}</div>;
+
+  return <LeafField value={value} onChange={onChange} />;
+}
+
+// The top level of a study file is its table of contents. Presenting it as
+// collapsible sections with a jump list is what keeps a large file navigable;
+// everything below is ordinary nesting.
+function JsonEditor({ value, onChange }: { value: JsonValue; onChange: (value: JsonValue) => void }) {
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return <JsonNode value={value} onChange={onChange} />;
+  }
+
+  const entries = Object.entries(value);
+  const visible = entries.filter(([key]) => !TECHNICAL_KEYS.has(key));
+  const technical = entries.filter(([key]) => TECHNICAL_KEYS.has(key));
+  const sectionId = (key: string) => `section-${key.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  const totalMissing = needsInputCount(value);
+
+  function jump(key: string) {
+    setCollapsed((current) => ({ ...current, [key]: false }));
+    // The section has to be open before it can be scrolled to.
+    window.requestAnimationFrame(() => document.getElementById(sectionId(key))?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
+
+  const section = ([key, child]: [string, JsonValue]) => {
+    const missing = needsInputCount(child);
+    const isOpen = !collapsed[key];
+    return (
+      <section key={key} id={sectionId(key)} className="scroll-mt-2 border border-gray-200 bg-white">
+        <button
+          type="button"
+          onClick={() => setCollapsed((current) => ({ ...current, [key]: isOpen }))}
+          className="flex w-full items-center justify-between gap-3 bg-gray-50 px-4 py-3 text-left hover:bg-gray-100"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className={`shrink-0 text-gray-400 transition-transform ${isOpen ? "rotate-90" : ""}`}>›</span>
+            <span className="truncate text-sm font-semibold text-gray-900">{label(key)}</span>
+          </span>
+          {missing > 0 && <span className="shrink-0 bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">{missing} to fill</span>}
+        </button>
+        {isOpen && (
+          <div className="min-w-0 border-t border-gray-100 p-4">
+            <JsonNode value={child} path={key} depth={1} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} />
+          </div>
+        )}
+      </section>
+    );
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="border border-gray-200 bg-white p-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-[11px] font-bold uppercase text-gray-500">Sections in this file</p>
+          <div className="flex items-center gap-3">
+            {totalMissing > 0 && <span className="text-[11px] font-semibold text-amber-700">{totalMissing} field{totalMissing === 1 ? "" : "s"} still need input</span>}
+            <button type="button" onClick={() => setCollapsed(Object.fromEntries(visible.map(([key]) => [key, true])))} className="text-[11px] font-semibold text-gray-500 hover:text-gray-900">Collapse all</button>
+            <button type="button" onClick={() => setCollapsed({})} className="text-[11px] font-semibold text-gray-500 hover:text-gray-900">Expand all</button>
+          </div>
+        </div>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {visible.map(([key, child]) => {
+            const missing = needsInputCount(child);
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => jump(key)}
+                className={`border px-2 py-1 text-[11px] font-semibold ${missing > 0 ? "border-amber-300 bg-amber-50 text-amber-900" : "border-gray-200 bg-white text-gray-600 hover:border-cyan-300"}`}
+              >
+                {label(key)}{missing > 0 ? ` · ${missing}` : ""}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {visible.map(section)}
+
+      {technical.length > 0 && (
+        <details className="border border-gray-200 bg-white">
+          <summary className="cursor-pointer bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-500">Technical extraction details</summary>
+          <div className="space-y-3 border-t border-gray-100 p-4">{technical.map(([key, child]) => (
+            <div key={key} className="min-w-0">
+              <p className="mb-1 text-xs font-semibold text-gray-700">{label(key)}</p>
+              <JsonNode value={child} path={key} depth={2} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} />
+            </div>
+          ))}</div>
+        </details>
+      )}
+    </div>
+  );
 }
 
 function fileGuide(path: string) {
@@ -425,18 +619,34 @@ export default function PipelineStudio() {
                   <p className="mt-1 text-sm text-gray-500">Choose a file to inspect. Edit only values that are missing or incorrect, then save before approving.</p>
                   <div className="mt-3 border-l-2 border-cyan-700 bg-cyan-50 p-3 text-xs leading-5 text-cyan-950">Start with the study overview, materials, task definition, and missing-information checklist. Supporting evidence and technical records are available under Additional files.</div>
                 </div>
-                {reviewFiles.length === 0 ? <p className="border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">Loading generated files...</p> : <div className="grid gap-4 lg:grid-cols-[190px_minmax(0,1fr)]">
+                {reviewFiles.length === 0 ? <p className="border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">Loading generated files...</p> : <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
                   <div className="border border-gray-200 bg-gray-50 p-2">
                     {(() => {
                       const priorityPaths = ["/study.json", "/materials/materials.json", "/task/task.json", "/audit/missing_information.json", "/audit/agent_report.md"];
                       const priority = reviewFiles.filter((file) => priorityPaths.some((suffix) => file.path.endsWith(suffix)));
                       const additional = reviewFiles.filter((file) => !priority.includes(file));
-                      const fileButton = (file: ReviewFile) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); setEditedJson(file.path.endsWith(".json") ? JSON.parse(file.content) : null); setSaved(true); }} className={`block w-full border-l-2 px-3 py-2 text-left ${selectedFile === file.path ? "border-cyan-700 bg-white text-cyan-800" : "border-transparent text-gray-600 hover:bg-white"}`}><span className="block break-all font-mono text-xs font-semibold">{file.path}</span><span className="mt-1 block text-[11px] leading-4 text-gray-500">{fileGuide(file.path)}</span></button>;
+                      // What a file contains is what a reviewer is choosing between;
+                      // its path only matters once they need to find it on disk.
+                      const fileButton = (file: ReviewFile) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); setEditedJson(file.path.endsWith(".json") ? JSON.parse(file.content) : null); setSaved(true); }} className={`block w-full border-l-2 px-3 py-2 text-left ${selectedFile === file.path ? "border-cyan-700 bg-white" : "border-transparent hover:bg-white"}`}><span className={`block text-xs font-semibold leading-5 ${selectedFile === file.path ? "text-cyan-800" : "text-gray-800"}`}>{fileGuide(file.path)}</span><span className="mt-1 block break-all font-mono text-[10px] leading-4 text-gray-400">{file.path.split("/").slice(1).join("/") || file.path}</span></button>;
                       return <><p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wide text-cyan-800">Review first</p>{priority.map(fileButton)}<details className="mt-2 border-t border-gray-200 pt-2"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-gray-600">Additional files ({additional.length})</summary>{additional.map(fileButton)}</details></>;
                     })()}
                   </div>
                   <div className="min-w-0 border border-gray-200">
-                    {selectedFile ? <><div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-2"><div><span className="font-mono text-xs font-semibold text-gray-700">{selectedFile}</span>{!saved && <span className="ml-3 text-xs text-amber-700">Unsaved changes</span>}</div><button disabled={busy || saved} onClick={saveFile} className="h-8 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : saved ? "Saved" : "Save changes"}</button></div>{selectedFile.endsWith(".json") && editedJson !== null ? <div className="max-h-[34rem] space-y-4 overflow-auto p-4"><JsonEditor value={editedJson} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[28rem] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}</> : <p className="p-6 text-sm text-gray-500">Select a file to inspect and edit.</p>}
+                    {selectedFile ? <>
+                      {/* min-w-0 and a truncated path are what stop a long file
+                          name from pushing the save button out of the header. */}
+                      <div className="flex items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-gray-800">{fileGuide(selectedFile)}</p>
+                          <p className="truncate font-mono text-[10px] text-gray-400" title={selectedFile}>{selectedFile}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-3">
+                          {!saved && <span className="text-xs text-amber-700">Unsaved changes</span>}
+                          <button disabled={busy || saved} onClick={saveFile} className="h-8 shrink-0 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : saved ? "Saved" : "Save changes"}</button>
+                        </div>
+                      </div>
+                      {selectedFile.endsWith(".json") && editedJson !== null ? <div className="max-h-[34rem] min-w-0 overflow-auto bg-gray-50 p-4"><JsonEditor value={editedJson} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[28rem] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}
+                    </> : <p className="p-6 text-sm text-gray-500">Select a file to inspect and edit.</p>}
                   </div>
                 </div>}
               </div>
