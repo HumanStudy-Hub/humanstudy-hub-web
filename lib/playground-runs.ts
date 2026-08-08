@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { normaliseGroup, type PersonaGroup } from "@/lib/persona-groups";
 import { Octokit } from "@octokit/rest";
 
 export type PlaygroundStatus = "queued" | "running" | "analysing" | "complete" | "failed";
@@ -32,6 +33,7 @@ export type PlaygroundRun = {
   preset: string;
   systemPrompt?: string;
   demographics?: Record<string, string | number>;
+  personaGroup?: PersonaGroup;
   participantsPerScenario: number;
   temperature: number;
   seed: number;
@@ -204,6 +206,7 @@ export type CreateRunInput = {
   preset: string;
   systemPrompt?: string;
   demographics?: Record<string, string | number>;
+  personaGroup?: unknown;
   participantsPerScenario: number;
   temperature?: number;
   seed?: number;
@@ -247,13 +250,17 @@ function validate(input: CreateRunInput) {
   const limit = apiKey ? OWN_KEY_MAX_PER_SCENARIO : SHARED_KEY_MAX_PER_SCENARIO;
   const requested = Number(input.participantsPerScenario) || 8;
   if (!Number.isFinite(requested) || requested < 1) throw new Error("Choose how many participants run each condition.");
+  // A persona group replaces the study's own participant sampling, so it is
+  // validated here rather than discovered to be unusable on the runner.
+  const personaGroup = input.personaGroup ? normaliseGroup(input.personaGroup) : undefined;
   return {
     studyId,
     model,
     preset,
     systemPrompt,
     apiKey,
-    demographics: cleanDemographics(input.demographics),
+    demographics: personaGroup ? undefined : cleanDemographics(input.demographics),
+    personaGroup,
     participantsPerScenario: Math.min(Math.floor(requested), limit),
     temperature: Math.min(2, Math.max(0, Number(input.temperature ?? 1))),
     seed: Math.floor(Number(input.seed ?? 42)) || 42,
@@ -273,6 +280,7 @@ export async function createRun(input: CreateRunInput) {
     preset: checked.preset,
     systemPrompt: checked.systemPrompt || undefined,
     demographics: checked.demographics,
+    personaGroup: checked.personaGroup,
     participantsPerScenario: checked.participantsPerScenario,
     temperature: checked.temperature,
     seed: checked.seed,

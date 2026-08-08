@@ -12,6 +12,7 @@ export async function POST(request: Request) {
       preset: String(body.preset || "v3_human_plus_demo"),
       systemPrompt: String(body.systemPrompt || ""),
       demographics: body.demographics,
+      personaGroup: body.personaGroup ?? undefined,
       participantsPerScenario: Number(body.participantsPerScenario) || 8,
       temperature: Number(body.temperature ?? 1),
       seed: Number(body.seed ?? 42),
