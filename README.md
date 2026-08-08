@@ -37,9 +37,15 @@ The browser uploads the paper directly to Vercel Blob and posts only the
 resulting URL to the API, because Vercel rejects any function request body over
 4.5 MB and most journal PDFs are larger than that. Create a Blob store in the
 Vercel project and set `BLOB_READ_WRITE_TOKEN`; Build Study cannot accept
-uploads without it. The Actions runner downloads the paper from that URL and
-commits it to the job branch. Blobs are not deleted automatically, so prune the
-store periodically.
+uploads without it. The store uses private access, so the Actions runner
+downloads the paper through a signed link recorded in `job.json` and commits it
+to the job branch.
+
+Blob is staging rather than storage: once the runner commits the paper, the
+branch holds the durable copy. A daily cron calls `/api/blob/cleanup` to delete
+anything older than two days, which also collects uploads that never became
+jobs. Set `CRON_SECRET` in the Vercel project — the route refuses to run without
+it, since it would otherwise let anyone empty the store.
 
 The Node server creates a private job branch and starts a Claude Code agent
 through GitHub Actions. The agent uses the paper and optional open-material URL
