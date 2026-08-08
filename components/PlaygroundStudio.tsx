@@ -136,6 +136,19 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   const chosenModel = model === "custom" ? customModel.trim() : model;
   const study = useMemo(() => studies.find((entry) => entry.study_id === studyId), [studies, studyId]);
 
+  // Any identity field that is filled in is applied to every agent, so the run
+  // stops sampling participants and becomes one person repeated.
+  const identitySummary = useMemo(() => {
+    const parts = [
+      age.trim() && `${age.trim()} years old`,
+      gender.trim(),
+      background.trim(),
+      persona.trim(),
+    ].filter(Boolean);
+    return parts.join(", ");
+  }, [age, gender, background, persona]);
+  const sameIdentity = identitySummary.length > 0;
+
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("run");
     const saved = requested || window.localStorage.getItem(STORAGE_KEY);
@@ -373,7 +386,31 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2">
                     <p className="text-sm font-semibold text-gray-900">Who the agent should be <span className="font-normal text-gray-400">optional</span></p>
-                    <p className="mt-1 text-xs text-gray-500">Leave blank to use the demographics the paper recruited for. Anything you set here replaces it for every participant.</p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      One identity, applied to every agent in the run. Leave the fields blank and each agent instead
+                      gets its own age and gender, drawn the way the paper recruited.
+                    </p>
+                    <div className={`mt-3 border-l-2 p-3 text-xs leading-5 ${sameIdentity ? "border-amber-500 bg-amber-50 text-amber-950" : "border-cyan-700 bg-cyan-50 text-cyan-950"}`}>
+                      {sameIdentity ? (
+                        <>
+                          <span className="font-semibold">Every agent will be the same person</span> — {identitySummary}. Your
+                          {" "}{participants} agents per condition differ only in what the model happens to answer.
+                          {temperature <= 0.2 && (
+                            <span className="mt-1 block font-semibold">
+                              At temperature {temperature.toFixed(1)} they will also answer near-identically, which leaves
+                              too little variation between participants for the study&apos;s statistical tests. Raise the
+                              temperature, or leave these fields blank.
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-semibold">Each agent is a different person</span> — age and gender are
+                          sampled per agent from the study&apos;s recruitment criteria. This is how the benchmark itself
+                          runs, so it is the right choice for asking whether a model reproduces the published effect.
+                        </>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-700" htmlFor="age">Age</label>
