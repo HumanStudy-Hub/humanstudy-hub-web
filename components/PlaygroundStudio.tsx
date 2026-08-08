@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import PersonaDesigner from "@/components/PersonaDesigner";
 import PlaygroundCharts, { type PlaygroundChartSet } from "@/components/PlaygroundCharts";
+import StudyPicker from "@/components/StudyPicker";
 import type { PersonaGroup } from "@/lib/persona-groups";
 
 type CastMode = "simple" | "personas";
@@ -322,19 +323,20 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
             <div className="mt-5 grid gap-5 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <label className="block text-sm font-semibold text-gray-900" htmlFor="study">Study</label>
-                <select id="study" value={studyId} onChange={(event) => setStudyId(event.target.value)} className="mt-2 h-10 w-full border border-gray-300 bg-white px-3 text-sm outline-none focus:border-cyan-700">
-                  {studies.map((entry) => (
-                    <option key={entry.study_id} value={entry.study_id}>
-                      {entry.study_id} — {entry.title.length > 80 ? `${entry.title.slice(0, 80)}…` : entry.title}
-                    </option>
-                  ))}
-                </select>
-                {study && (
-                  <p className="mt-2 text-xs text-gray-500">
-                    <Link href={`/studies/${study.study_id}`} className="font-semibold text-cyan-700 hover:underline">Open the study record</Link>
-                    {study.year ? ` · published ${study.year}` : ""}
-                  </p>
-                )}
+                <div className="mt-2">
+                  <StudyPicker studies={studies} value={studyId} onChange={setStudyId} />
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  {study ? (
+                    <>
+                      <Link href={`/studies/${study.study_id}`} className="font-semibold text-cyan-700 hover:underline">Open the study record</Link>
+                      {study.year ? ` · published ${study.year}` : ""}
+                      {` · ${studies.length} studies in the catalog`}
+                    </>
+                  ) : (
+                    <>Not in the catalog. The run will fail if <span className="font-mono">{studyId}</span> is not a study in the benchmark.</>
+                  )}
+                </p>
               </div>
 
               <div>
