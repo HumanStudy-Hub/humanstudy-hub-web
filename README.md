@@ -6,6 +6,7 @@ Private Next.js application for HumanStudy-Hub.
 
 - Dataset catalog for the initial test suite and community studies
 - Human-study builder with PDF/OSF intake and human review
+- Playground for running a model through a study and comparing it to the people
 - HumanStudy-Bench agent evaluations and leaderboard
 - Research projects, partners, and sponsorship
 
@@ -58,6 +59,26 @@ publishing the final package as a contribution branch and pull request.
 Actions secret in `HumanStudy-Hub/HumanStudy-Bench`. The workflow also expects
 the `HUMANSTUDY_PIPELINE_TOKEN` Actions secret and accepts an optional
 `OPENROUTER_MODEL` Actions variable, which defaults to `moonshotai/kimi-k3`.
+
+## Playground backend
+
+`/playground` dispatches `run-playground.yml` in HumanStudy-Bench the same way
+Build Study dispatches its workflow. Run state, progress, and results live on a
+`runs/<id>` branch of the private jobs repository, and the page polls
+`/api/playground/runs/<id>`. Nothing about a run executes inside Vercel.
+
+The runner replays the study with the chosen model through OpenRouter, scores it
+with the study's own evaluator, and then has Claude Code chart and interpret the
+result. Charts are validated on the runner before they are stored, and a run
+that produces no usable chart set falls back to deterministic charts.
+
+Runs use the `OPENROUTER_API_KEY` Actions secret with a small participant cap. A
+researcher can paste their own OpenRouter key to run at full size; the key is
+sealed with AES-256-GCM before it leaves the server, so the jobs repository only
+holds ciphertext and the workflow drops it when the run ends. Set
+`PLAYGROUND_KEY_SECRET` here and as an Actions secret in HumanStudy-Bench with
+the same value — without it, the playground still runs on the shared key and
+only refuses researcher-supplied keys.
 
 The production server only needs GitHub API access. Do not add PDF files,
 pipeline outputs, or tokens to the public web repository.
