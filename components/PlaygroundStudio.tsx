@@ -78,7 +78,6 @@ const PRESETS = [
   { id: "v1_empty", label: "No framing", note: "The model receives the task with no participant instruction at all." },
   { id: "v2_human", label: "Human participant", note: "“You are participating in a psychology experiment as a human participant.”" },
   { id: "v3_human_plus_demo", label: "Human + demographics", note: "Adds the age, gender, and background of the person the agent is playing." },
-  { id: "v4_background", label: "Generated background", note: "Uses a fuller life-history background written for this study." },
   { id: "custom", label: "Write your own", note: "Design the participant prompt yourself." },
 ];
 
