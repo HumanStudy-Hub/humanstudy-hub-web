@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import PersonaDesigner from "@/components/PersonaDesigner";
 import PlaygroundCharts, { type PlaygroundChartSet } from "@/components/PlaygroundCharts";
-import StudyPicker from "@/components/StudyPicker";
+import SearchSelect, { type SelectOption } from "@/components/SearchSelect";
 import type { PersonaGroup } from "@/lib/persona-groups";
 
 // "paper" samples each agent from the study's own recruitment criteria, which
@@ -70,34 +70,43 @@ type TestRow = {
 type Analysis = { summary: Summary; tests: TestRow[] };
 type Transcript = Array<{ participantId: number; profile: Record<string, string | number>; prompt: string | null; response: string | null }>;
 
-const MODELS = [
-  { id: "openai/gpt-4o-mini", label: "GPT-4o mini", note: "Fast and inexpensive" },
-  { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5", note: "Strong instruction following" },
-  { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash", note: "Fast, low cost" },
-  { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B", note: "Open weights" },
+const MODELS: SelectOption[] = [
+  { id: "openai/gpt-4o-mini", label: "GPT-4o mini", note: "fast, inexpensive" },
+  { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5", note: "strong instruction following" },
+  { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash", note: "fast, low cost" },
+  { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B", note: "open weights" },
+  { id: "openai/gpt-4o", label: "GPT-4o", note: "" },
+  { id: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5", note: "" },
+  { id: "deepseek/deepseek-chat", label: "DeepSeek Chat", note: "open weights" },
+  { id: "qwen/qwen-2.5-72b-instruct", label: "Qwen 2.5 72B", note: "open weights" },
 ];
 
-// Each preset is shown as the prompt it actually sends, because that is what a
-// researcher is choosing between. usesIdentity marks the ones where a
-// participant's age, gender, or persona reaches the prompt at all.
+// OpenRouter ids are always provider/model, so anything of that shape is a model
+// this run can use even when it is not one of the listed ones.
+const OPENROUTER_ID = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._:-]+$/;
+
+// The grey line on a card explains the choice; the prompt itself sits behind an
+// expander so all four cards stay the same size.
 const PRESETS = [
   {
     id: "v1_empty",
     label: "No framing",
     usesIdentity: false,
+    note: "No system prompt. The model gets only the study's task.",
     prompt: "",
-    empty: "No system prompt at all. The model receives only the study's task.",
   },
   {
     id: "v2_human",
     label: "Human participant",
     usesIdentity: false,
+    note: "Told it is a human participant, nothing more.",
     prompt: "You are participating in a psychology experiment as a human participant.",
   },
   {
     id: "v3_human_plus_demo",
     label: "Demographics",
     usesIdentity: true,
+    note: "Told who it is: age, gender, background.",
     prompt: `You are participating in a psychology experiment as a human participant.
 
 YOUR IDENTITY:
@@ -112,8 +121,8 @@ Be concise. Do not add extra explanations unless explicitly asked.`,
     id: "custom",
     label: "Write your own",
     usesIdentity: true,
+    note: "Any prompt, with or without each agent's details.",
     prompt: "",
-    empty: "Write the prompt yourself, with or without each agent's own details.",
   },
 ];
 
@@ -149,7 +158,6 @@ function Verdict({ row }: { row: TestRow }) {
 export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }) {
   const [studyId, setStudyId] = useState(studies[0]?.study_id || "study_001");
   const [model, setModel] = useState(MODELS[0].id);
-  const [customModel, setCustomModel] = useState("");
   const [preset, setPreset] = useState("v3_human_plus_demo");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [age, setAge] = useState("");
@@ -162,6 +170,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   const [showKey, setShowKey] = useState(false);
   const [castMode, setCastMode] = useState<CastMode>("paper");
   const [personaGroup, setPersonaGroup] = useState<PersonaGroup | null>(null);
+  const [shownPrompt, setShownPrompt] = useState("");
 
   const [run, setRun] = useState<Run | null>(null);
   const [charts, setCharts] = useState<PlaygroundChartSet | null>(null);
@@ -175,8 +184,8 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
 
   const maxParticipants = apiKey.trim() ? 80 : 10;
   const identityReachesPrompt = PRESETS.find((entry) => entry.id === preset)?.usesIdentity ?? true;
-  const chosenModel = model === "custom" ? customModel.trim() : model;
   const study = useMemo(() => studies.find((entry) => entry.study_id === studyId), [studies, studyId]);
+  const studyOptions = useMemo<SelectOption[]>(() => studies.map((entry) => ({ id: entry.study_id, label: entry.title })), [studies]);
 
   // Any identity field that is filled in is applied to every agent, so the run
   // stops sampling participants and becomes one person repeated.
@@ -274,7 +283,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           studyId,
-          model: chosenModel,
+          model: model.trim(),
           preset,
           systemPrompt: preset === "custom" ? systemPrompt : "",
           demographics: identityReachesPrompt && castMode === "simple" ? { age, gender, background, persona } : {},
@@ -339,9 +348,8 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
           <p className="text-xs font-semibold uppercase text-cyan-700">Playground</p>
           <h1 className="mt-3 max-w-3xl font-serif text-4xl font-bold text-gray-950">Run your AI agent on a human study</h1>
           <p className="mt-3 max-w-2xl text-base leading-7 text-gray-600">
-            Pick a study, choose a model, and design the prompt your agent takes into the experiment. The run is scored
-            against the paper&apos;s published findings, and the results show where the agent behaved like the original
-            participants and where it did not.
+            Pick a study, a model, and the prompt your agent takes in. The run is scored against the paper&apos;s
+            published findings, so you can see where the agent matched real participants and where it did not.
           </p>
         </div>
       </header>
@@ -353,14 +361,26 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
           <section className="border border-gray-200 bg-white p-6 shadow-sm">
             <div className="border-b border-gray-100 pb-5">
               <p className="text-sm font-semibold text-gray-950">Experiment setup</p>
-              <p className="mt-1 text-sm text-gray-500">Everything except the prompt matches how the benchmark runs this study.</p>
+              <p className="mt-1 text-sm text-gray-500">Everything but the prompt matches how the benchmark runs this study.</p>
             </div>
 
             <div className="mt-5 grid gap-5 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <label className="block text-sm font-semibold text-gray-900" htmlFor="study">Study</label>
                 <div className="mt-2">
-                  <StudyPicker studies={studies} value={studyId} onChange={setStudyId} />
+                  <SearchSelect
+                    id="study"
+                    options={studyOptions}
+                    value={studyId}
+                    onChange={setStudyId}
+                    placeholder="Type a study id or title"
+                    display={(option, raw) => (option ? `${option.id} — ${option.label}` : raw)}
+                    customEntry={(query, options) => {
+                      if (!query || !/^[a-zA-Z0-9-]+_[a-zA-Z0-9_-]+$/.test(query)) return null;
+                      if (options.some((option) => option.id.toLowerCase().startsWith(query.toLowerCase()))) return null;
+                      return { id: query, hint: "Not in the catalog. A newly merged study can run before it is indexed." };
+                    }}
+                  />
                 </div>
                 <p className="mt-2 text-xs text-gray-500">
                   {study ? (
@@ -377,53 +397,61 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
 
               <div>
                 <label className="block text-sm font-semibold text-gray-900" htmlFor="model">Base model</label>
-                <select id="model" value={model} onChange={(event) => setModel(event.target.value)} className="mt-2 h-10 w-full border border-gray-300 bg-white px-3 text-sm outline-none focus:border-cyan-700">
-                  {MODELS.map((entry) => (
-                    <option key={entry.id} value={entry.id}>{entry.label}</option>
-                  ))}
-                  <option value="custom">Another OpenRouter model…</option>
-                </select>
-                <p className="mt-2 text-xs text-gray-500">{model === "custom" ? "Any model id OpenRouter serves." : MODELS.find((entry) => entry.id === model)?.note}</p>
-                {model === "custom" && (
-                  <input value={customModel} onChange={(event) => setCustomModel(event.target.value)} placeholder="provider/model-name" className="mt-2 h-10 w-full border border-gray-300 px-3 font-mono text-sm outline-none focus:border-cyan-700" />
-                )}
+                <div className="mt-2">
+                  <SearchSelect
+                    id="model"
+                    options={MODELS}
+                    value={model}
+                    onChange={setModel}
+                    placeholder="Type a model name or id"
+                    display={(option, raw) => (option ? option.label : raw)}
+                    customEntry={(query, options) => {
+                      if (!OPENROUTER_ID.test(query) || options.some((option) => option.id === query)) return null;
+                      return { id: query, hint: "Use this OpenRouter model id." };
+                    }}
+                  />
+                </div>
+                <p className="mt-2 font-mono text-xs text-gray-400">{model}</p>
               </div>
 
               <div>
                 <label className="block text-sm font-semibold text-gray-900" htmlFor="participants">Participants per condition</label>
                 <input id="participants" type="number" min={1} max={maxParticipants} value={participants} onChange={(event) => setParticipants(Math.max(1, Math.min(maxParticipants, Number(event.target.value) || 1)))} className="mt-2 h-10 w-full border border-gray-300 px-3 text-sm outline-none focus:border-cyan-700" />
-                <p className="mt-2 text-xs text-gray-500">Up to {maxParticipants} on {apiKey.trim() ? "your own key" : "the shared key"}. More participants make small effects detectable.</p>
+                <p className="mt-2 text-xs text-gray-500">Up to {maxParticipants} on {apiKey.trim() ? "your key" : "the shared key"}. More participants detect smaller effects.</p>
               </div>
 
               <div>
                 <label className="block text-sm font-semibold text-gray-900" htmlFor="temperature">Temperature</label>
                 <input id="temperature" type="range" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} className="mt-4 w-full accent-cyan-700" />
-                <p className="mt-1 text-xs text-gray-500">{temperature.toFixed(1)} — response variability across participants.</p>
+                <p className="mt-1 text-xs text-gray-500">{temperature.toFixed(1)} — how much answers vary.</p>
               </div>
             </div>
 
             <div className="mt-8 border-t border-gray-100 pt-6">
               <p className="text-sm font-semibold text-gray-950">Participant prompt</p>
-              <p className="mt-1 text-sm text-gray-500">What the agent is told it is before the study begins. This is the design choice that changes results the most.</p>
+              <p className="mt-1 text-sm text-gray-500">What the agent is told before the study starts. This changes results more than anything else here.</p>
 
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 {PRESETS.map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    onClick={() => choosePreset(entry.id)}
-                    className={`border p-3 text-left ${preset === entry.id ? "border-cyan-700 bg-cyan-50" : "border-gray-200 bg-white hover:border-cyan-300"}`}
-                  >
-                    <span className="flex items-baseline justify-between gap-2">
-                      <span className="text-sm font-semibold text-gray-900">{entry.label}</span>
-                      {!entry.usesIdentity && <span className="shrink-0 text-[10px] font-semibold uppercase text-gray-400">same for every agent</span>}
-                    </span>
-                    {entry.prompt ? (
-                      <span className="mt-2 block whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-gray-600">{entry.prompt}</span>
-                    ) : (
-                      <span className="mt-2 block text-xs leading-5 text-gray-500">{entry.empty}</span>
+                  <div key={entry.id} className={`flex flex-col border ${preset === entry.id ? "border-cyan-700 bg-cyan-50" : "border-gray-200 bg-white"}`}>
+                    <button type="button" onClick={() => choosePreset(entry.id)} className="flex-1 p-3 text-left">
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="text-sm font-semibold text-gray-900">{entry.label}</span>
+                        {!entry.usesIdentity && <span className="shrink-0 text-[10px] font-semibold uppercase text-gray-400">same for all</span>}
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-gray-500">{entry.note}</span>
+                    </button>
+                    {entry.prompt && (
+                      <div className="px-3 pb-3">
+                        <button type="button" onClick={() => setShownPrompt((current) => (current === entry.id ? "" : entry.id))} className="text-[11px] font-semibold text-cyan-700 hover:underline">
+                          {shownPrompt === entry.id ? "Hide prompt" : "See prompt"}
+                        </button>
+                        {shownPrompt === entry.id && (
+                          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words bg-white/70 p-2 font-mono text-[11px] leading-5 text-gray-600">{entry.prompt}</pre>
+                        )}
+                      </div>
                     )}
-                  </button>
+                  </div>
                 ))}
               </div>
 
@@ -433,9 +461,9 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                   <textarea id="prompt" value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} rows={8} className="mt-2 w-full border border-gray-300 p-3 font-mono text-xs leading-5 outline-none focus:border-cyan-700" placeholder="You are a {{age}}-year-old {{background}} taking part in a decision-making study…" />
                   <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
                     <p className="text-xs text-gray-500">
-                      Write <code className="bg-gray-100 px-1 font-mono">{"{{age}}"}</code>, <code className="bg-gray-100 px-1 font-mono">{"{{gender}}"}</code>,{" "}
-                      <code className="bg-gray-100 px-1 font-mono">{"{{background}}"}</code>, or <code className="bg-gray-100 px-1 font-mono">{"{{persona}}"}</code> to
-                      fill in each agent&apos;s own details. Without a placeholder, every agent gets this same prompt.
+                      <code className="bg-gray-100 px-1 font-mono">{"{{age}}"}</code>, <code className="bg-gray-100 px-1 font-mono">{"{{gender}}"}</code>,{" "}
+                      <code className="bg-gray-100 px-1 font-mono">{"{{background}}"}</code>, <code className="bg-gray-100 px-1 font-mono">{"{{persona}}"}</code> fill in
+                      each agent&apos;s details. Without them, every agent gets this exact prompt.
                     </p>
                     <p className="text-xs text-gray-400">{systemPrompt.length}/6000</p>
                   </div>
@@ -447,9 +475,8 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
               <div className="mt-8 border-t border-gray-100 pt-6">
                 <p className="text-sm font-semibold text-gray-950">Who the agents are</p>
                 <p className="mt-2 border-l-2 border-gray-300 bg-gray-50 p-3 text-xs leading-5 text-gray-600">
-                  This prompt is the same for every agent and carries no identity, so there is nothing to set here.
-                  Your {participants} agents per condition differ only in what the model answers. Choose
-                  {" "}<span className="font-semibold">Demographics</span> or <span className="font-semibold">Write your own</span> to give them one.
+                  This prompt carries no identity, so there is nothing to set. Choose{" "}
+                  <span className="font-semibold">Demographics</span> or <span className="font-semibold">Write your own</span> to give the agents one.
                 </p>
               </div>
             ) : (
@@ -457,7 +484,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-gray-950">Who the agents are</p>
-                  <p className="mt-1 text-sm text-gray-500">{participants} participants per condition. The study decides how many conditions it runs, so the total is set when the run starts.</p>
+                  <p className="mt-1 text-sm text-gray-500">{participants} per condition. The study sets how many conditions run.</p>
                 </div>
                 <div className="flex flex-wrap border border-gray-300">
                   {[["paper", "As the paper recruited"], ["simple", "One identity"], ["personas", "A mix of personas"]].map(([id, label]) => (
@@ -475,9 +502,9 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
 
               {castMode === "paper" ? (
                 <div className="mt-4 border-l-2 border-cyan-700 bg-cyan-50 p-3 text-xs leading-5 text-cyan-950">
-                  <span className="font-semibold">Each agent is a different person</span> — age and gender are sampled per
-                  agent from the recruitment criteria in the paper{study ? ` for ${study.study_id}` : ""}. This is how the
-                  benchmark itself runs, so it is the right choice for asking whether a model reproduces the published effect.
+                  <span className="font-semibold">Every agent is a different person</span>, sampled from the paper&apos;s
+                  recruitment criteria. This is how the benchmark runs, and the right choice for testing whether a model
+                  reproduces the published effect.
                 </div>
               ) : castMode === "personas" ? (
                 <PersonaDesigner
@@ -491,20 +518,16 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2">
                     <p className="text-sm font-semibold text-gray-900">The identity every agent takes</p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Whatever you set here is applied to all {participants} agents per condition. Anything left unset is
-                      sampled the way the paper recruited.
-                    </p>
+                    <p className="mt-1 text-xs text-gray-500">Applied to all {participants} agents. Anything unset is sampled from the paper.</p>
                     <div className={`mt-3 border-l-2 p-3 text-xs leading-5 ${sameIdentity ? "border-amber-500 bg-amber-50 text-amber-950" : "border-gray-300 bg-gray-50 text-gray-600"}`}>
                       {sameIdentity ? (
                         <>
-                          <span className="font-semibold">Every agent will be the same person</span> — {identitySummary}. Your
-                          {" "}{participants} agents per condition differ only in what the model happens to answer.
+                          <span className="font-semibold">Every agent is the same person</span> — {identitySummary}. They differ
+                          only in what the model answers.
                           {temperature <= 0.2 && (
                             <span className="mt-1 block font-semibold">
-                              At temperature {temperature.toFixed(1)} they will also answer near-identically, which leaves
-                              too little variation between participants for the study&apos;s statistical tests. Raise the
-                              temperature, or switch to As the paper recruited.
+                              At temperature {temperature.toFixed(1)} they will answer near-identically too, leaving too
+                              little variation for the study&apos;s statistical tests. Raise it, or use the paper&apos;s sampling.
                             </span>
                           )}
                         </>
@@ -536,7 +559,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
 
             <div className="mt-8 border-t border-gray-100 pt-6">
               <label className="block text-sm font-semibold text-gray-900" htmlFor="api-key">Your OpenRouter key <span className="font-normal text-gray-400">optional</span></label>
-              <p className="mt-1 text-sm text-gray-500">Runs use the shared HumanStudy-Hub key with a small participant cap. Supply your own key to run at full size; it is encrypted before it is stored and deleted when the run ends.</p>
+              <p className="mt-1 text-sm text-gray-500">The shared key caps runs at 10 participants per condition. Your own key raises it to 80. It is encrypted before storage and deleted when the run ends.</p>
               <div className="mt-2 flex gap-2">
                 <input id="api-key" type={showKey ? "text" : "password"} value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" placeholder="sk-or-…" className="h-10 w-full border border-gray-300 px-3 font-mono text-sm outline-none focus:border-cyan-700" />
                 <button type="button" onClick={() => setShowKey((value) => !value)} className="h-10 shrink-0 border border-gray-300 px-3 text-xs font-semibold text-gray-600 hover:border-gray-400">{showKey ? "Hide" : "Show"}</button>
@@ -544,8 +567,8 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
             </div>
 
             <div className="mt-7 flex items-center justify-between gap-4 border-t border-gray-100 pt-5">
-              <p className="text-xs text-gray-500">{running ? "A run is already in progress." : "Runs take a few minutes."}</p>
-              <button type="button" disabled={busy || running || (model === "custom" && !customModel.trim())} onClick={start} className="h-10 bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300">
+              <p className="text-xs text-gray-500">{running ? "A run is already in progress." : "Takes a few minutes."}</p>
+              <button type="button" disabled={busy || running || !model.trim()} onClick={start} className="h-10 bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300">
                 {busy ? "Starting…" : "Run the study"}
               </button>
             </div>
@@ -556,10 +579,10 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
               <p className="text-xs font-semibold uppercase text-gray-500">How a run works</p>
               <ol className="mt-4 border-l border-gray-300">
                 {[
-                  ["Agents take the study", "Each participant is a separate model session with your prompt."],
-                  ["Answers are scored", "The study's own evaluator reproduces the paper's statistical tests."],
-                  ["Human vs. agent", "Effect sizes are compared against the published findings."],
-                  ["Charts and reading", "An analysis agent charts the run and writes what it shows."],
+                  ["Agents take the study", "One model session per participant."],
+                  ["Answers are scored", "The study's own evaluator reruns the paper's tests."],
+                  ["Human vs. agent", "Effect sizes compared to the published findings."],
+                  ["Charts and reading", "An agent charts the run and writes what it shows."],
                 ].map(([label, detail], index) => (
                   <li key={label} className="relative pb-6 pl-6">
                     <span className="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white text-[11px] font-bold">{index + 1}</span>
@@ -572,8 +595,8 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
             <div className="border border-cyan-200 bg-cyan-50 p-5">
               <p className="text-sm font-semibold text-cyan-950">A run is not a benchmark score</p>
               <p className="mt-1 text-xs leading-5 text-cyan-900">
-                One study at a small participant count is an experiment, not evidence about a model in general. The
-                <Link href="/results" className="font-semibold underline"> leaderboard</Link> reports full-size runs across every study.
+                One study at this size is an experiment, not evidence about a model. The{" "}
+                <Link href="/results" className="font-semibold underline">leaderboard</Link> reports full runs across every study.
               </p>
             </div>
           </aside>
