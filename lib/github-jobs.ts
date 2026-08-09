@@ -306,6 +306,32 @@ export async function readPackageZip(id: string) {
   return zip.toBuffer();
 }
 
+// A researcher who closed the tab has only their own name to search by, so job
+// branches are scanned and matched on it. Newest first, and capped, because this
+// reads one file per branch.
+export async function findJobsByContributor(name: string, limit = 10) {
+  const needle = name.trim().toLowerCase();
+  if (!needle) return [];
+  const api = octokit();
+  const target = splitRepo(jobsRepo);
+  const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
+  const jobBranches = branches.filter((branch) => branch.name.startsWith("jobs/")).slice(-200).reverse();
+  const found: PipelineJob[] = [];
+  for (const branch of jobBranches) {
+    if (found.length >= limit) break;
+    const id = branch.name.slice("jobs/".length);
+    try {
+      const job = JSON.parse((await getFile(branch.name, jobPath(id, "job.json"))).toString("utf8")) as PipelineJob;
+      if ((job.contributorName || "").toLowerCase().includes(needle) || (job.contributorGithub || "").toLowerCase() === needle) {
+        found.push(job);
+      }
+    } catch {
+      // A half-created or deleted job branch is skipped rather than failing the search.
+    }
+  }
+  return found.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+}
+
 export async function assignStudyId(id: string) {
   const job = await readJob(id);
   if (!job.experimentId.startsWith("draft_")) return job;

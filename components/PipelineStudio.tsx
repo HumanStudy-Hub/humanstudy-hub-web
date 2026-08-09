@@ -45,6 +45,54 @@ function isPlaceholder(raw: string) {
   return /^\s*(\[填写\]|tbd|unknown|not available|n\/a)?\s*$/i.test(raw);
 }
 
+// A reviewer being asked to fill something in needs to know what is being asked
+// for. Keys are matched by their last segment, which is how study files name
+// the same concept at every level.
+const FIELD_HELP: Array<[RegExp, string]> = [
+  [/^n$|^sample_size$|^n_participants$/, "How many people took part."],
+  [/^n_per_(condition|group|cell)$/, "How many people were in each condition."],
+  [/^age_(range|mean|sd)$/, "The ages of the people recruited, as the paper reports them."],
+  [/^gender(_distribution)?$/, "How the sample split by gender, as the paper reports it."],
+  [/^population$|^recruitment_source$/, "Who was recruited and from where — students, online panel, a specific community."],
+  [/^exclusions?$|^attrition$/, "Participants dropped from the analysis, and why."],
+  [/^design$/, "How the experiment was arranged: what was manipulated, and whether people saw one condition or several."],
+  [/^conditions?$/, "The distinct treatments a participant could be assigned to."],
+  [/^independent_variable|^iv$|^manipulation$/, "What the experimenters changed between conditions."],
+  [/^dependent_variable|^dv$|^outcomes?$|^measures?$/, "What was measured as the result."],
+  [/^procedure$|^steps?$|^protocol$/, "What a participant actually did, in order."],
+  [/^instructions?$/, "The words shown to participants. This must be the paper's own wording, not a rewrite."],
+  [/^items?$|^stimuli$|^questions?$|^scenarios?$/, "The material participants responded to. Should be the paper's exact text where the paper prints it."],
+  [/^response_(format|scale|options)$|^scale$|^options$/, "How participants answered: the scale, its endpoints, or the choices offered."],
+  [/^hypothesis|^prediction/, "What the paper expected to find."],
+  [/^finding|^result/, "What the paper reported finding."],
+  [/^reported_statistics?$|^statistical_tests?$/, "The test statistic exactly as printed in the paper, such as F(1, 312) = 49.1, p < .001."],
+  [/^effect_size|^cohens_d$|^eta|^^partial_eta/, "How large the effect was, in the paper's own units."],
+  [/^p_value$|^significance_level$/, "The probability threshold or reported p-value."],
+  [/^expected_direction$/, "Which way the effect should point if it replicates."],
+  [/^evidence_label$|^label$/, "Where this came from: verbatim from the paper, reported, derived, or missing."],
+  [/^source|^page|^location|^citation/, "Where in the paper this was found."],
+  [/^title$/, "The title of the paper or study."],
+  [/^authors?$/, "Who wrote the paper."],
+  [/^year$|^publication_year$/, "When it was published."],
+  [/^abstract$|^summary$|^description$/, "A short description of the study."],
+  [/^doi$|^url$/, "A link to the source."],
+  [/^reason$/, "Why this could not be determined from the paper."],
+  [/^impact$/, "What stays unreliable in the run while this is unfilled."],
+  [/^suggested_action$/, "What the reviewer should do to resolve it."],
+  [/^study$|^study_id$|^sub_study_id$/, "Which study within the paper this belongs to."],
+  [/^role|^participant_role$/, "What part this participant plays in the experiment."],
+  [/^order|^sequence/, "The order participants act in."],
+];
+
+function fieldHelp(key: string): string | null {
+  const leaf = key.split(".").pop() || key;
+  const normalised = leaf.toLowerCase().trim();
+  for (const [pattern, help] of FIELD_HELP) {
+    if (pattern.test(normalised)) return help;
+  }
+  return null;
+}
+
 // What the reviewer is actually here to do is fill in what the agent could not
 // determine, so every section reports how much of that it still holds.
 function needsInputCount(value: JsonValue): number {
@@ -83,21 +131,61 @@ function LeafField({ value, onChange }: { value: JsonValue; onChange: (value: Js
   );
 }
 
-function JsonNode({ value, onChange, path = "", depth = 1 }: { value: JsonValue; onChange: (value: JsonValue) => void; path?: string; depth?: number }) {
+function renameKey(source: Record<string, JsonValue>, from: string, to: string) {
+  // Rebuilt rather than reassigned so the field keeps its position in the file.
+  return Object.fromEntries(Object.entries(source).map(([key, value]) => (key === from ? [to, value] : [key, value])));
+}
+
+function JsonNode({ value, onChange, path = "", depth = 1, onlyMissing = false }: { value: JsonValue; onChange: (value: JsonValue) => void; path?: string; depth?: number; onlyMissing?: boolean }) {
+  const [renaming, setRenaming] = useState("");
+  const [draftKey, setDraftKey] = useState("");
+
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, JsonValue>;
     const entries = Object.entries(value);
     const visible = entries.filter(([key]) => !TECHNICAL_KEYS.has(key));
     const technical = entries.filter(([key]) => TECHNICAL_KEYS.has(key));
     const field = ([key, child]: [string, JsonValue]) => {
       const missing = needsInputCount(child);
+      // In review-what-is-left mode a settled field is not the reviewer's problem.
+      if (onlyMissing && missing === 0) return null;
+      const help = fieldHelp(key);
+      const isRenaming = renaming === key;
       return (
-        <div key={key} className="min-w-0">
-          <p className="mb-1 flex items-center gap-2 text-xs font-semibold text-gray-700">
-            <span className="break-words">{label(key)}</span>
-            {missing > 0 && <span className="shrink-0 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{missing}</span>}
-          </p>
+        <div key={key} className="group min-w-0">
+          <div className="mb-1 flex items-start justify-between gap-2">
+            {isRenaming ? (
+              <span className="flex min-w-0 flex-wrap items-center gap-1">
+                <input
+                  value={draftKey}
+                  autoFocus
+                  onChange={(event) => setDraftKey(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && draftKey.trim() && draftKey !== key) { onChange(renameKey(record, key, draftKey.trim())); setRenaming(""); }
+                    if (event.key === "Escape") setRenaming("");
+                  }}
+                  className="h-7 border border-cyan-700 px-2 font-mono text-xs outline-none"
+                />
+                <button type="button" onClick={() => { if (draftKey.trim() && draftKey !== key) onChange(renameKey(record, key, draftKey.trim())); setRenaming(""); }} className="text-[11px] font-semibold text-cyan-700">Save</button>
+                <button type="button" onClick={() => setRenaming("")} className="text-[11px] text-gray-500">Cancel</button>
+              </span>
+            ) : (
+              <p className="flex min-w-0 items-center gap-2 text-xs font-semibold text-gray-700">
+                <span className="break-words">{label(key)}</span>
+                {missing > 0 && <span className="shrink-0 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{missing}</span>}
+              </p>
+            )}
+            {!isRenaming && (
+              <span className="flex shrink-0 gap-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                <button type="button" onClick={() => { setRenaming(key); setDraftKey(key); }} className="text-[11px] text-gray-400 hover:text-cyan-700">Rename</button>
+                {/* The agent sometimes extracts a field the paper never had. */}
+                <button type="button" onClick={() => onChange(Object.fromEntries(entries.filter(([other]) => other !== key)))} className="text-[11px] text-gray-400 hover:text-red-700">Remove</button>
+              </span>
+            )}
+          </div>
+          {help && <p className="mb-1.5 text-[11px] leading-4 text-gray-500">{help}</p>}
           <div className={depth < 3 ? "border-l-2 border-gray-100 pl-3" : ""}>
-            <JsonNode value={child} path={`${path}.${key}`} depth={depth + 1} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} />
+            <JsonNode value={child} path={`${path}.${key}`} depth={depth + 1} onlyMissing={onlyMissing} onChange={(next) => onChange({ ...record, [key]: next })} />
           </div>
         </div>
       );
@@ -124,14 +212,18 @@ function JsonNode({ value, onChange, path = "", depth = 1 }: { value: JsonValue;
         <div className="min-w-0 space-y-1">
           {value.map((child, index) => {
             const missing = needsInputCount(child);
+            if (onlyMissing && missing === 0) return null;
             return (
               <details key={`${path}.${index}`} className="border border-gray-200 bg-white">
-                <summary className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50">
+                <summary className="group flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50">
                   <span className="truncate">Item {index + 1}</span>
-                  {missing > 0 && <span className="shrink-0 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{missing} to fill</span>}
+                  <span className="flex shrink-0 items-center gap-2">
+                    {missing > 0 && <span className="bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{missing} to fill</span>}
+                    <button type="button" onClick={(event) => { event.preventDefault(); onChange(value.filter((_, at) => at !== index)); }} className="text-[11px] text-gray-400 opacity-0 transition-opacity hover:text-red-700 group-hover:opacity-100">Remove</button>
+                  </span>
                 </summary>
                 <div className="border-t border-gray-100 p-3">
-                  <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onChange={(next) => update(index, next)} />
+                  <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onlyMissing={onlyMissing} onChange={(next) => update(index, next)} />
                 </div>
               </details>
             );
@@ -142,9 +234,12 @@ function JsonNode({ value, onChange, path = "", depth = 1 }: { value: JsonValue;
     return (
       <div className="min-w-0 space-y-2">
         {value.map((child, index) => (
-          <div key={`${path}.${index}`} className="min-w-0">
-            <p className="mb-1 text-[11px] text-gray-500">Item {index + 1}</p>
-            <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onChange={(next) => update(index, next)} />
+          <div key={`${path}.${index}`} className="group min-w-0">
+            <p className="mb-1 flex items-center justify-between text-[11px] text-gray-500">
+              <span>Item {index + 1}</span>
+              <button type="button" onClick={() => onChange(value.filter((_, at) => at !== index))} className="text-[11px] text-gray-400 opacity-0 transition-opacity hover:text-red-700 group-hover:opacity-100">Remove</button>
+            </p>
+            <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onlyMissing={onlyMissing} onChange={(next) => update(index, next)} />
           </div>
         ))}
       </div>
@@ -159,6 +254,7 @@ function JsonNode({ value, onChange, path = "", depth = 1 }: { value: JsonValue;
 // everything below is ordinary nesting.
 function JsonEditor({ value, onChange }: { value: JsonValue; onChange: (value: JsonValue) => void }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [onlyMissing, setOnlyMissing] = useState(false);
 
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return <JsonNode value={value} onChange={onChange} />;
@@ -178,6 +274,7 @@ function JsonEditor({ value, onChange }: { value: JsonValue; onChange: (value: J
 
   const section = ([key, child]: [string, JsonValue]) => {
     const missing = needsInputCount(child);
+    if (onlyMissing && missing === 0) return null;
     const isOpen = !collapsed[key];
     return (
       <section key={key} id={sectionId(key)} className="scroll-mt-2 border border-gray-200 bg-white">
@@ -194,7 +291,7 @@ function JsonEditor({ value, onChange }: { value: JsonValue; onChange: (value: J
         </button>
         {isOpen && (
           <div className="min-w-0 border-t border-gray-100 p-4">
-            <JsonNode value={child} path={key} depth={1} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} />
+            <JsonNode value={child} path={key} depth={1} onlyMissing={onlyMissing} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} />
           </div>
         )}
       </section>
@@ -207,14 +304,30 @@ function JsonEditor({ value, onChange }: { value: JsonValue; onChange: (value: J
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="text-[11px] font-bold uppercase text-gray-500">Sections in this file</p>
           <div className="flex items-center gap-3">
-            {totalMissing > 0 && <span className="text-[11px] font-semibold text-amber-700">{totalMissing} field{totalMissing === 1 ? "" : "s"} still need input</span>}
             <button type="button" onClick={() => setCollapsed(Object.fromEntries(visible.map(([key]) => [key, true])))} className="text-[11px] font-semibold text-gray-500 hover:text-gray-900">Collapse all</button>
             <button type="button" onClick={() => setCollapsed({})} className="text-[11px] font-semibold text-gray-500 hover:text-gray-900">Expand all</button>
           </div>
         </div>
+        {/* The fastest way through a large file is to stop looking at the parts
+            that are already settled. */}
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-2">
+          <p className={`text-xs font-semibold ${totalMissing > 0 ? "text-amber-700" : "text-emerald-700"}`}>
+            {totalMissing > 0 ? `${totalMissing} field${totalMissing === 1 ? "" : "s"} still need your input` : "Nothing in this file is waiting on you"}
+          </p>
+          {totalMissing > 0 && (
+            <button
+              type="button"
+              onClick={() => { setOnlyMissing((current) => !current); setCollapsed({}); }}
+              className={`border px-3 py-1.5 text-[11px] font-semibold ${onlyMissing ? "border-amber-500 bg-amber-100 text-amber-900" : "border-gray-300 bg-white text-gray-700 hover:border-amber-400"}`}
+            >
+              {onlyMissing ? "Showing only what needs input · show everything" : "Show only what needs input"}
+            </button>
+          )}
+        </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {visible.map(([key, child]) => {
             const missing = needsInputCount(child);
+            if (onlyMissing && missing === 0) return null;
             return (
               <button
                 key={key}
@@ -293,6 +406,10 @@ export default function PipelineStudio() {
   const [saved, setSaved] = useState(true);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [stalled, setStalled] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [lookupName, setLookupName] = useState("");
+  const [foundJobs, setFoundJobs] = useState<Array<{ id: string; paperName: string; status: JobStatus; createdAt?: string }> | null>(null);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     const requestedJobId = new URLSearchParams(window.location.search).get("job");
@@ -468,7 +585,40 @@ export default function PipelineStudio() {
     }
   }
 
-  function exitJob() {
+  async function findMyJobs() {
+    setSearching(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/pipeline/jobs/search?contributor=${encodeURIComponent(lookupName.trim())}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not search for your studies.");
+      setFoundJobs(data.jobs);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not search for your studies.");
+      setFoundJobs(null);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function openJob(id: string) {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/pipeline/jobs/${id}`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not open that study.");
+      window.localStorage.setItem(STORAGE_KEY, id);
+      setJob(data.job);
+      setLog(data.log || "");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not open that study.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function leaveJob() {
     window.localStorage.removeItem(STORAGE_KEY);
     setJob(null);
     setLog("");
@@ -493,6 +643,39 @@ export default function PipelineStudio() {
             <div className="border-b border-gray-100 pb-5">
               <p className="text-sm font-semibold text-gray-950">Source material</p>
               <p className="mt-1 text-sm text-gray-500">Only the published paper is required.</p>
+            </div>
+
+            <div className="mt-5 border border-gray-200 bg-gray-50 p-4">
+              <p className="text-sm font-semibold text-gray-900">Already submitted a paper?</p>
+              <p className="mt-1 text-xs leading-5 text-gray-600">Find it again with the name you submitted it under. A job keeps running after you close the page.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <input
+                  value={lookupName}
+                  onChange={(event) => setLookupName(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === "Enter") findMyJobs(); }}
+                  placeholder="Your contributor name"
+                  className="h-9 min-w-0 flex-1 border border-gray-300 px-3 text-sm outline-none focus:border-cyan-700"
+                />
+                <button type="button" disabled={searching || lookupName.trim().length < 2} onClick={findMyJobs} className="h-9 border border-gray-400 bg-white px-4 text-xs font-semibold text-gray-800 hover:border-cyan-700 disabled:text-gray-300">
+                  {searching ? "Searching..." : "Find my studies"}
+                </button>
+              </div>
+              {foundJobs && foundJobs.length === 0 && <p className="mt-2 text-xs text-gray-500">No studies found under that name.</p>}
+              {foundJobs && foundJobs.length > 0 && (
+                <ul className="mt-3 divide-y divide-gray-200 border border-gray-200 bg-white">
+                  {foundJobs.map((entry) => (
+                    <li key={entry.id}>
+                      <button type="button" onClick={() => openJob(entry.id)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-gray-50">
+                        <span className="min-w-0">
+                          <span className="block truncate text-xs font-semibold text-gray-900">{entry.paperName}</span>
+                          <span className="block font-mono text-[10px] text-gray-400">{entry.id}</span>
+                        </span>
+                        <span className={`shrink-0 px-2 py-0.5 text-[10px] font-semibold ${entry.status === "review" ? "bg-amber-100 text-amber-800" : entry.status === "complete" ? "bg-emerald-100 text-emerald-800" : entry.status === "failed" ? "bg-red-100 text-red-800" : "bg-cyan-100 text-cyan-800"}`}>{entry.status}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div className="mt-5 border border-cyan-200 bg-cyan-50 p-4">
@@ -563,9 +746,30 @@ export default function PipelineStudio() {
             <p className="text-sm font-semibold text-gray-950">{job.paperName}</p>
             <p className="mt-1 font-mono text-xs text-gray-500">{job.experimentId.startsWith("draft_") ? "Draft study" : `studies/${job.experimentId}/`}</p>
           </div>
-          <div className="flex items-center gap-3"><Link href="/" className="text-xs font-semibold text-gray-500 hover:text-gray-950">Back to Hub</Link><button type="button" onClick={exitJob} className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">Start another study</button><span className={`px-2 py-1 text-xs font-semibold ${job.status === "failed" ? "bg-red-100 text-red-800" : job.status === "complete" ? "bg-emerald-100 text-emerald-800" : job.status === "review" ? "bg-amber-100 text-amber-800" : "bg-cyan-100 text-cyan-800"}`}>{job.status}</span></div>
+          <div className="flex items-center gap-3"><Link href="/" className="text-xs font-semibold text-gray-500 hover:text-gray-950">Back to Hub</Link><button type="button" onClick={() => setLeaving(true)} className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">Start another study</button><span className={`px-2 py-1 text-xs font-semibold ${job.status === "failed" ? "bg-red-100 text-red-800" : job.status === "complete" ? "bg-emerald-100 text-emerald-800" : job.status === "review" ? "bg-amber-100 text-amber-800" : "bg-cyan-100 text-cyan-800"}`}>{job.status}</span></div>
         </div>
       </header>
+
+      {leaving && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/40 p-4">
+          <div className="w-full max-w-md border border-gray-300 bg-white p-6 shadow-xl">
+            <p className="font-serif text-lg font-bold text-gray-950">Leave this study?</p>
+            <p className="mt-2 text-sm leading-6 text-gray-600">
+              {job.status === "review"
+                ? "This package is waiting for your review. Saved edits are kept, but unsaved ones are not."
+                : "This job keeps running whether or not you stay on the page."}
+            </p>
+            <p className="mt-3 border-l-2 border-cyan-700 bg-cyan-50 p-3 text-xs leading-5 text-cyan-950">
+              You can come back to it. Keep this job id, or find it again from the name you submitted it under.
+              <span className="mt-1 block break-all font-mono font-semibold">{job.id}</span>
+            </p>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => setLeaving(false)} className="h-10 border border-gray-300 px-4 text-sm font-semibold text-gray-700 hover:border-gray-400">Keep reviewing</button>
+              <button type="button" onClick={() => { setLeaving(false); leaveJob(); }} className="h-10 bg-cyan-700 px-4 text-sm font-semibold text-white hover:bg-cyan-600">Start another study</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="mx-auto grid max-w-6xl gap-6 px-5 py-8 lg:grid-cols-[240px_minmax(0,1fr)]">
         <nav className="border border-gray-200 bg-white p-3">
