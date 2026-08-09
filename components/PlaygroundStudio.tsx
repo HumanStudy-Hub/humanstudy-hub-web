@@ -7,7 +7,9 @@ import PlaygroundCharts, { type PlaygroundChartSet } from "@/components/Playgrou
 import StudyPicker from "@/components/StudyPicker";
 import type { PersonaGroup } from "@/lib/persona-groups";
 
-type CastMode = "simple" | "personas";
+// "paper" samples each agent from the study's own recruitment criteria, which
+// is how the benchmark runs; the others are deliberate departures from it.
+type CastMode = "paper" | "simple" | "personas";
 
 const STORAGE_KEY = "humanstudy-hub-playground-run";
 // A dispatched run reports back within a minute or so. Longer than this and no
@@ -75,11 +77,44 @@ const MODELS = [
   { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B", note: "Open weights" },
 ];
 
+// Each preset is shown as the prompt it actually sends, because that is what a
+// researcher is choosing between. usesIdentity marks the ones where a
+// participant's age, gender, or persona reaches the prompt at all.
 const PRESETS = [
-  { id: "v1_empty", label: "No framing", note: "The model receives the task with no participant instruction at all." },
-  { id: "v2_human", label: "Human participant", note: "“You are participating in a psychology experiment as a human participant.”" },
-  { id: "v3_human_plus_demo", label: "Human + demographics", note: "Adds the age, gender, and background of the person the agent is playing." },
-  { id: "custom", label: "Write your own", note: "Design the participant prompt yourself." },
+  {
+    id: "v1_empty",
+    label: "No framing",
+    usesIdentity: false,
+    prompt: "",
+    empty: "No system prompt at all. The model receives only the study's task.",
+  },
+  {
+    id: "v2_human",
+    label: "Human participant",
+    usesIdentity: false,
+    prompt: "You are participating in a psychology experiment as a human participant.",
+  },
+  {
+    id: "v3_human_plus_demo",
+    label: "Demographics",
+    usesIdentity: true,
+    prompt: `You are participating in a psychology experiment as a human participant.
+
+YOUR IDENTITY:
+- Age: {age} years old
+- Gender: {gender}
+- Background: {background}
+
+Follow the experimenter's instructions and answer each task in the requested format.
+Be concise. Do not add extra explanations unless explicitly asked.`,
+  },
+  {
+    id: "custom",
+    label: "Write your own",
+    usesIdentity: true,
+    prompt: "",
+    empty: "Write the prompt yourself, with or without each agent's own details.",
+  },
 ];
 
 const PRESET_STARTERS: Record<string, string> = {
@@ -125,7 +160,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   const [temperature, setTemperature] = useState(1);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
-  const [castMode, setCastMode] = useState<CastMode>("simple");
+  const [castMode, setCastMode] = useState<CastMode>("paper");
   const [personaGroup, setPersonaGroup] = useState<PersonaGroup | null>(null);
 
   const [run, setRun] = useState<Run | null>(null);
@@ -139,6 +174,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   const resultsLoaded = useRef("");
 
   const maxParticipants = apiKey.trim() ? 80 : 10;
+  const identityReachesPrompt = PRESETS.find((entry) => entry.id === preset)?.usesIdentity ?? true;
   const chosenModel = model === "custom" ? customModel.trim() : model;
   const study = useMemo(() => studies.find((entry) => entry.study_id === studyId), [studies, studyId]);
 
@@ -153,7 +189,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
     ].filter(Boolean);
     return parts.join(", ");
   }, [age, gender, background, persona]);
-  const sameIdentity = identitySummary.length > 0;
+  const sameIdentity = castMode === "simple" && identitySummary.length > 0;
 
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("run");
@@ -241,8 +277,8 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
           model: chosenModel,
           preset,
           systemPrompt: preset === "custom" ? systemPrompt : "",
-          demographics: castMode === "personas" ? {} : { age, gender, background, persona },
-          personaGroup: castMode === "personas" ? personaGroup : null,
+          demographics: identityReachesPrompt && castMode === "simple" ? { age, gender, background, persona } : {},
+          personaGroup: identityReachesPrompt && castMode === "personas" ? personaGroup : null,
           participantsPerScenario: participants,
           temperature,
           apiKey: apiKey.trim(),
@@ -378,8 +414,15 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                     onClick={() => choosePreset(entry.id)}
                     className={`border p-3 text-left ${preset === entry.id ? "border-cyan-700 bg-cyan-50" : "border-gray-200 bg-white hover:border-cyan-300"}`}
                   >
-                    <span className="block text-sm font-semibold text-gray-900">{entry.label}</span>
-                    <span className="mt-1 block text-xs leading-5 text-gray-500">{entry.note}</span>
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="text-sm font-semibold text-gray-900">{entry.label}</span>
+                      {!entry.usesIdentity && <span className="shrink-0 text-[10px] font-semibold uppercase text-gray-400">same for every agent</span>}
+                    </span>
+                    {entry.prompt ? (
+                      <span className="mt-2 block whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-gray-600">{entry.prompt}</span>
+                    ) : (
+                      <span className="mt-2 block text-xs leading-5 text-gray-500">{entry.empty}</span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -400,14 +443,24 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
               )}
             </div>
 
+            {!identityReachesPrompt ? (
+              <div className="mt-8 border-t border-gray-100 pt-6">
+                <p className="text-sm font-semibold text-gray-950">Who the agents are</p>
+                <p className="mt-2 border-l-2 border-gray-300 bg-gray-50 p-3 text-xs leading-5 text-gray-600">
+                  This prompt is the same for every agent and carries no identity, so there is nothing to set here.
+                  Your {participants} agents per condition differ only in what the model answers. Choose
+                  {" "}<span className="font-semibold">Demographics</span> or <span className="font-semibold">Write your own</span> to give them one.
+                </p>
+              </div>
+            ) : (
             <div className="mt-8 border-t border-gray-100 pt-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-gray-950">Who the agents are</p>
                   <p className="mt-1 text-sm text-gray-500">{participants} participants per condition. The study decides how many conditions it runs, so the total is set when the run starts.</p>
                 </div>
-                <div className="flex border border-gray-300">
-                  {[["simple", "One identity"], ["personas", "A mix of personas"]].map(([id, label]) => (
+                <div className="flex flex-wrap border border-gray-300">
+                  {[["paper", "As the paper recruited"], ["simple", "One identity"], ["personas", "A mix of personas"]].map(([id, label]) => (
                     <button
                       key={id}
                       type="button"
@@ -420,7 +473,13 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                 </div>
               </div>
 
-              {castMode === "personas" ? (
+              {castMode === "paper" ? (
+                <div className="mt-4 border-l-2 border-cyan-700 bg-cyan-50 p-3 text-xs leading-5 text-cyan-950">
+                  <span className="font-semibold">Each agent is a different person</span> — age and gender are sampled per
+                  agent from the recruitment criteria in the paper{study ? ` for ${study.study_id}` : ""}. This is how the
+                  benchmark itself runs, so it is the right choice for asking whether a model reproduces the published effect.
+                </div>
+              ) : castMode === "personas" ? (
                 <PersonaDesigner
                   studyId={studyId}
                   studyTitle={study?.title || studyId}
@@ -431,12 +490,12 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
               ) : (
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <div className="sm:col-span-2">
-                    <p className="text-sm font-semibold text-gray-900">Who the agent should be <span className="font-normal text-gray-400">optional</span></p>
+                    <p className="text-sm font-semibold text-gray-900">The identity every agent takes</p>
                     <p className="mt-1 text-xs text-gray-500">
-                      One identity, applied to every agent in the run. Leave the fields blank and each agent instead
-                      gets its own age and gender, drawn the way the paper recruited.
+                      Whatever you set here is applied to all {participants} agents per condition. Anything left unset is
+                      sampled the way the paper recruited.
                     </p>
-                    <div className={`mt-3 border-l-2 p-3 text-xs leading-5 ${sameIdentity ? "border-amber-500 bg-amber-50 text-amber-950" : "border-cyan-700 bg-cyan-50 text-cyan-950"}`}>
+                    <div className={`mt-3 border-l-2 p-3 text-xs leading-5 ${sameIdentity ? "border-amber-500 bg-amber-50 text-amber-950" : "border-gray-300 bg-gray-50 text-gray-600"}`}>
                       {sameIdentity ? (
                         <>
                           <span className="font-semibold">Every agent will be the same person</span> — {identitySummary}. Your
@@ -445,16 +504,12 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                             <span className="mt-1 block font-semibold">
                               At temperature {temperature.toFixed(1)} they will also answer near-identically, which leaves
                               too little variation between participants for the study&apos;s statistical tests. Raise the
-                              temperature, or leave these fields blank.
+                              temperature, or switch to As the paper recruited.
                             </span>
                           )}
                         </>
                       ) : (
-                        <>
-                          <span className="font-semibold">Each agent is a different person</span> — age and gender are
-                          sampled per agent from the study&apos;s recruitment criteria. This is how the benchmark itself
-                          runs, so it is the right choice for asking whether a model reproduces the published effect.
-                        </>
+                        <>Nothing set yet, so this run is still identical to <span className="font-semibold">As the paper recruited</span>.</>
                       )}
                     </div>
                   </div>
@@ -477,6 +532,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                 </div>
               )}
             </div>
+            )}
 
             <div className="mt-8 border-t border-gray-100 pt-6">
               <label className="block text-sm font-semibold text-gray-900" htmlFor="api-key">Your OpenRouter key <span className="font-normal text-gray-400">optional</span></label>
