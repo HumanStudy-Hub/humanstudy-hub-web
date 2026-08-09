@@ -154,40 +154,25 @@ export async function listPackageFiles(id: string) {
 
 const workflowFile = "run-humanstudy-pipeline.yml";
 
-// createWorkflowDispatch returns 204 without telling us whether a run was queued,
-// so confirm one appeared. A silent miss leaves the job stuck on "queued" forever.
-async function dispatchStarted(after: Date) {
-  const api = octokit();
-  const target = splitRepo(pipelineRepo);
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    try {
-      const runs = await api.actions.listWorkflowRuns({
-        ...target,
-        workflow_id: workflowFile,
-        event: "workflow_dispatch",
-        per_page: 20,
-      });
-      if (runs.data.workflow_runs.some((run) => new Date(run.created_at) >= after)) return true;
-    } catch {
-      // Keep polling; a transient list failure is not proof the run is missing.
-    }
-  }
-  return false;
-}
-
+// A dispatch that GitHub rejects throws here and reaches the contributor as an
+// error. A dispatch it accepts is not confirmed by polling for the run: the runs
+// list lags the run by longer than any sane wait, so polling reports healthy
+// dispatches as failures, and recording that verdict on the job branch is what
+// broke them — the runner pushes its own "running" commit to that same branch and
+// its push is rejected once we have moved the ref underneath it.
+//
+// A run that never starts, whether GitHub dropped the dispatch or never gave the
+// run a runner, is caught by the stall detection in the studio, which offers a
+// restart after five minutes and writes nothing until the contributor asks.
 async function dispatch(job: PipelineJob) {
   const api = octokit();
   const target = splitRepo(pipelineRepo);
-  // GitHub matches runs by created_at at second precision, so allow for clock skew.
-  const after = new Date(Date.now() - 5000);
   await api.actions.createWorkflowDispatch({
     ...target,
     workflow_id: workflowFile,
     ref: process.env.GITHUB_PIPELINE_REF || "main",
     inputs: { job_id: job.id, jobs_repo: jobsRepo },
   });
-  return dispatchStarted(after);
 }
 
 async function saveJob(job: PipelineJob, message: string) {
@@ -221,12 +206,9 @@ export async function createJob(input: { paperPathname: string; paperName: strin
   const now = new Date().toISOString();
   const job: PipelineJob = { id, experimentId: draftId(input.paperName, id), contributorName: input.contributorName.trim(), contributorGithub: input.contributorGithub?.trim() || undefined, osfUrl: input.osfUrl?.trim() || undefined, paperName: input.paperName, paperPathname: pathname, paperUrl: await signedBlobUrl(pathname), currentStage: 1, status: "queued", message: "Waiting for the study-building agent", packageReady: false, createdAt: now, updatedAt: now, reviews: {} };
   await putFile(branch, jobPath(id, "job.json"), JSON.stringify(job, null, 2) + "\n", `pipeline: create ${id}`);
-  if (await dispatch(job)) return job;
-  job.status = "failed";
-  job.message = "The study-building agent could not be started";
-  job.error = "GitHub Actions did not start a run for this job. Please try again.";
-  job.updatedAt = new Date().toISOString();
-  await saveJob(job, `pipeline: dispatch failed ${id}`);
+  // Nothing writes to this branch after the dispatch. From here the runner owns
+  // it, and a second writer only costs it its push.
+  await dispatch(job);
   return job;
 }
 
@@ -240,7 +222,10 @@ async function hasPaper(id: string) {
 }
 
 // A run that no hosted runner ever picks up writes nothing back, so the job sits
-// on "queued" forever. Re-dispatching is the only way to recover it.
+// on "queued" forever. Re-dispatching is the only way to recover it. The studio
+// only offers this once a job has sat unclaimed for five minutes, by which point
+// a live run would have published its own state, so resetting the branch here is
+// not racing one.
 export async function retryJob(id: string) {
   const job = await readJob(id);
   if (job.status === "review" || job.status === "complete") throw new Error("This job has already finished building.");
@@ -255,12 +240,7 @@ export async function retryJob(id: string) {
   job.error = undefined;
   job.updatedAt = new Date().toISOString();
   await saveJob(job, `pipeline: retry ${id}`);
-  if (await dispatch(job)) return job;
-  job.status = "failed";
-  job.message = "The study-building agent could not be started";
-  job.error = "GitHub Actions did not start a run for this job. Please try again.";
-  job.updatedAt = new Date().toISOString();
-  await saveJob(job, `pipeline: dispatch failed ${id}`);
+  await dispatch(job);
   return job;
 }
 
