@@ -642,7 +642,19 @@ export default function PipelineStudio() {
           <section className="border border-gray-200 bg-white p-6 shadow-sm">
             <div className="border-b border-gray-100 pb-5">
               <p className="text-sm font-semibold text-gray-950">Source material</p>
-              <p className="mt-1 text-sm text-gray-500">Only the published paper is required.</p>
+              <p className="mt-1 text-sm text-gray-500">Start with a published study that has enough evidence and materials to reconstruct.</p>
+            </div>
+
+            <div className="mt-5 border border-gray-200 bg-gray-50 p-4">
+              <p className="text-sm font-semibold text-gray-900">Good fit for the study builder</p>
+              <p className="mt-1 text-xs leading-5 text-gray-600">The builder works best when these conditions are met. Missing open materials are acceptable; missing procedures or human results usually require more researcher review.</p>
+              <dl className="mt-3 grid gap-px bg-gray-200 sm:grid-cols-3">
+                {[
+                  ["Human results", "Sample, outcomes, and reported statistics are available."],
+                  ["Runnable materials", "Instructions and stimuli can be represented as text, images, audio, or video."],
+                  ["Appropriate risk", "No deception, distress, or sensitive interaction that should not be simulated."],
+                ].map(([term, detail]) => <div key={term} className="bg-white p-3"><dt className="text-xs font-semibold text-gray-900">{term}</dt><dd className="mt-1 text-[11px] leading-4 text-gray-500">{detail}</dd></div>)}
+              </dl>
             </div>
 
             <div className="mt-5 border border-gray-200 bg-gray-50 p-4">

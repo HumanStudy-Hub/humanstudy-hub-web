@@ -6,6 +6,7 @@ import PersonaDesigner from "@/components/PersonaDesigner";
 import PlaygroundCharts, { type PlaygroundChartSet } from "@/components/PlaygroundCharts";
 import SearchSelect, { type SelectOption } from "@/components/SearchSelect";
 import type { PersonaGroup } from "@/lib/persona-groups";
+import { downloadTextReport } from "@/lib/download-report";
 
 // "paper" samples each agent from the study's own recruitment criteria, which
 // is how the benchmark runs; the others are deliberate departures from it.
@@ -336,6 +337,22 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
     resultsLoaded.current = "";
   }
 
+  function downloadReport() {
+    if (!run?.summary) return;
+    const summary = [
+      `Model: ${run.model}`,
+      `Participant prompt: ${run.preset}`,
+      `Participants: ${run.participants ?? "Not available"}`,
+      `Answers collected: ${run.answeredTrials ?? 0}`,
+      `Direction matched: ${percent(run.summary.directionMatchRate)}`,
+      `Mean absolute effect gap: ${decimal(run.summary.meanAbsoluteEffectGap)}`,
+      `Strict replication: ${run.summary.scoredTests > 0 ? `${run.summary.replicatedTests}/${run.summary.scoredTests}` : "Not available"}`,
+    ].join("\n");
+    const tests = analysis?.tests.map((row) => [row.label, `Paper: ${row.reported_statistics || "Not available"}`, `Human effect: ${decimal(row.human_effect)}`, `Agent effect: ${decimal(row.agent_effect)}`, `Direction match: ${row.direction_match ?? "Not scored"}`, `Strict replication: ${row.replicated ?? "Not scored"}`].join("\n")).join("\n\n") || "Not loaded";
+    const responses = transcript.map((sample) => `Participant ${sample.participantId}\nProfile: ${JSON.stringify(sample.profile)}\nPrompt: ${sample.prompt || "None"}\nResponse: ${sample.response || "No answer"}`).join("\n\n") || "Not loaded";
+    downloadTextReport(`${run.studyId}-${run.id}-report.txt`, `${run.studyTitle || run.studyId} - agent study report`, [["Run summary", summary], ["Interpretation note", "Direction and effect distance are descriptive comparisons. Strict replication requires both direction and significance to be scoreable; it is not the default verdict."], ["Test-by-test results", tests], ["Sample responses", responses]]);
+  }
+
   const progress = run?.progress;
   const completed = progress?.completedTrials ?? 0;
   const total = progress?.totalTrials ?? 0;
@@ -610,6 +627,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                 <p className="mt-1 font-mono text-xs text-gray-500">{run.model} · {run.preset} · run {run.id}</p>
               </div>
               <div className="flex items-center gap-3">
+                {run.status === "complete" && run.summary && <button type="button" onClick={downloadReport} className="h-8 border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:border-cyan-700 hover:text-cyan-800">Download report</button>}
                 <button type="button" onClick={reset} className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">Start another run</button>
                 <span className={`px-2 py-1 text-xs font-semibold ${run.status === "failed" ? "bg-red-100 text-red-800" : run.status === "complete" ? "bg-emerald-100 text-emerald-800" : "bg-cyan-100 text-cyan-800"}`}>{run.status}</span>
               </div>
