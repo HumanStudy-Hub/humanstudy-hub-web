@@ -89,25 +89,18 @@ const OPENROUTER_ID = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._:-]+$/;
 // expander so all four cards stay the same size.
 const PRESETS = [
   {
-    id: "v1_empty",
-    label: "No framing",
-    usesIdentity: false,
-    note: "No system prompt. The model gets only the study's task.",
-    prompt: "",
-  },
-  {
     id: "v2_human",
-    label: "Human participant",
+    label: "Study participant",
     usesIdentity: false,
-    note: "Told it is a human participant, nothing more.",
-    prompt: "You are participating in a psychology experiment as a human participant.",
+    note: "A neutral default: follow the study and answer as a participant.",
+    prompt: "Take part in the following study as a participant. Follow the study instructions and answer in the requested format. Give the answer you judge most appropriate; do not explain it unless asked.",
   },
   {
     id: "v3_human_plus_demo",
-    label: "Demographics",
+    label: "Participant + demographics",
     usesIdentity: true,
-    note: "Told who it is: age, gender, background.",
-    prompt: `You are participating in a psychology experiment as a human participant.
+    note: "Adds age, gender, and background when identity is part of your question.",
+    prompt: `Take part in the following study as a participant.
 
 YOUR IDENTITY:
 - Age: {age} years old
@@ -115,7 +108,14 @@ YOUR IDENTITY:
 - Background: {background}
 
 Follow the experimenter's instructions and answer each task in the requested format.
-Be concise. Do not add extra explanations unless explicitly asked.`,
+Give the answer you judge most appropriate. Do not add explanations unless asked.`,
+  },
+  {
+    id: "v1_empty",
+    label: "No framing",
+    usesIdentity: false,
+    note: "No participant prompt. The model receives only the study's task.",
+    prompt: "",
   },
   {
     id: "custom",
@@ -127,9 +127,9 @@ Be concise. Do not add extra explanations unless explicitly asked.`,
 ];
 
 const PRESET_STARTERS: Record<string, string> = {
-  v2_human: "You are participating in a psychology experiment as a human participant.",
+  v2_human: "Take part in the following study as a participant. Follow the study instructions and answer in the requested format. Give the answer you judge most appropriate; do not explain it unless asked.",
   v3_human_plus_demo:
-    "You are participating in a psychology experiment as a human participant.\n\nYOUR IDENTITY:\n- Age: 21 years old\n- Gender: female\n- Background: undergraduate student\n\nFollow the experimenter's instructions and answer each task in the requested format.\nBe concise. Do not add extra explanations unless explicitly asked.",
+    "Take part in the following study as a participant.\n\nYOUR IDENTITY:\n- Age: 21 years old\n- Gender: female\n- Background: undergraduate student\n\nFollow the study instructions and answer each task in the requested format.\nGive the answer you judge most appropriate. Do not add explanations unless asked.",
 };
 
 const PHASES: Record<Progress["phase"], string> = {
@@ -158,7 +158,7 @@ function Verdict({ row }: { row: TestRow }) {
 export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }) {
   const [studyId, setStudyId] = useState(studies[0]?.study_id || "study_001");
   const [model, setModel] = useState(MODELS[0].id);
-  const [preset, setPreset] = useState("v3_human_plus_demo");
+  const [preset, setPreset] = useState("v2_human");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [age, setAge] = useState("");
   const [gender, setGender] = useState("");
@@ -270,7 +270,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   function choosePreset(next: string) {
     setPreset(next);
     if (next === "custom" && !systemPrompt.trim()) {
-      setSystemPrompt(PRESET_STARTERS.v3_human_plus_demo);
+      setSystemPrompt(PRESET_STARTERS.v2_human);
     }
   }
 
@@ -653,10 +653,16 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                 {run.summary && (
                   <div className="grid gap-px bg-gray-200 sm:grid-cols-4">
                     {[
-                      ["Findings reproduced", `${run.summary.replicatedTests}/${run.summary.scoredTests}`, "Same direction and significance as the paper"],
                       ["Direction matched", percent(run.summary.directionMatchRate), "Effect pointed the same way as in humans"],
                       ["Mean effect gap", decimal(run.summary.meanAbsoluteEffectGap), "Average distance from the human effect size"],
                       ["Participants", String(run.participants ?? "—"), `${run.answeredTrials ?? 0} answers collected`],
+                      [
+                        "Strict replication",
+                        run.summary.scoredTests > 0 ? `${run.summary.replicatedTests}/${run.summary.scoredTests}` : "Not available",
+                        run.summary.scoredTests > 0
+                          ? "Optional benchmark check: same direction and significance"
+                          : "No tests had both direction and significance available",
+                      ],
                     ].map(([label, value, note]) => (
                       <div key={label} className="bg-white p-4">
                         <p className="text-[11px] font-semibold uppercase text-gray-500">{label}</p>
