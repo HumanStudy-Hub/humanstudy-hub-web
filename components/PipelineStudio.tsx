@@ -34,6 +34,11 @@ type Job = {
 };
 export type ReviewFile = { path: string; content: string };
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export type PreparedReviewStudy = {
+  studyId: string;
+  title: string;
+  files: ReviewFile[];
+};
 
 const TECHNICAL_KEYS = new Set(["source_trace", "readiness", "coverage_ledger", "derivation_contract", "audit", "selection", "verification"]);
 
@@ -386,20 +391,29 @@ const progressLabels: Record<PipelineProgress["phase"], string> = {
   failed: "Package build stopped",
 };
 
-export default function PipelineStudio() {
+export default function PipelineStudio({ preparedStudy }: { preparedStudy?: PreparedReviewStudy }) {
   const STORAGE_KEY = "humanstudy-hub-active-job";
   const fileInput = useRef<HTMLInputElement>(null);
   const [paper, setPaper] = useState<File | null>(null);
   const [osf, setOsf] = useState("");
   const [contributorName, setContributorName] = useState("");
   const [contributorId, setContributorId] = useState("");
-  const [job, setJob] = useState<Job | null>(null);
+  const [job, setJob] = useState<Job | null>(() => preparedStudy ? {
+    id: `usability-${preparedStudy.studyId}`,
+    experimentId: preparedStudy.studyId,
+    paperName: preparedStudy.title,
+    currentStage: 4,
+    status: "review",
+    message: "Prepared extraction ready for researcher review",
+    packageReady: true,
+    updatedAt: new Date().toISOString(),
+  } : null);
   const [log, setLog] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [prUrl, setPrUrl] = useState("");
-  const [reviewFiles, setReviewFiles] = useState<ReviewFile[]>([]);
+  const [reviewFiles, setReviewFiles] = useState<ReviewFile[]>(preparedStudy?.files || []);
   const [selectedFile, setSelectedFile] = useState("");
   const [editedContent, setEditedContent] = useState("");
   const [editedJson, setEditedJson] = useState<JsonValue | null>(null);
@@ -412,6 +426,7 @@ export default function PipelineStudio() {
   const [searching, setSearching] = useState(false);
 
   useEffect(() => {
+    if (preparedStudy) return;
     const requestedJobId = new URLSearchParams(window.location.search).get("job");
     const savedJobId = requestedJobId || window.localStorage.getItem(STORAGE_KEY);
     if (!savedJobId) return;
@@ -420,13 +435,15 @@ export default function PipelineStudio() {
       .then((response) => response.ok ? response.json() : null)
       .then((data) => { if (data?.job) { setJob(data.job); setLog(data.log || ""); } else window.localStorage.removeItem(STORAGE_KEY); })
       .catch(() => undefined);
-  }, []);
+  }, [preparedStudy]);
 
   useEffect(() => {
+    if (preparedStudy) return;
     if (job) window.localStorage.setItem(STORAGE_KEY, job.id);
-  }, [job]);
+  }, [job, preparedStudy]);
 
   useEffect(() => {
+    if (preparedStudy) return;
     if (!job || (job.status !== "queued" && job.status !== "running")) return;
     const timer = window.setInterval(async () => {
       try {
@@ -444,15 +461,16 @@ export default function PipelineStudio() {
       }
     }, 2000);
     return () => window.clearInterval(timer);
-  }, [job]);
+  }, [job, preparedStudy]);
 
   useEffect(() => {
+    if (preparedStudy) return;
     if (!job || job.status !== "review") return;
     fetch(`/api/pipeline/jobs/${job.id}/files`, { cache: "no-store" })
       .then((response) => response.ok ? response.json() : null)
       .then((data) => { if (data?.files) setReviewFiles(data.files); })
       .catch(() => undefined);
-  }, [job]);
+  }, [job, preparedStudy]);
 
   // A job that never leaves "queued" means no runner picked up the dispatched run.
   useEffect(() => {
@@ -534,6 +552,14 @@ export default function PipelineStudio() {
 
   async function review(decision: "approved" | "changes_requested") {
     if (!job) return;
+    if (preparedStudy) {
+      if (decision === "approved") {
+        window.location.assign(`/playground?mode=reproduce&study=${encodeURIComponent(preparedStudy.studyId)}&source=usability-test`);
+      } else {
+        setError("Your review note has been recorded for the study session. Please make any corrections in the files, save them, and approve when ready to continue.");
+      }
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -556,6 +582,13 @@ export default function PipelineStudio() {
 
   async function saveFile() {
     if (!job || !selectedFile) return;
+    if (preparedStudy) {
+      const content = selectedFile.endsWith(".json") ? `${JSON.stringify(editedJson, null, 2)}\n` : editedContent;
+      setEditedContent(content);
+      setReviewFiles((files) => files.map((file) => file.path === selectedFile ? { ...file, content } : file));
+      setSaved(true);
+      return;
+    }
     setBusy(true); setError("");
     try {
       const content = selectedFile.endsWith(".json") ? JSON.stringify(editedJson, null, 2) + "\n" : editedContent;
@@ -619,6 +652,10 @@ export default function PipelineStudio() {
   }
 
   function leaveJob() {
+    if (preparedStudy) {
+      window.location.assign("/usability-test");
+      return;
+    }
     window.localStorage.removeItem(STORAGE_KEY);
     setJob(null);
     setLog("");
@@ -729,7 +766,7 @@ export default function PipelineStudio() {
             <p className="text-sm font-semibold text-gray-950">{job.paperName}</p>
             <p className="mt-1 font-mono text-xs text-gray-500">{job.experimentId.startsWith("draft_") ? "Draft study" : `studies/${job.experimentId}/`}</p>
           </div>
-          <div className="flex items-center gap-3"><Link href="/" className="text-xs font-semibold text-gray-500 hover:text-gray-950">Back to Hub</Link><button type="button" onClick={() => setLeaving(true)} className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">Start another study</button><span className={`px-2 py-1 text-xs font-semibold ${job.status === "failed" ? "bg-red-100 text-red-800" : job.status === "complete" ? "bg-emerald-100 text-emerald-800" : job.status === "review" ? "bg-amber-100 text-amber-800" : "bg-cyan-100 text-cyan-800"}`}>{job.status}</span></div>
+          <div className="flex items-center gap-3"><Link href={preparedStudy ? "/usability-test" : "/"} className="text-xs font-semibold text-gray-500 hover:text-gray-950">{preparedStudy ? "Back to test" : "Back to Hub"}</Link><button type="button" onClick={() => setLeaving(true)} className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">Start another study</button><span className={`px-2 py-1 text-xs font-semibold ${job.status === "failed" ? "bg-red-100 text-red-800" : job.status === "complete" ? "bg-emerald-100 text-emerald-800" : job.status === "review" ? "bg-amber-100 text-amber-800" : "bg-cyan-100 text-cyan-800"}`}>{job.status}</span></div>
         </div>
       </header>
 
@@ -769,7 +806,7 @@ export default function PipelineStudio() {
           <div className="border-b border-gray-200 p-6">
             <p className="text-xs font-semibold uppercase text-cyan-700">Agent study builder</p>
             <h1 className="mt-2 font-serif text-2xl font-bold">{job.message.replace("Claude Code", "Our agent")}</h1>
-            <p className="mt-2 text-sm text-gray-500">Progress and review decisions are saved under job {job.id}.</p>
+            <p className="mt-2 text-sm text-gray-500">{preparedStudy ? "The extraction step was completed before this research session. Review the same package fields used in the regular Build Study workflow." : `Progress and review decisions are saved under job ${job.id}.`}</p>
           </div>
 
           {(job.status === "running" || job.status === "queued") && (
