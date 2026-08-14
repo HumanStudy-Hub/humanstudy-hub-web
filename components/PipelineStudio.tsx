@@ -32,8 +32,8 @@ type Job = {
   progress?: PipelineProgress;
   updatedAt: string;
 };
-type ReviewFile = { path: string; content: string };
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export type ReviewFile = { path: string; content: string };
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 const TECHNICAL_KEYS = new Set(["source_trace", "readiness", "coverage_ledger", "derivation_contract", "audit", "selection", "verification"]);
 
@@ -252,7 +252,7 @@ function JsonNode({ value, onChange, path = "", depth = 1, onlyMissing = false }
 // The top level of a study file is its table of contents. Presenting it as
 // collapsible sections with a jump list is what keeps a large file navigable;
 // everything below is ordinary nesting.
-function JsonEditor({ value, onChange }: { value: JsonValue; onChange: (value: JsonValue) => void }) {
+export function JsonEditor({ value, onChange }: { value: JsonValue; onChange: (value: JsonValue) => void }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [onlyMissing, setOnlyMissing] = useState(false);
 
@@ -631,78 +631,29 @@ export default function PipelineStudio() {
     return (
       <div className="min-h-[calc(100vh-4rem)] bg-[#f7f9fa]">
         <header className="border-b border-gray-200 bg-white">
-          <div className="mx-auto max-w-6xl px-5 py-12 sm:px-8">
-            <p className="text-xs font-semibold uppercase text-cyan-700">Study builder</p>
-            <h1 className="mt-3 max-w-3xl font-serif text-4xl font-bold text-gray-950">Turn a paper into an AI-agent study</h1>
-            <p className="mt-3 max-w-2xl text-base leading-7 text-gray-600">Upload a paper. The builder completes the extraction, then opens one final review panel for researcher edits.</p>
+          <div className="mx-auto max-w-6xl px-5 py-9 sm:px-8">
+            <p className="text-xs font-semibold uppercase text-cyan-700">Build an existing study</p>
+            <h1 className="mt-2 max-w-3xl font-serif text-3xl font-bold text-gray-950">Start with the paper</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">Upload the study. Our agent builds the runnable files; you review them before anything is published.</p>
           </div>
         </header>
 
         <main className="mx-auto grid max-w-6xl gap-8 px-5 py-9 sm:px-8 lg:grid-cols-[minmax(0,1fr)_300px]">
           <section className="border border-gray-200 bg-white p-6 shadow-sm">
             <div className="border-b border-gray-100 pb-5">
-              <p className="text-sm font-semibold text-gray-950">Source material</p>
-              <p className="mt-1 text-sm text-gray-500">Start with a published study that has enough evidence and materials to reconstruct.</p>
+              <p className="text-sm font-semibold text-gray-950">1. Add the paper</p>
+              <p className="mt-1 text-xs text-gray-500">PDF required · up to 50 MB</p>
             </div>
 
-            <div className="mt-5 border border-gray-200 bg-gray-50 p-4">
-              <p className="text-sm font-semibold text-gray-900">Good fit for the study builder</p>
-              <p className="mt-1 text-xs leading-5 text-gray-600">The builder works best when these conditions are met. Missing open materials are acceptable; missing procedures or human results usually require more researcher review.</p>
-              <dl className="mt-3 grid gap-px bg-gray-200 sm:grid-cols-3">
-                {[
-                  ["Human results", "Sample, outcomes, and reported statistics are available."],
-                  ["Runnable materials", "Instructions and stimuli can be represented as text, images, audio, or video."],
-                  ["Appropriate risk", "No deception, distress, or sensitive interaction that should not be simulated."],
-                ].map(([term, detail]) => <div key={term} className="bg-white p-3"><dt className="text-xs font-semibold text-gray-900">{term}</dt><dd className="mt-1 text-[11px] leading-4 text-gray-500">{detail}</dd></div>)}
-              </dl>
-            </div>
-
-            <div className="mt-5 border border-gray-200 bg-gray-50 p-4">
-              <p className="text-sm font-semibold text-gray-900">Already submitted a paper?</p>
-              <p className="mt-1 text-xs leading-5 text-gray-600">Find it again with the name you submitted it under. A job keeps running after you close the page.</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <input
-                  value={lookupName}
-                  onChange={(event) => setLookupName(event.target.value)}
-                  onKeyDown={(event) => { if (event.key === "Enter") findMyJobs(); }}
-                  placeholder="Your contributor name"
-                  className="h-9 min-w-0 flex-1 border border-gray-300 px-3 text-sm outline-none focus:border-cyan-700"
-                />
-                <button type="button" disabled={searching || lookupName.trim().length < 2} onClick={findMyJobs} className="h-9 border border-gray-400 bg-white px-4 text-xs font-semibold text-gray-800 hover:border-cyan-700 disabled:text-gray-300">
-                  {searching ? "Searching..." : "Find my studies"}
-                </button>
-              </div>
-              {foundJobs && foundJobs.length === 0 && <p className="mt-2 text-xs text-gray-500">No studies found under that name.</p>}
-              {foundJobs && foundJobs.length > 0 && (
-                <ul className="mt-3 divide-y divide-gray-200 border border-gray-200 bg-white">
-                  {foundJobs.map((entry) => (
-                    <li key={entry.id}>
-                      <button type="button" onClick={() => openJob(entry.id)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-gray-50">
-                        <span className="min-w-0">
-                          <span className="block truncate text-xs font-semibold text-gray-900">{entry.paperName}</span>
-                          <span className="block font-mono text-[10px] text-gray-400">{entry.id}</span>
-                        </span>
-                        <span className={`shrink-0 px-2 py-0.5 text-[10px] font-semibold ${entry.status === "review" ? "bg-amber-100 text-amber-800" : entry.status === "complete" ? "bg-emerald-100 text-emerald-800" : entry.status === "failed" ? "bg-red-100 text-red-800" : "bg-cyan-100 text-cyan-800"}`}>{entry.status}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="mt-5 border-l-2 border-gray-300 bg-gray-50 px-4 py-3">
-              <p className="text-xs font-semibold text-gray-800">Already exported a package from our pipeline?</p>
-              <p className="mt-1 text-xs leading-5 text-gray-600">Continue with a study ZIP previously generated by this extraction pipeline. Personal or manually assembled ZIP files are not supported.</p>
-              <a href="/contribute" className="mt-2 inline-flex h-8 items-center border border-gray-300 bg-white px-3 text-[11px] font-semibold text-gray-700 hover:border-cyan-700 hover:text-cyan-800">Use pipeline ZIP</a>
-            </div>
-
-            <button type="button" onClick={() => fileInput.current?.click()} className={`mt-6 flex min-h-48 w-full flex-col items-center justify-center border border-dashed px-6 text-center ${paper ? "border-emerald-300 bg-emerald-50" : "border-gray-300 bg-gray-50 hover:border-cyan-500"}`}>
-              <span className="text-sm font-semibold text-gray-900">{paper?.name || "Choose a paper PDF"}</span>
-              <span className="mt-2 text-xs text-gray-500">{paper ? `${(paper.size / 1024 / 1024).toFixed(1)} MB` : "PDF, up to 50 MB"}</span>
+            <button type="button" onClick={() => fileInput.current?.click()} className={`mt-5 flex min-h-40 w-full flex-col items-center justify-center border border-dashed px-6 text-center transition-colors ${paper ? "border-emerald-400 bg-emerald-50" : "border-cyan-300 bg-cyan-50 hover:border-cyan-600 hover:bg-cyan-100"}`}>
+              <span className={`flex h-10 w-10 items-center justify-center rounded-full text-xl font-light ${paper ? "bg-emerald-600 text-white" : "bg-cyan-700 text-white"}`}>{paper ? "✓" : "+"}</span>
+              <span className="mt-3 text-sm font-semibold text-gray-950">{paper?.name || "Choose a paper PDF"}</span>
+              {paper && <span className="mt-1 text-xs text-emerald-700">{(paper.size / 1024 / 1024).toFixed(1)} MB · ready</span>}
             </button>
             <input ref={fileInput} type="file" accept=".pdf,application/pdf" className="hidden" onChange={(event) => chooseFile(event.target.files?.[0])} />
 
-            <label className="mt-6 block text-sm font-semibold text-gray-900" htmlFor="osf-url">Open materials <span className="font-normal text-gray-400">optional</span></label>
+            <div className="mt-6 border-b border-gray-100 pb-3"><p className="text-sm font-semibold text-gray-950">2. Add study details</p></div>
+            <label className="mt-5 block text-sm font-semibold text-gray-900" htmlFor="osf-url">Open materials <span className="font-normal text-gray-400">optional</span></label>
             <input id="osf-url" value={osf} onChange={(event) => setOsf(event.target.value)} placeholder="https://osf.io/..." className="mt-2 h-10 w-full border border-gray-300 px-3 text-sm outline-none focus:border-cyan-700" />
 
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -725,25 +676,45 @@ export default function PipelineStudio() {
             )}
             <div className="mt-7 flex justify-end border-t border-gray-100 pt-5">
               <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center">
-                <a href="https://github.com/HumanStudy-Hub/HumanStudy-Bench/blob/main/docs/submit_study.md" target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-cyan-700 hover:underline">Contribute manually on GitHub</a>
                 <button type="button" disabled={!paper || !contributorName.trim() || busy} onClick={start} className="h-10 bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300">
-                  {busy ? (uploadPercent !== null ? `Uploading ${Math.round(uploadPercent)}%` : "Starting...") : "Start conversion"}
+                  {busy ? (uploadPercent !== null ? `Uploading ${Math.round(uploadPercent)}%` : "Starting...") : "Build this study"}
                 </button>
               </div>
             </div>
           </section>
 
-          <aside>
-            <p className="text-xs font-semibold uppercase text-gray-500">Agent workflow</p>
+          <aside className="space-y-5">
+            <section className="border border-cyan-200 bg-cyan-50 p-4">
+              <p className="text-sm font-semibold text-cyan-950">Is this study a good fit?</p>
+              <ul className="mt-3 space-y-2 text-xs leading-5 text-cyan-950">
+                <li><span className="mr-2 text-emerald-600">✓</span>Human results are reported</li>
+                <li><span className="mr-2 text-emerald-600">✓</span>Instructions and stimuli are available</li>
+                <li><span className="mr-2 text-amber-600">!</span>Safe and appropriate to simulate</li>
+              </ul>
+            </section>
+
+            <section className="border border-gray-200 bg-white p-4">
+              <p className="text-sm font-semibold text-gray-900">Open a previous study</p>
+              <div className="mt-3 flex">
+                <input value={lookupName} onChange={(event) => setLookupName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") findMyJobs(); }} placeholder="Contributor name" className="h-9 min-w-0 flex-1 border border-gray-300 px-3 text-xs outline-none focus:border-cyan-700" />
+                <button type="button" title="Search studies" disabled={searching || lookupName.trim().length < 2} onClick={findMyJobs} className="h-9 w-10 shrink-0 bg-gray-900 text-sm text-white hover:bg-cyan-700 disabled:bg-gray-300">→</button>
+              </div>
+              {foundJobs && foundJobs.length === 0 && <p className="mt-3 text-xs text-gray-500">No studies found.</p>}
+              {foundJobs && foundJobs.length > 0 && <ul className="mt-3 divide-y divide-gray-200">{foundJobs.map((entry) => <li key={entry.id}><button type="button" onClick={() => openJob(entry.id)} className="flex w-full items-center justify-between gap-2 py-2 text-left"><span className="truncate text-xs font-semibold text-gray-800">{entry.paperName}</span><span className={`shrink-0 px-1.5 py-0.5 text-[9px] font-semibold ${entry.status === "review" ? "bg-amber-100 text-amber-800" : entry.status === "complete" ? "bg-emerald-100 text-emerald-800" : entry.status === "failed" ? "bg-red-100 text-red-800" : "bg-cyan-100 text-cyan-800"}`}>{entry.status}</span></button></li>)}</ul>}
+            </section>
+
+            <section className="px-2">
+            <p className="text-xs font-semibold uppercase text-gray-500">What happens next</p>
             <ol className="mt-4 border-l border-gray-300">
               {agentTasks.map(([label, detail], index) => (
-                <li key={label} className="relative pb-7 pl-6">
-                  <span className="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full border border-gray-300 bg-white text-[11px] font-bold">{index + 1}</span>
+                <li key={label} className="relative pb-5 pl-6">
+                  <span className="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full border border-cyan-200 bg-cyan-50 text-[11px] font-bold text-cyan-800">{index + 1}</span>
                   <p className="text-sm font-semibold text-gray-800">{label}</p>
-                  <p className="mt-1 text-xs leading-5 text-gray-500">{detail}</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{detail}</p>
                 </li>
               ))}
             </ol>
+            </section>
           </aside>
         </main>
       </div>
