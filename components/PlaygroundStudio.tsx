@@ -156,8 +156,12 @@ function Verdict({ row }: { row: TestRow }) {
   return <span className="text-[11px] text-gray-400">Not scored</span>;
 }
 
-export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }) {
-  const [studyId, setStudyId] = useState(studies[0]?.study_id || "study_001");
+export default function PlaygroundStudio({ studies, initialStudyId }: { studies: StudyOption[]; initialStudyId?: string }) {
+  const [studyId, setStudyId] = useState(
+    studies.some((study) => study.study_id === initialStudyId)
+      ? initialStudyId as string
+      : studies[0]?.study_id || "study_001",
+  );
   const [model, setModel] = useState(MODELS[0].id);
   const [preset, setPreset] = useState("v2_human");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -203,6 +207,13 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
 
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("run");
+    // A study supplied by Build Study or the usability workflow starts a new
+    // experiment. Restoring an unrelated previous run below the new setup
+    // makes its participant count and results look like the new study's data.
+    if (initialStudyId && !requested) {
+      window.localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
     const saved = requested || window.localStorage.getItem(STORAGE_KEY);
     if (!saved) return;
     window.localStorage.setItem(STORAGE_KEY, saved);
@@ -217,7 +228,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
         }
       })
       .catch(() => undefined);
-  }, []);
+  }, [initialStudyId]);
 
   useEffect(() => {
     if (run) window.localStorage.setItem(STORAGE_KEY, run.id);
@@ -342,7 +353,8 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
     const summary = [
       `Model: ${run.model}`,
       `Participant prompt: ${run.preset}`,
-      `Participants: ${run.participants ?? "Not available"}`,
+      `Participant sessions: ${run.participants ?? "Not available"}`,
+      `Requested participants per condition: ${run.participantsPerScenario}`,
       `Answers collected: ${run.answeredTrials ?? 0}`,
       `Direction matched: ${percent(run.summary.directionMatchRate)}`,
       `Mean absolute effect gap: ${decimal(run.summary.meanAbsoluteEffectGap)}`,
@@ -673,7 +685,11 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                     {[
                       ["Direction matched", percent(run.summary.directionMatchRate), "Effect pointed the same way as in humans"],
                       ["Mean effect gap", decimal(run.summary.meanAbsoluteEffectGap), "Average distance from the human effect size"],
-                      ["Participants", String(run.participants ?? "—"), `${run.answeredTrials ?? 0} answers collected`],
+                      [
+                        "Participant sessions",
+                        String(run.participants ?? "—"),
+                        `${run.answeredTrials ?? 0} answers collected across all conditions · requested ${run.participantsPerScenario} per condition`,
+                      ],
                       [
                         "Strict replication",
                         run.summary.scoredTests > 0 ? `${run.summary.replicatedTests}/${run.summary.scoredTests}` : "Not available",
