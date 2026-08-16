@@ -29,6 +29,8 @@ export type PlaygroundRun = {
   id: string;
   studyId: string;
   studyTitle?: string;
+  jobId?: string;
+  packageSlug?: string;
   model: string;
   preset: string;
   systemPrompt?: string;
@@ -205,6 +207,8 @@ async function dispatch(id: string) {
 
 export type CreateRunInput = {
   studyId: string;
+  jobId?: string;
+  packageSlug?: string;
   model: string;
   preset: string;
   systemPrompt?: string;
@@ -258,6 +262,8 @@ function validate(input: CreateRunInput) {
   const personaGroup = input.personaGroup ? normaliseGroup(input.personaGroup) : undefined;
   return {
     studyId,
+    jobId: input.jobId?.trim() || undefined,
+    packageSlug: input.packageSlug?.trim() || undefined,
     model,
     preset,
     systemPrompt,
@@ -279,6 +285,8 @@ export async function createRun(input: CreateRunInput) {
   const run: PlaygroundRun = {
     id,
     studyId: checked.studyId,
+    jobId: checked.jobId,
+    packageSlug: checked.packageSlug,
     model: checked.model,
     preset: checked.preset,
     systemPrompt: checked.systemPrompt || undefined,

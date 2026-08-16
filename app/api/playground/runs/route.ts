@@ -8,6 +8,8 @@ export async function POST(request: Request) {
     const body = await request.json();
     const run = await createRun({
       studyId: String(body.studyId || ""),
+      jobId: body.jobId ? String(body.jobId) : undefined,
+      packageSlug: body.packageSlug ? String(body.packageSlug) : undefined,
       model: String(body.model || ""),
       preset: String(body.preset || "v3_human_plus_demo"),
       systemPrompt: String(body.systemPrompt || ""),

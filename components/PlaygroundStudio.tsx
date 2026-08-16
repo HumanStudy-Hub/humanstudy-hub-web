@@ -17,7 +17,7 @@ const STORAGE_KEY = "humanstudy-hub-playground-run";
 // runner ever picked it up.
 const STALL_MS = 5 * 60 * 1000;
 
-export type StudyOption = { study_id: string; title: string; year: number | null };
+export type StudyOption = { study_id: string; title: string; year: number | null; source?: "benchmark" | "buffer"; jobId?: string; packageSlug?: string };
 
 type RunStatus = "queued" | "running" | "analysing" | "complete" | "failed";
 type Progress = {
@@ -284,6 +284,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           studyId,
+          ...(study?.source === "buffer" && study.jobId && study.packageSlug ? { jobId: study.jobId, packageSlug: study.packageSlug } : {}),
           model: model.trim(),
           preset,
           systemPrompt: preset === "custom" ? systemPrompt : "",

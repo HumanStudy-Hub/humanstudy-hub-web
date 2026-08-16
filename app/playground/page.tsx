@@ -1,6 +1,7 @@
 import PlaygroundStudio, { type StudyOption } from "@/components/PlaygroundStudio";
 import PrototypeStudio from "@/components/PrototypeStudio";
 import WorkspaceChoice from "@/components/WorkspaceChoice";
+import { listBufferStudies } from "@/lib/github-jobs";
 import { getStudies } from "@/lib/studies";
 
 export const metadata = {
@@ -11,12 +12,26 @@ export const metadata = {
 export default async function PlaygroundPage({ searchParams }: { searchParams: Promise<{ mode?: string }> }) {
   const { mode } = await searchParams;
   if (mode === "prototype") return <PrototypeStudio />;
-  const studies = await getStudies();
-  const options: StudyOption[] = studies.map((study) => ({
-    study_id: study.study_id,
-    title: study.title,
-    year: study.year,
-  }));
+  const [studies, buffer] = await Promise.all([
+    getStudies(),
+    listBufferStudies().catch(() => []),
+  ]);
+  const options: StudyOption[] = [
+    ...buffer.map((entry) => ({
+      study_id: entry.studyId,
+      title: `${entry.title} · buffer`,
+      year: null,
+      source: "buffer" as const,
+      jobId: entry.jobId,
+      packageSlug: entry.packageSlug,
+    })),
+    ...studies.map((study) => ({
+      study_id: study.study_id,
+      title: study.title,
+      year: study.year,
+      source: "benchmark" as const,
+    })),
+  ];
 
   if (mode === "reproduce") return <PlaygroundStudio studies={options} />;
   return <WorkspaceChoice title="What do you want to learn?" description="Use a published study when you need a human comparison. Start a new prototype when you are still shaping the research question." choices={[

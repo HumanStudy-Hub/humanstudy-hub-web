@@ -325,6 +325,60 @@ export async function findJobsByContributor(name: string, limit = 10) {
   return found.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 }
 
+export type BufferStudy = {
+  studyId: string;
+  title: string;
+  jobId: string;
+  packageSlug: string;
+  paperName: string;
+  createdAt?: string;
+};
+
+async function packageSlug(id: string): Promise<string | null> {
+  const api = octokit();
+  const target = splitRepo(jobsRepo);
+  const result = await api.repos.getContent({ ...target, path: jobPath(id, "package"), ref: `jobs/${safe(id)}` });
+  if (!Array.isArray(result.data)) return null;
+  const dirs = result.data.filter((item) => item.type === "dir");
+  return dirs.length === 1 ? dirs[0].name : null;
+}
+
+// Buffer studies are agent-built packages that have not been merged into the
+// benchmark yet. They are runnable from the jobs repository, so the playground
+// lists them alongside the merged catalog.
+export async function listBufferStudies(): Promise<BufferStudy[]> {
+  const api = octokit();
+  const target = splitRepo(jobsRepo);
+  const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
+  const jobBranches = branches.filter((branch) => branch.name.startsWith("jobs/")).reverse();
+  const out: BufferStudy[] = [];
+  for (const branch of jobBranches.slice(0, 60)) {
+    const id = branch.name.slice("jobs/".length);
+    try {
+      const job = JSON.parse((await getFile(branch.name, jobPath(id, "job.json"))).toString("utf8")) as PipelineJob;
+      if (!job.packageReady && job.status !== "review" && job.status !== "complete") continue;
+      const slug = await packageSlug(id);
+      if (!slug) continue;
+      let title = slug.replace(/[-_]+/g, " ");
+      try {
+        const index = JSON.parse((await getFile(branch.name, jobPath(id, `package/${slug}/index.json`))).toString("utf8"));
+        if (index.title) title = index.title;
+      } catch {
+        try {
+          const study = JSON.parse((await getFile(branch.name, jobPath(id, `package/${slug}/study.json`))).toString("utf8"));
+          title = study.title || study.paper?.title || title;
+        } catch {
+          // keep the slug-derived title
+        }
+      }
+      out.push({ studyId: slug, title, jobId: id, packageSlug: slug, paperName: job.paperName, createdAt: job.createdAt });
+    } catch {
+      // A half-built job branch is skipped rather than failing the listing.
+    }
+  }
+  return out;
+}
+
 export async function assignStudyId(id: string) {
   const job = await readJob(id);
   if (!job.experimentId.startsWith("draft_")) return job;
