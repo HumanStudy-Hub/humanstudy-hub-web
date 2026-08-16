@@ -95,13 +95,26 @@ export async function nextStudyId() {
   const api = octokit();
   const target = splitRepo(pipelineRepo);
   const branch = process.env.GITHUB_PIPELINE_REF || await defaultBranch(pipelineRepo);
+
+  const ids = [0];
+
+  // IDs already merged into the base branch.
   const result = await api.repos.getContent({ ...target, path: "studies", ref: branch });
   const entries = Array.isArray(result.data) ? result.data : [];
-  const ids = entries.flatMap((entry) => {
+  for (const entry of entries) {
     const match = entry.name.match(/^study_(\d+)$/);
-    return match ? [Number(match[1])] : [];
-  });
-  return `study_${String(Math.max(0, ...ids) + 1).padStart(3, "0")}`;
+    if (match) ids.push(Number(match[1]));
+  }
+
+  // IDs already claimed by unmerged contribution branches, so sequential
+  // publishes do not all land on the same study_### number before a PR merges.
+  const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
+  for (const item of branches) {
+    const match = item.name.match(/^contribute\/study_(\d+)-/);
+    if (match) ids.push(Number(match[1]));
+  }
+
+  return `study_${String(Math.max(...ids) + 1).padStart(3, "0")}`;
 }
 
 async function putFile(branch: string, filePath: string, content: Buffer | string, message: string) {
