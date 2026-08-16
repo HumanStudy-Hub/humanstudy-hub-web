@@ -26,6 +26,14 @@ export async function POST(
     const baseCommit = await octokit.git.getCommit({ owner, repo, commit_sha: baseRef.data.object.sha });
     const branch = `contribute/${job.experimentId}-${job.id.slice(-8)}`;
 
+    // Publishing is idempotent: an earlier attempt may already have opened the
+    // PR (its response just never reached the browser). Return it instead of
+    // failing with "Reference already exists" on the branch.
+    const existingPRs = await octokit.pulls.list({ owner, repo, head: `${owner}:${branch}`, state: "open" });
+    if (existingPRs.data.length > 0) {
+      return NextResponse.json({ prUrl: existingPRs.data[0].html_url });
+    }
+
     const packageFiles = await listPackageFiles(jobId);
     const firstSegments = new Set(packageFiles.map((file) => file.path.split("/")[0]));
     const packageRoot = firstSegments.size === 1 ? [...firstSegments][0] : "";
@@ -68,7 +76,16 @@ export async function POST(
       tree: newTree.data.sha,
       parents: [baseRef.data.object.sha],
     });
-    await octokit.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: commit.data.sha });
+    try {
+      await octokit.git.createRef({ owner, repo, ref: `refs/heads/${branch}`, sha: commit.data.sha });
+    } catch (error) {
+      // A previous attempt created the branch but died before opening the PR.
+      // Re-point the branch at the freshly built commit instead of failing.
+      if (!/reference already exists/i.test(error instanceof Error ? error.message : String(error))) {
+        throw error;
+      }
+      await octokit.git.updateRef({ owner, repo, ref: `heads/${branch}`, sha: commit.data.sha, force: true });
+    }
     const pr = await octokit.pulls.create({
       owner,
       repo,
