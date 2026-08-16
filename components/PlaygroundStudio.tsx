@@ -54,7 +54,11 @@ type Run = {
   summary?: Summary;
   progress?: Progress;
   createdAt?: string;
+  selection?: RunSelection;
 };
+type RunSelection = { mode: "whole" | "material"; materialId?: string; itemId?: string; label?: string };
+type MaterialOption = { id: string; label: string; items: Array<{ id: string; label: string }> };
+type Review = { studyNote: string; itemNotes: Record<string, string>; updatedAt?: string };
 type TestRow = {
   test_id: string;
   label: string;
@@ -63,6 +67,7 @@ type TestRow = {
   human_effect: number | null;
   agent_effect: number | null;
   agent_p: number | null;
+  human_p: number | null;
   human_significant: boolean | null;
   agent_significant: boolean | null;
   direction_match: boolean | null;
@@ -149,6 +154,16 @@ function decimal(value: number | null | undefined, digits = 2) {
   return value === null || value === undefined ? "—" : value.toFixed(digits);
 }
 
+function significanceStars(p: number | null | undefined, significant: boolean | null) {
+  if (p !== null && p !== undefined) {
+    if (p < 0.001) return "***";
+    if (p < 0.01) return "**";
+    if (p < 0.05) return "*";
+    return "";
+  }
+  return significant ? "*" : "";
+}
+
 function Verdict({ row }: { row: TestRow }) {
   if (row.replicated) return <span className="bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-800">Reproduced</span>;
   if (row.direction_match === false) return <span className="bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-900">Wrong direction</span>;
@@ -170,7 +185,11 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
   const [background, setBackground] = useState("");
   const [persona, setPersona] = useState("");
   const [participants, setParticipants] = useState(8);
-  const [temperature, setTemperature] = useState(1);
+  const [scope, setScope] = useState<"whole" | "material">("whole");
+  const [materials, setMaterials] = useState<MaterialOption[]>([]);
+  const [materialId, setMaterialId] = useState("");
+  const [itemId, setItemId] = useState("");
+  const [materialsLoading, setMaterialsLoading] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [castMode, setCastMode] = useState<CastMode>("paper");
@@ -185,6 +204,9 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [stalled, setStalled] = useState(false);
+  const [review, setReview] = useState<Review>({ studyNote: "", itemNotes: {} });
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewSaved, setReviewSaved] = useState(true);
   const resultsLoaded = useRef("");
 
   const maxParticipants = apiKey.trim() ? 80 : 10;
@@ -204,6 +226,21 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
     return parts.join(", ");
   }, [age, gender, background, persona]);
   const sameIdentity = castMode === "simple" && identitySummary.length > 0;
+  const selectedMaterial = materials.find((entry) => entry.id === materialId);
+
+  useEffect(() => {
+    setMaterials([]); setMaterialId(""); setItemId("");
+    if (scope !== "material" || !studyId) return;
+    setMaterialsLoading(true);
+    fetch(`/api/playground/studies/${encodeURIComponent(studyId)}/materials`, { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() : Promise.reject(new Error("Materials unavailable")))
+      .then((data) => {
+        const next = Array.isArray(data.materials) ? data.materials as MaterialOption[] : [];
+        setMaterials(next); setMaterialId(next[0]?.id || "");
+      })
+      .catch(() => setMaterials([]))
+      .finally(() => setMaterialsLoading(false));
+  }, [scope, studyId]);
 
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("run");
@@ -260,6 +297,10 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
         if (data.charts) setCharts(data.charts as PlaygroundChartSet);
         if (data.analysis) setAnalysis(data.analysis as Analysis);
         if (Array.isArray(data.transcript)) setTranscript(data.transcript as Transcript);
+        fetch(`/api/playground/runs/${run.id}/review`, { cache: "no-store" })
+          .then((response) => response.ok ? response.json() : null)
+          .then((reviewData) => { if (reviewData?.review) setReview(reviewData.review); })
+          .catch(() => undefined);
       })
       .catch(() => undefined);
   }, [run]);
@@ -301,7 +342,12 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
           demographics: identityReachesPrompt && castMode === "simple" ? { age, gender, background, persona } : {},
           personaGroup: identityReachesPrompt && castMode === "personas" ? personaGroup : null,
           participantsPerScenario: participants,
-          temperature,
+          selection: scope === "material" ? {
+            mode: "material",
+            materialId,
+            itemId: itemId || undefined,
+            label: itemId ? selectedMaterial?.items.find((entry) => entry.id === itemId)?.label : selectedMaterial?.label,
+          } : { mode: "whole" },
           apiKey: apiKey.trim(),
         }),
       });
@@ -344,8 +390,21 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
     setCharts(null);
     setAnalysis(null);
     setTranscript([]);
+    setReview({ studyNote: "", itemNotes: {} });
     setLog("");
     resultsLoaded.current = "";
+  }
+
+  async function saveReview() {
+    if (!run) return;
+    setReviewSaving(true); setError("");
+    try {
+      const response = await fetch(`/api/playground/runs/${run.id}/review`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(review) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Review could not be saved.");
+      setReview(data.review); setReviewSaved(true);
+    } catch (caught) { setError(caught instanceof Error ? caught.message : "Review could not be saved."); }
+    finally { setReviewSaving(false); }
   }
 
   function downloadReport() {
@@ -353,6 +412,7 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
     const summary = [
       `Model: ${run.model}`,
       `Participant prompt: ${run.preset}`,
+      `Run scope: ${run.selection?.mode === "material" ? run.selection.label || run.selection.itemId || run.selection.materialId : "Whole study"}`,
       `Participant sessions: ${run.participants ?? "Not available"}`,
       `Requested participants per condition: ${run.participantsPerScenario}`,
       `Answers collected: ${run.answeredTrials ?? 0}`,
@@ -360,9 +420,9 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
       `Mean absolute effect gap: ${decimal(run.summary.meanAbsoluteEffectGap)}`,
       `Strict replication: ${run.summary.scoredTests > 0 ? `${run.summary.replicatedTests}/${run.summary.scoredTests}` : "Not available"}`,
     ].join("\n");
-    const tests = analysis?.tests.map((row) => [row.label, `Paper: ${row.reported_statistics || "Not available"}`, `Human effect: ${decimal(row.human_effect)}`, `Agent effect: ${decimal(row.agent_effect)}`, `Direction match: ${row.direction_match ?? "Not scored"}`, `Strict replication: ${row.replicated ?? "Not scored"}`].join("\n")).join("\n\n") || "Not loaded";
+    const tests = analysis?.tests.map((row) => [row.label, `Paper: ${row.reported_statistics || "Not available"}`, `Human effect: ${decimal(row.human_effect)}${significanceStars(row.human_p, row.human_significant)}`, `Agent effect: ${decimal(row.agent_effect)}${significanceStars(row.agent_p, row.agent_significant)}`, `Direction match: ${row.direction_match ?? "Not scored"}`, `Strict replication: ${row.replicated ?? "Not scored"}`, `Annotation: ${review.itemNotes[row.test_id] || "None"}`].join("\n")).join("\n\n") || "Not loaded";
     const responses = transcript.map((sample) => `Participant ${sample.participantId}\nProfile: ${JSON.stringify(sample.profile)}\nPrompt: ${sample.prompt || "None"}\nResponse: ${sample.response || "No answer"}`).join("\n\n") || "Not loaded";
-    downloadTextReport(`${run.studyId}-${run.id}-report.txt`, `${run.studyTitle || run.studyId} - agent study report`, [["Run summary", summary], ["Interpretation note", "Direction and effect distance are descriptive comparisons. Strict replication requires both direction and significance to be scoreable; it is not the default verdict."], ["Test-by-test results", tests], ["Sample responses", responses]]);
+    downloadTextReport(`${run.studyId}-${run.id}-report.txt`, `${run.studyTitle || run.studyId} - agent study report`, [["Run summary", summary], ["Study-level annotation", review.studyNote || "None"], ["Interpretation note", "Direction and effect distance are descriptive comparisons. Strict replication requires both direction and significance to be scoreable; it is not the default verdict."], ["Test-by-test results", tests], ["Sample responses", responses]]);
   }
 
   const progress = run?.progress;
@@ -424,6 +484,35 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
                 </p>
               </div>
 
+              <div className="sm:col-span-2">
+                <p className="text-sm font-semibold text-gray-900">Run scope</p>
+                <div className="mt-2 inline-flex border border-gray-300">
+                  {[["whole", "Whole study"], ["material", "Selected material"]].map(([id, label]) => (
+                    <button key={id} type="button" onClick={() => setScope(id as "whole" | "material")} className={`h-9 px-4 text-xs font-semibold ${scope === id ? "bg-cyan-700 text-white" : "bg-white text-gray-600 hover:text-gray-950"}`}>{label}</button>
+                  ))}
+                </div>
+                {scope === "whole" ? <p className="mt-2 text-xs text-gray-500">Runs every experiment material in the study.</p> : (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="material" className="block text-xs font-semibold text-gray-700">Experiment material</label>
+                      <select id="material" value={materialId} disabled={materialsLoading || materials.length === 0} onChange={(event) => { setMaterialId(event.target.value); setItemId(""); }} className="mt-1 h-10 w-full border border-gray-300 bg-white px-3 text-sm outline-none focus:border-cyan-700 disabled:bg-gray-100">
+                        {materialsLoading && <option>Loading materials...</option>}
+                        {!materialsLoading && materials.length === 0 && <option>No materials found</option>}
+                        {materials.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="material-item" className="block text-xs font-semibold text-gray-700">Item <span className="font-normal text-gray-400">optional</span></label>
+                      <select id="material-item" value={itemId} disabled={!selectedMaterial?.items.length} onChange={(event) => setItemId(event.target.value)} className="mt-1 h-10 w-full border border-gray-300 bg-white px-3 text-sm outline-none focus:border-cyan-700 disabled:bg-gray-100">
+                        <option value="">All items in this material</option>
+                        {selectedMaterial?.items.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
+                      </select>
+                    </div>
+                    <p className="text-xs leading-5 text-gray-500 sm:col-span-2">A scoped run is evaluated only on the responses produced for this material. Some paper-level tests may be unavailable.</p>
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="block text-sm font-semibold text-gray-900" htmlFor="model">Base model</label>
                 <div className="mt-2">
@@ -449,11 +538,6 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
                 <p className="mt-2 text-xs text-gray-500">Up to {maxParticipants} on {apiKey.trim() ? "your key" : "the shared key"}. More participants detect smaller effects.</p>
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-900" htmlFor="temperature">Temperature</label>
-                <input id="temperature" type="range" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} className="mt-4 w-full accent-cyan-700" />
-                <p className="mt-1 text-xs text-gray-500">{temperature.toFixed(1)} — how much answers vary.</p>
-              </div>
             </div>
 
             <div className="mt-8 border-t border-gray-100 pt-6">
@@ -553,12 +637,6 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
                         <>
                           <span className="font-semibold">Every agent is the same person</span> — {identitySummary}. They differ
                           only in what the model answers.
-                          {temperature <= 0.2 && (
-                            <span className="mt-1 block font-semibold">
-                              At temperature {temperature.toFixed(1)} they will answer near-identically too, leaving too
-                              little variation for the study&apos;s statistical tests. Raise it, or use the paper&apos;s sampling.
-                            </span>
-                          )}
                         </>
                       ) : (
                         <>Nothing set yet, so this run is still identical to <span className="font-semibold">As the paper recruited</span>.</>
@@ -597,7 +675,7 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
 
             <div className="mt-7 flex items-center justify-between gap-4 border-t border-gray-100 pt-5">
               <p className="text-xs text-gray-500">{running ? "A run is already in progress." : "Takes a few minutes."}</p>
-              <button type="button" disabled={busy || running || !model.trim()} onClick={start} className="h-10 bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300">
+              <button type="button" disabled={busy || running || !model.trim() || (scope === "material" && !materialId)} onClick={start} className="h-10 bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300">
                 {busy ? "Starting…" : "Run the study"}
               </button>
             </div>
@@ -636,7 +714,7 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-6 py-4">
               <div>
                 <p className="text-sm font-semibold text-gray-950">{run.studyTitle || run.studyId}</p>
-                <p className="mt-1 font-mono text-xs text-gray-500">{run.model} · {run.preset} · run {run.id}</p>
+                <p className="mt-1 font-mono text-xs text-gray-500">{run.model} · {run.preset} · {run.selection?.mode === "material" ? run.selection.label || run.selection.itemId || run.selection.materialId : "whole study"} · run {run.id}</p>
               </div>
               <div className="flex items-center gap-3">
                 {run.status === "complete" && run.summary && <button type="button" onClick={downloadReport} className="h-8 border border-gray-300 px-3 text-xs font-semibold text-gray-700 hover:border-cyan-700 hover:text-cyan-800">Download report</button>}
@@ -723,11 +801,15 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
                 {analysis && analysis.tests.length > 0 && (
                   <section className="border border-gray-200">
                     <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
-                      <p className="text-sm font-semibold text-gray-900">Test by test</p>
-                      <p className="mt-1 text-xs text-gray-500">Every statistical test the paper reported, and what the agent produced for it.</p>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div><p className="text-sm font-semibold text-gray-900">Test-by-test review</p><p className="mt-1 text-xs text-gray-500">Effect sizes include significance: * p&lt;.05, ** p&lt;.01, *** p&lt;.001.</p></div>
+                        <button type="button" disabled={reviewSaving || reviewSaved} onClick={saveReview} className="h-8 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{reviewSaving ? "Saving..." : reviewSaved ? "Saved" : "Save review"}</button>
+                      </div>
+                      <label htmlFor="study-review" className="mt-4 block text-xs font-semibold text-gray-700">Study-level annotation</label>
+                      <textarea id="study-review" value={review.studyNote} onChange={(event) => { setReview((current) => ({ ...current, studyNote: event.target.value })); setReviewSaved(false); }} rows={2} placeholder="Overall interpretation, caveats, or follow-up decisions" className="mt-1 w-full border border-gray-300 bg-white p-2 text-xs leading-5 outline-none focus:border-cyan-700" />
                     </div>
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[720px] text-left text-sm">
+                      <table className="w-full min-w-[980px] text-left text-sm">
                         <thead className="bg-white text-[11px] uppercase text-gray-500">
                           <tr>
                             <th className="px-4 py-2 font-semibold">Test</th>
@@ -736,6 +818,7 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
                             <th className="px-4 py-2 font-semibold">Agent d</th>
                             <th className="px-4 py-2 font-semibold">Agent p</th>
                             <th className="px-4 py-2 font-semibold">Result</th>
+                            <th className="px-4 py-2 font-semibold">Item annotation</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -746,10 +829,11 @@ export default function PlaygroundStudio({ studies, initialStudyId }: { studies:
                                 {row.hypothesis && <span className="mt-1 block max-w-md text-xs leading-5 text-gray-500">{row.hypothesis}</span>}
                               </td>
                               <td className="px-4 py-3 font-mono text-xs text-gray-600">{row.reported_statistics || "—"}</td>
-                              <td className="px-4 py-3 font-mono text-xs text-gray-700">{decimal(row.human_effect)}</td>
-                              <td className="px-4 py-3 font-mono text-xs text-gray-700">{decimal(row.agent_effect)}</td>
+                              <td className="px-4 py-3 font-mono text-xs text-gray-700">{decimal(row.human_effect)}<sup className="font-bold text-cyan-800">{significanceStars(row.human_p, row.human_significant)}</sup></td>
+                              <td className="px-4 py-3 font-mono text-xs text-gray-700">{decimal(row.agent_effect)}<sup className="font-bold text-cyan-800">{significanceStars(row.agent_p, row.agent_significant)}</sup></td>
                               <td className="px-4 py-3 font-mono text-xs text-gray-700">{row.agent_p === null ? "—" : row.agent_p < 0.001 ? "<.001" : row.agent_p.toFixed(3)}</td>
                               <td className="px-4 py-3"><Verdict row={row} /></td>
+                              <td className="w-64 px-4 py-3"><textarea aria-label={`Annotation for ${row.label}`} value={review.itemNotes[row.test_id] || ""} onChange={(event) => { const note = event.target.value; setReview((current) => ({ ...current, itemNotes: { ...current.itemNotes, [row.test_id]: note } })); setReviewSaved(false); }} rows={2} placeholder="Add a note" className="w-full border border-gray-300 p-2 text-xs leading-4 outline-none focus:border-cyan-700" /></td>
                             </tr>
                           ))}
                         </tbody>

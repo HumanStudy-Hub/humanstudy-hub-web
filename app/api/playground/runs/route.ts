@@ -18,6 +18,7 @@ export async function POST(request: Request) {
       seed: Number(body.seed ?? 42),
       researcherName: String(body.researcherName || ""),
       apiKey: String(body.apiKey || ""),
+      selection: body.selection,
     });
     return NextResponse.json({ run }, { status: 202 });
   } catch (error) {
