@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { assignStudyId, listPackageFiles } from "@/lib/github-jobs";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function POST(
   _request: Request,
@@ -28,8 +29,7 @@ export async function POST(
     const packageFiles = await listPackageFiles(jobId);
     const firstSegments = new Set(packageFiles.map((file) => file.path.split("/")[0]));
     const packageRoot = firstSegments.size === 1 ? [...firstSegments][0] : "";
-    const tree = [];
-    for (const file of packageFiles) {
+    const tree = await Promise.all(packageFiles.map(async (file) => {
       const relativePath = packageRoot && file.path.startsWith(`${packageRoot}/`)
         ? file.path.slice(packageRoot.length + 1)
         : file.path;
@@ -48,13 +48,13 @@ export async function POST(
         content: content.toString("base64"),
         encoding: "base64",
       });
-      tree.push({
+      return {
         path: `studies/${job.experimentId}/${relativePath}`,
         mode: "100644" as const,
         type: "blob" as const,
         sha: blob.data.sha,
-      });
-    }
+      };
+    }));
     const newTree = await octokit.git.createTree({
       owner,
       repo,
