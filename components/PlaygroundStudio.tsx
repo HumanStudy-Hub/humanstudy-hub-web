@@ -72,15 +72,14 @@ type Analysis = { summary: Summary; tests: TestRow[] };
 type Transcript = Array<{ participantId: number; profile: Record<string, string | number>; prompt: string | null; response: string | null }>;
 
 const MODELS: SelectOption[] = [
-  { id: "openai/gpt-4o-mini", label: "GPT-4o mini", note: "fast, inexpensive" },
-  { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5", note: "strong instruction following" },
-  { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash", note: "fast, low cost" },
-  { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B", note: "open weights" },
-  { id: "openai/gpt-4o", label: "GPT-4o", note: "" },
-  { id: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5", note: "" },
-  { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", note: "fast, open weights" },
+  { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", note: "fast, inexpensive" },
   { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro", note: "open weights" },
-  { id: "qwen/qwen-2.5-72b-instruct", label: "Qwen 2.5 72B", note: "open weights" },
+  { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5", note: "strong instruction following" },
+  { id: "openai/gpt-5-mini", label: "GPT-5 mini", note: "fast, inexpensive" },
+  { id: "openai/gpt-5.2", label: "GPT-5.2", note: "" },
+  { id: "google/gemini-3.7-flash", label: "Gemini 3.7 Flash", note: "fast, low cost" },
+  { id: "meta-llama/llama-4-maverick", label: "Llama 4 Maverick", note: "open weights" },
+  { id: "qwen/qwen3.8-max", label: "Qwen 3.8 Max", note: "open weights" },
 ];
 
 // OpenRouter ids are always provider/model, so anything of that shape is a model
@@ -167,7 +166,6 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   const [background, setBackground] = useState("");
   const [persona, setPersona] = useState("");
   const [participants, setParticipants] = useState(8);
-  const [temperature, setTemperature] = useState(1);
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [castMode, setCastMode] = useState<CastMode>("paper");
@@ -292,7 +290,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
           demographics: identityReachesPrompt && castMode === "simple" ? { age, gender, background, persona } : {},
           personaGroup: identityReachesPrompt && castMode === "personas" ? personaGroup : null,
           participantsPerScenario: participants,
-          temperature,
+          temperature: 1,
           apiKey: apiKey.trim(),
         }),
       });
@@ -439,11 +437,6 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                 <p className="mt-2 text-xs text-gray-500">Up to {maxParticipants} on {apiKey.trim() ? "your key" : "the shared key"}. More participants detect smaller effects.</p>
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-gray-900" htmlFor="temperature">Temperature</label>
-                <input id="temperature" type="range" min={0} max={2} step={0.1} value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} className="mt-4 w-full accent-cyan-700" />
-                <p className="mt-1 text-xs text-gray-500">{temperature.toFixed(1)} — how much answers vary.</p>
-              </div>
             </div>
 
             <div className="mt-8 border-t border-gray-100 pt-6">
@@ -543,12 +536,6 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                         <>
                           <span className="font-semibold">Every agent is the same person</span> — {identitySummary}. They differ
                           only in what the model answers.
-                          {temperature <= 0.2 && (
-                            <span className="mt-1 block font-semibold">
-                              At temperature {temperature.toFixed(1)} they will answer near-identically too, leaving too
-                              little variation for the study&apos;s statistical tests. Raise it, or use the paper&apos;s sampling.
-                            </span>
-                          )}
                         </>
                       ) : (
                         <>Nothing set yet, so this run is still identical to <span className="font-semibold">As the paper recruited</span>.</>
