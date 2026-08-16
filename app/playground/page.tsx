@@ -17,6 +17,12 @@ export default async function PlaygroundPage({ searchParams }: { searchParams: P
     listBufferStudies().catch(() => []),
   ]);
   const options: StudyOption[] = [
+    ...studies.map((study) => ({
+      study_id: study.study_id,
+      title: study.title,
+      year: study.year,
+      source: "benchmark" as const,
+    })),
     ...buffer.map((entry) => ({
       study_id: entry.studyId,
       title: `${entry.title} · buffer`,
@@ -24,12 +30,6 @@ export default async function PlaygroundPage({ searchParams }: { searchParams: P
       source: "buffer" as const,
       jobId: entry.jobId,
       packageSlug: entry.packageSlug,
-    })),
-    ...studies.map((study) => ({
-      study_id: study.study_id,
-      title: study.title,
-      year: study.year,
-      source: "benchmark" as const,
     })),
   ];
 
