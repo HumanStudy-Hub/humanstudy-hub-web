@@ -78,7 +78,8 @@ const MODELS: SelectOption[] = [
   { id: "meta-llama/llama-3.3-70b-instruct", label: "Llama 3.3 70B", note: "open weights" },
   { id: "openai/gpt-4o", label: "GPT-4o", note: "" },
   { id: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5", note: "" },
-  { id: "deepseek/deepseek-chat", label: "DeepSeek Chat", note: "open weights" },
+  { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", note: "fast, open weights" },
+  { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro", note: "open weights" },
   { id: "qwen/qwen-2.5-72b-instruct", label: "Qwen 2.5 72B", note: "open weights" },
 ];
 
