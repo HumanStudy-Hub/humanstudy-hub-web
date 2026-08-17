@@ -27,6 +27,7 @@ export type PipelineJob = {
   message: string;
   error?: string;
   packageReady?: boolean;
+  source?: "build" | "import";
   progress?: PipelineProgress;
   createdAt: string;
   updatedAt: string;
@@ -383,6 +384,49 @@ export async function listBufferStudies(): Promise<BufferStudy[]> {
     for (const result of results) if (result) out.push(result);
   }
   return out;
+}
+
+// Import an already-built benchmark study (study_001..study_016) into the Build
+// Study flow as a ready package, so the review and ship-to-playground steps can
+// be demoed without re-running the extraction agent.
+export async function importStudy(input: { studyId: string; contributorName: string; contributorGithub?: string }): Promise<PipelineJob> {
+  if (!input.contributorName.trim()) throw new Error("Contributor name is required.");
+  const studyId = input.studyId.trim();
+  if (!/^study_\d{3}$/.test(studyId)) throw new Error("Choose a study to import.");
+  const api = octokit();
+  const bench = splitRepo(pipelineRepo);
+  const ref = process.env.GITHUB_PIPELINE_REF || await defaultBranch(pipelineRepo);
+  const tree = await api.git.getTree({ ...bench, tree_sha: ref, recursive: "1" });
+  const files = tree.data.tree.filter((item) => item.type === "blob" && item.path?.startsWith(`studies/${studyId}/`));
+  if (files.length === 0) throw new Error(`${studyId} is not in the benchmark.`);
+
+  const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
+  const branch = `jobs/${id}`;
+  await ensureBranch(branch);
+  for (const file of files) {
+    const blob = await api.git.getBlob({ ...bench, file_sha: file.sha! });
+    const content = Buffer.from(blob.data.content, "base64");
+    const rel = file.path!.slice(`studies/${studyId}/`.length);
+    await putFile(branch, jobPath(id, `package/${studyId}/${rel}`), content, `pipeline: import ${studyId}`);
+  }
+  const now = new Date().toISOString();
+  const job: PipelineJob = {
+    id,
+    experimentId: studyId,
+    contributorName: input.contributorName.trim(),
+    contributorGithub: input.contributorGithub?.trim() || undefined,
+    paperName: studyId,
+    currentStage: 1,
+    status: "review",
+    message: "Imported from the benchmark",
+    packageReady: true,
+    source: "import",
+    createdAt: now,
+    updatedAt: now,
+    reviews: {},
+  };
+  await saveJob(job, `pipeline: import ${studyId}`);
+  return job;
 }
 
 export async function assignStudyId(id: string) {

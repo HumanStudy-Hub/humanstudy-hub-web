@@ -30,6 +30,7 @@ type Job = {
   error?: string;
   packageReady?: boolean;
   progress?: PipelineProgress;
+  source?: "build" | "import";
   updatedAt: string;
 };
 export type ReviewFile = { path: string; content: string };
@@ -410,6 +411,7 @@ export default function PipelineStudio() {
   const [lookupName, setLookupName] = useState("");
   const [foundJobs, setFoundJobs] = useState<Array<{ id: string; paperName: string; status: JobStatus; createdAt?: string }> | null>(null);
   const [searching, setSearching] = useState(false);
+  const [importStudyId, setImportStudyId] = useState("study_001");
 
   useEffect(() => {
     const requestedJobId = new URLSearchParams(window.location.search).get("job");
@@ -511,6 +513,26 @@ export default function PipelineStudio() {
       setError(caught instanceof Error ? caught.message : "Could not start conversion.");
     } finally {
       setUploadPercent(null);
+      setBusy(false);
+    }
+  }
+
+  async function importExisting() {
+    if (!importStudyId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/pipeline/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studyId: importStudyId, contributorName, contributorGithub: contributorId }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not import this study.");
+      setJob(data.job);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not import this study.");
+    } finally {
       setBusy(false);
     }
   }
@@ -651,6 +673,17 @@ export default function PipelineStudio() {
               {paper && <span className="mt-1 text-xs text-emerald-700">{(paper.size / 1024 / 1024).toFixed(1)} MB · ready</span>}
             </button>
             <input ref={fileInput} type="file" accept=".pdf,application/pdf" className="hidden" onChange={(event) => chooseFile(event.target.files?.[0])} />
+
+            <div className="mt-6 rounded border border-dashed border-gray-300 bg-gray-50 p-4">
+              <p className="text-xs font-semibold text-gray-700">Or import an existing study <span className="font-normal text-gray-400">(demo)</span></p>
+              <p className="mt-1 text-[11px] text-gray-500">Skip extraction and walk the review + ship flow with a benchmark study.</p>
+              <div className="mt-3 flex gap-2">
+                <select value={importStudyId} onChange={(event) => setImportStudyId(event.target.value)} className="h-9 flex-1 border border-gray-300 px-2 text-sm outline-none focus:border-cyan-700">
+                  {Array.from({ length: 16 }, (_, i) => `study_${String(i + 1).padStart(3, "0")}`).map((id) => <option key={id} value={id}>{id}</option>)}
+                </select>
+                <button type="button" disabled={busy || !contributorName.trim()} onClick={importExisting} className="h-9 shrink-0 bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-600 disabled:bg-gray-300">{busy ? "Importing…" : "Import"}</button>
+              </div>
+            </div>
 
             <div className="mt-6 border-b border-gray-100 pb-3"><p className="text-sm font-semibold text-gray-950">2. Add study details</p></div>
             <label className="mt-5 block text-sm font-semibold text-gray-900" htmlFor="osf-url">Open materials <span className="font-normal text-gray-400">optional</span></label>
@@ -855,7 +888,7 @@ export default function PipelineStudio() {
 
           {job.status === "complete" && (
             <div className="p-6">
-              {job.packageReady ? <><div className="border-l-2 border-emerald-600 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">The reviewed HumanStudy-Bench package is ready for download and can be used by the Run Experiment workspace.</div><div className="mt-5 flex flex-wrap gap-2"><Link href={`/playground?mode=reproduce&job=${job.id}`} className="inline-flex h-10 items-center bg-emerald-700 px-5 text-sm font-semibold text-white hover:bg-emerald-600">Ship to playground</Link><a href={`/api/pipeline/jobs/${job.id}/download`} className="inline-flex h-10 items-center bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600">Download experiment ZIP</a><button disabled={busy || Boolean(prUrl)} onClick={publish} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Saving..." : prUrl ? "Contributed to benchmark" : "Contribute this study to benchmark"}</button></div>{prUrl && <a href={prUrl} target="_blank" rel="noreferrer" className="mt-4 block text-sm font-semibold text-cyan-700 hover:underline">Open pull request</a>}</> : <div className="border-l-2 border-cyan-700 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">The extraction is saved, but the study is not yet a runnable package.</div>}
+              {job.packageReady ? <><div className="border-l-2 border-emerald-600 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">The reviewed HumanStudy-Bench package is ready for download and can be used by the Run Experiment workspace.</div><div className="mt-5 flex flex-wrap gap-2"><Link href={job.source === "import" ? `/playground?mode=reproduce&study=${job.experimentId}` : `/playground?mode=reproduce&job=${job.id}`} className="inline-flex h-10 items-center bg-emerald-700 px-5 text-sm font-semibold text-white hover:bg-emerald-600">Ship to playground</Link>{job.source !== "import" && <><a href={`/api/pipeline/jobs/${job.id}/download`} className="inline-flex h-10 items-center bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600">Download experiment ZIP</a><button disabled={busy || Boolean(prUrl)} onClick={publish} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Saving..." : prUrl ? "Contributed to benchmark" : "Contribute this study to benchmark"}</button></>}</div>{prUrl && <a href={prUrl} target="_blank" rel="noreferrer" className="mt-4 block text-sm font-semibold text-cyan-700 hover:underline">Open pull request</a>}</> : <div className="border-l-2 border-cyan-700 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">The extraction is saved, but the study is not yet a runnable package.</div>}
             </div>
           )}
 
