@@ -42,6 +42,7 @@ type Run = {
   id: string;
   studyId: string;
   studyTitle?: string;
+  cached?: boolean;
   model: string;
   preset: string;
   participantsPerScenario: number;
@@ -180,6 +181,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [stalled, setStalled] = useState(false);
+  const [history, setHistory] = useState<Run[]>([]);
   const resultsLoaded = useRef("");
 
   const maxParticipants = apiKey.trim() ? 80 : 10;
@@ -229,6 +231,13 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
     const study = params.get("study");
     if (study && studies.some((entry) => entry.study_id === study)) setStudyId(study);
   }, [studies]);
+
+  useEffect(() => {
+    fetch(`/api/playground/runs?study=${encodeURIComponent(studyId)}`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => { if (data?.runs) setHistory(data.runs); })
+      .catch(() => undefined);
+  }, [studyId, run?.status]);
 
   useEffect(() => {
     if (run) window.localStorage.setItem(STORAGE_KEY, run.id);
@@ -335,6 +344,19 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
       setError(caught instanceof Error ? caught.message : "Could not restart this run.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function openPastRun(id: string) {
+    try {
+      const response = await fetch(`/api/playground/runs/${id}`, { cache: "no-store" });
+      const data = await response.json();
+      if (response.ok && data.run) {
+        setRun(data.run);
+        setLog(data.log || "");
+      }
+    } catch {
+      // A transient fetch failure leaves the current run untouched.
     }
   }
 
@@ -593,6 +615,26 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
           </section>
 
           <aside className="space-y-5">
+            {history.length > 0 && (
+              <div className="border border-gray-200 bg-white p-5">
+                <p className="text-xs font-semibold uppercase text-gray-500">Past runs · {history.length}</p>
+                <ul className="mt-3 space-y-1">
+                  {history.map((entry) => (
+                    <li key={entry.id}>
+                      <button type="button" onClick={() => openPastRun(entry.id)} className={`w-full rounded border px-3 py-2 text-left ${entry.id === run?.id ? "border-cyan-700 bg-cyan-50" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                        <span className="flex items-baseline justify-between gap-2">
+                          <span className="truncate text-sm font-semibold text-gray-800">{entry.model}</span>
+                          <span className={`shrink-0 text-[10px] font-semibold uppercase ${entry.status === "complete" ? "text-emerald-700" : "text-amber-700"}`}>{entry.status}</span>
+                        </span>
+                        <span className="mt-0.5 block text-xs text-gray-500">
+                          {entry.cached ? "cached · " : ""}{entry.participantsPerScenario} participants · {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ""}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="border border-gray-200 bg-white p-5">
               <p className="text-xs font-semibold uppercase text-gray-500">How a run works</p>
               <ol className="mt-4 border-l border-gray-300">

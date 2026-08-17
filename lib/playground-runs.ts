@@ -277,30 +277,39 @@ function validate(input: CreateRunInput) {
   };
 }
 
-async function findCachedRun(checked: ReturnType<typeof validate>): Promise<PlaygroundRun | null> {
+// Every completed run for one study, newest first. Used both to show the
+// study's run history and to reuse a previous result instead of re-running.
+export async function listRunsByStudy(studyId: string): Promise<PlaygroundRun[]> {
   const api = octokit();
   const target = splitRepo(jobsRepo);
   const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
-  const runBranches = branches.filter((branch) => branch.name.startsWith("runs/")).reverse().slice(0, 30);
+  const runBranches = branches.filter((branch) => branch.name.startsWith("runs/"));
+  const out: PlaygroundRun[] = [];
   for (const branch of runBranches) {
     const id = branch.name.slice("runs/".length);
     try {
       const run = await getJson(branch.name, runPath(id, "run.json"));
-      if (!run || run.status !== "complete" || !run.resultsReady) continue;
-      if (run.studyId !== checked.studyId) continue;
-      if ((run.jobId ?? undefined) !== (checked.jobId ?? undefined)) continue;
-      if (run.model !== checked.model) continue;
-      if (run.preset !== checked.preset) continue;
-      if ((run.systemPrompt ?? "") !== (checked.systemPrompt ?? "")) continue;
-      if (run.participantsPerScenario !== checked.participantsPerScenario) continue;
-      if ((run.temperature ?? 1) !== checked.temperature) continue;
-      if ((run.seed ?? 42) !== checked.seed) continue;
-      if (JSON.stringify(run.demographics ?? null) !== JSON.stringify(checked.demographics ?? null)) continue;
-      if (JSON.stringify(run.personaGroup ?? null) !== JSON.stringify(checked.personaGroup ?? null)) continue;
-      return run as PlaygroundRun;
+      if (run && run.studyId === studyId) out.push(run as PlaygroundRun);
     } catch {
-      // A half-written run branch is skipped rather than failing the cache lookup.
+      // A half-written run branch is skipped rather than failing the listing.
     }
+  }
+  return out.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+}
+
+async function findCachedRun(checked: ReturnType<typeof validate>): Promise<PlaygroundRun | null> {
+  for (const run of await listRunsByStudy(checked.studyId)) {
+    if (run.status !== "complete" || !run.resultsReady) continue;
+    if ((run.jobId ?? undefined) !== (checked.jobId ?? undefined)) continue;
+    if (run.model !== checked.model) continue;
+    if (run.preset !== checked.preset) continue;
+    if ((run.systemPrompt ?? "") !== (checked.systemPrompt ?? "")) continue;
+    if (run.participantsPerScenario !== checked.participantsPerScenario) continue;
+    if ((run.temperature ?? 1) !== checked.temperature) continue;
+    if ((run.seed ?? 42) !== checked.seed) continue;
+    if (JSON.stringify(run.demographics ?? null) !== JSON.stringify(checked.demographics ?? null)) continue;
+    if (JSON.stringify(run.personaGroup ?? null) !== JSON.stringify(checked.personaGroup ?? null)) continue;
+    return run;
   }
   return null;
 }

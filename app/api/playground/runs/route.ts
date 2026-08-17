@@ -1,7 +1,20 @@
 import { NextResponse } from "next/server";
-import { createRun } from "@/lib/playground-runs";
+import { createRun, listRunsByStudy } from "@/lib/playground-runs";
 
 export const runtime = "nodejs";
+
+export async function GET(request: Request) {
+  try {
+    const studyId = new URL(request.url).searchParams.get("study") || "";
+    if (!studyId) return NextResponse.json({ runs: [] });
+    return NextResponse.json({ runs: await listRunsByStudy(studyId) });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Could not list runs." },
+      { status: 500 },
+    );
+  }
+}
 
 export async function POST(request: Request) {
   try {
