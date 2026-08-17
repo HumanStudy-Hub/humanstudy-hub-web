@@ -219,6 +219,18 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const jobId = params.get("job");
+    if (jobId) {
+      const buffer = studies.find((entry) => entry.jobId === jobId);
+      if (buffer) setStudyId(buffer.study_id);
+      return;
+    }
+    const study = params.get("study");
+    if (study && studies.some((entry) => entry.study_id === study)) setStudyId(study);
+  }, [studies]);
+
+  useEffect(() => {
     if (run) window.localStorage.setItem(STORAGE_KEY, run.id);
   }, [run]);
 
