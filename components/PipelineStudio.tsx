@@ -525,7 +525,7 @@ export default function PipelineStudio() {
       const response = await fetch("/api/pipeline/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studyId: importStudyId, contributorName, contributorGithub: contributorId }),
+        body: JSON.stringify({ studyId: importStudyId, contributorName: contributorName.trim() || "Demo", contributorGithub: contributorId }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not import this study.");
@@ -681,7 +681,7 @@ export default function PipelineStudio() {
                 <select value={importStudyId} onChange={(event) => setImportStudyId(event.target.value)} className="h-9 flex-1 border border-gray-300 px-2 text-sm outline-none focus:border-cyan-700">
                   {Array.from({ length: 16 }, (_, i) => `study_${String(i + 1).padStart(3, "0")}`).map((id) => <option key={id} value={id}>{id}</option>)}
                 </select>
-                <button type="button" disabled={busy || !contributorName.trim()} onClick={importExisting} className="h-9 shrink-0 bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-600 disabled:bg-gray-300">{busy ? "Importing…" : "Import"}</button>
+                <button type="button" disabled={busy} onClick={importExisting} className="h-9 shrink-0 bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-600 disabled:bg-gray-300">{busy ? "Importing…" : "Import"}</button>
               </div>
             </div>
 
