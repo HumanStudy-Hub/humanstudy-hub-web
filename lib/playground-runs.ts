@@ -79,6 +79,15 @@ function octokit() {
   return new Octokit({ auth: process.env.GITHUB_TOKEN });
 }
 
+// The deployment token (GITHUB_TOKEN) may not be allowed to read the private
+// jobs repository. GITHUB_JOBS_TOKEN lets that access ride a separate token;
+// when unset, jobs calls fall back to GITHUB_TOKEN exactly as before.
+function jobsOctokit() {
+  const token = process.env.GITHUB_JOBS_TOKEN || process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_JOBS_TOKEN (or GITHUB_TOKEN) is not configured.");
+  return new Octokit({ auth: token });
+}
+
 function splitRepo(repo: string) {
   const [owner, name] = repo.split("/");
   if (!owner || !name) throw new Error(`Invalid GitHub repository: ${repo}`);
@@ -98,19 +107,19 @@ function branchName(id: string) {
 }
 
 async function defaultBranch(repo: string) {
-  const api = octokit();
+  const api = repo === jobsRepo ? jobsOctokit() : octokit();
   const result = await api.repos.get({ ...splitRepo(repo) });
   return result.data.default_branch;
 }
 
 async function branchSha(branch: string) {
-  const api = octokit();
+  const api = jobsOctokit();
   const ref = await api.git.getRef({ ...splitRepo(jobsRepo), ref: `heads/${branch}` });
   return ref.data.object.sha;
 }
 
 async function ensureBranch(branch: string) {
-  const api = octokit();
+  const api = jobsOctokit();
   try {
     await branchSha(branch);
     return;
@@ -126,7 +135,7 @@ async function ensureBranch(branch: string) {
 }
 
 async function putFile(branch: string, filePath: string, content: string, message: string) {
-  const api = octokit();
+  const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   let sha: string | undefined;
   try {
@@ -146,7 +155,7 @@ async function putFile(branch: string, filePath: string, content: string, messag
 }
 
 async function getFile(branch: string, filePath: string) {
-  const api = octokit();
+  const api = jobsOctokit();
   const result = await api.repos.getContent({ ...splitRepo(jobsRepo), path: filePath, ref: branch });
   if (Array.isArray(result.data) || !("content" in result.data)) throw new Error(`Not a file: ${filePath}`);
   return Buffer.from(result.data.content, "base64").toString("utf8");
@@ -280,7 +289,7 @@ function validate(input: CreateRunInput) {
 // Every completed run for one study, newest first. Used both to show the
 // study's run history and to reuse a previous result instead of re-running.
 export async function listRunsByStudy(studyId: string): Promise<PlaygroundRun[]> {
-  const api = octokit();
+  const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
   const runBranches = branches.filter((branch) => branch.name.startsWith("runs/"));

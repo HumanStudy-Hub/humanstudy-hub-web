@@ -42,6 +42,15 @@ function octokit() {
   return new Octokit({ auth: process.env.GITHUB_TOKEN });
 }
 
+// The deployment token (GITHUB_TOKEN) may not be allowed to read the private
+// jobs repository. GITHUB_JOBS_TOKEN lets that access ride a separate token;
+// when unset, jobs calls fall back to GITHUB_TOKEN exactly as before.
+function jobsOctokit() {
+  const token = process.env.GITHUB_JOBS_TOKEN || process.env.GITHUB_TOKEN;
+  if (!token) throw new Error("GITHUB_JOBS_TOKEN (or GITHUB_TOKEN) is not configured.");
+  return new Octokit({ auth: token });
+}
+
 function splitRepo(repo: string) {
   const [owner, name] = repo.split("/");
   if (!owner || !name) throw new Error(`Invalid GitHub repository: ${repo}`);
@@ -62,21 +71,21 @@ function jobPath(id: string, suffix: string) {
 }
 
 async function branchSha(branch: string) {
-  const api = octokit();
+  const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   const ref = await api.git.getRef({ ...target, ref: `heads/${branch}` });
   return ref.data.object.sha;
 }
 
 async function defaultBranch(repo: string) {
-  const api = octokit();
+  const api = repo === jobsRepo ? jobsOctokit() : octokit();
   const target = splitRepo(repo);
   const result = await api.repos.get({ ...target });
   return result.data.default_branch;
 }
 
 async function ensureBranch(branch: string) {
-  const api = octokit();
+  const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   try {
     await branchSha(branch);
@@ -119,7 +128,7 @@ export async function nextStudyId() {
 }
 
 async function putFile(branch: string, filePath: string, content: Buffer | string, message: string) {
-  const api = octokit();
+  const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   let sha: string | undefined;
   try {
@@ -139,7 +148,7 @@ async function putFile(branch: string, filePath: string, content: Buffer | strin
 }
 
 async function getFile(branch: string, filePath: string) {
-  const api = octokit();
+  const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   const result = await api.repos.getContent({ ...target, path: filePath, ref: branch });
   if (Array.isArray(result.data) || !("content" in result.data)) throw new Error(`Not a file: ${filePath}`);
@@ -147,7 +156,7 @@ async function getFile(branch: string, filePath: string) {
 }
 
 export async function listPackageFiles(id: string) {
-  const api = octokit();
+  const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   const branch = `jobs/${safe(id)}`;
   const root = jobPath(id, "package");
@@ -306,7 +315,7 @@ export async function readPackageZip(id: string) {
 export async function findJobsByContributor(name: string, limit = 10) {
   const needle = name.trim().toLowerCase();
   if (!needle) return [];
-  const api = octokit();
+  const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
   const jobBranches = branches.filter((branch) => branch.name.startsWith("jobs/")).slice(-200).reverse();
@@ -336,7 +345,7 @@ export type BufferStudy = {
 };
 
 async function packageSlug(id: string): Promise<string | null> {
-  const api = octokit();
+  const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   const result = await api.repos.getContent({ ...target, path: jobPath(id, "package"), ref: `jobs/${safe(id)}` });
   if (!Array.isArray(result.data)) return null;
@@ -348,7 +357,7 @@ async function packageSlug(id: string): Promise<string | null> {
 // benchmark yet. They are runnable from the jobs repository, so the playground
 // lists them alongside the merged catalog.
 export async function listBufferStudies(): Promise<BufferStudy[]> {
-  const api = octokit();
+  const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
   const jobBranches = branches.filter((branch) => branch.name.startsWith("jobs/")).reverse().slice(0, 60);
@@ -386,47 +395,26 @@ export async function listBufferStudies(): Promise<BufferStudy[]> {
   return out;
 }
 
-// Import an already-built benchmark study (study_001..study_016) into the Build
-// Study flow as a ready package, so the review and ship-to-playground steps can
-// be demoed without re-running the extraction agent.
-export async function importStudy(input: { studyId: string; contributorName: string; contributorGithub?: string }): Promise<PipelineJob> {
-  if (!input.contributorName.trim()) throw new Error("Contributor name is required.");
-  const studyId = input.studyId.trim();
+// Read an already-built benchmark study's reviewable files (read-only, from the
+// public benchmark repo). Used by the demo "import" flow, which does not write
+// anything to the private jobs repository.
+export async function listBenchmarkStudyFiles(studyId: string): Promise<Array<{ path: string; content: string }>> {
   if (!/^study_\d{3}$/.test(studyId)) throw new Error("Choose a study to import.");
   const api = octokit();
   const bench = splitRepo(pipelineRepo);
   const ref = process.env.GITHUB_PIPELINE_REF || await defaultBranch(pipelineRepo);
   const tree = await api.git.getTree({ ...bench, tree_sha: ref, recursive: "1" });
-  const files = tree.data.tree.filter((item) => item.type === "blob" && item.path?.startsWith(`studies/${studyId}/`));
+  const files = tree.data.tree.filter((item) =>
+    item.type === "blob" && item.path?.startsWith(`studies/${studyId}/`) && (item.path.endsWith(".json") || item.path.endsWith(".md"))
+  );
   if (files.length === 0) throw new Error(`${studyId} is not in the benchmark.`);
-
-  const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
-  const branch = `jobs/${id}`;
-  await ensureBranch(branch);
+  const out: Array<{ path: string; content: string }> = [];
   for (const file of files) {
     const blob = await api.git.getBlob({ ...bench, file_sha: file.sha! });
-    const content = Buffer.from(blob.data.content, "base64");
     const rel = file.path!.slice(`studies/${studyId}/`.length);
-    await putFile(branch, jobPath(id, `package/${studyId}/${rel}`), content, `pipeline: import ${studyId}`);
+    out.push({ path: `package/${rel}`, content: Buffer.from(blob.data.content, "base64").toString("utf8") });
   }
-  const now = new Date().toISOString();
-  const job: PipelineJob = {
-    id,
-    experimentId: studyId,
-    contributorName: input.contributorName.trim(),
-    contributorGithub: input.contributorGithub?.trim() || undefined,
-    paperName: studyId,
-    currentStage: 1,
-    status: "review",
-    message: "Imported from the benchmark",
-    packageReady: true,
-    source: "import",
-    createdAt: now,
-    updatedAt: now,
-    reviews: {},
-  };
-  await saveJob(job, `pipeline: import ${studyId}`);
-  return job;
+  return out;
 }
 
 export async function assignStudyId(id: string) {

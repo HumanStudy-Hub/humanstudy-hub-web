@@ -450,7 +450,10 @@ export default function PipelineStudio() {
 
   useEffect(() => {
     if (!job || job.status !== "review") return;
-    fetch(`/api/pipeline/jobs/${job.id}/files`, { cache: "no-store" })
+    const url = job.source === "import"
+      ? `/api/pipeline/study-files?study=${job.experimentId}`
+      : `/api/pipeline/jobs/${job.id}/files`;
+    fetch(url, { cache: "no-store" })
       .then((response) => response.ok ? response.json() : null)
       .then((data) => { if (data?.files) setReviewFiles(data.files); })
       .catch(() => undefined);
@@ -521,20 +524,27 @@ export default function PipelineStudio() {
     if (!importStudyId) return;
     setBusy(true);
     setError("");
-    try {
-      const response = await fetch("/api/pipeline/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studyId: importStudyId, contributorName: contributorName.trim() || "Demo", contributorGithub: contributorId }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not import this study.");
-      setJob(data.job);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not import this study.");
-    } finally {
-      setBusy(false);
-    }
+    setReviewFiles([]);
+    setSelectedFile("");
+    setSaved(true);
+    setNote("");
+    // A demo import never writes to the private jobs repository: the review and
+    // ship flow runs against the study's real files in the public benchmark,
+    // while the job itself exists only in this tab.
+    const now = new Date().toISOString();
+    setJob({
+      id: `import:${importStudyId}`,
+      experimentId: importStudyId,
+      paperName: importStudyId,
+      currentStage: 1,
+      status: "review",
+      message: "Imported study ready for review",
+      packageReady: true,
+      source: "import",
+      createdAt: now,
+      updatedAt: now,
+    });
+    setBusy(false);
   }
 
   async function retry() {
@@ -559,6 +569,18 @@ export default function PipelineStudio() {
     setBusy(true);
     setError("");
     try {
+      if (job.source === "import") {
+        // Demo imports have no job branch to record a review against. Approving
+        // completes the flow locally; requesting changes has nothing to write.
+        if (decision === "changes_requested") {
+          setError("Changes cannot be requested on an imported study.");
+          return;
+        }
+        setReviewFiles([]);
+        setNote("");
+        setJob({ ...job, status: "complete", packageReady: true, message: "Study package is approved and ready", updatedAt: new Date().toISOString() });
+        return;
+      }
       const response = await fetch(`/api/pipeline/jobs/${job.id}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -581,6 +603,13 @@ export default function PipelineStudio() {
     setBusy(true); setError("");
     try {
       const content = selectedFile.endsWith(".json") ? JSON.stringify(editedJson, null, 2) + "\n" : editedContent;
+      if (job.source === "import") {
+        // Demo imports have no job branch; edits live only in this tab.
+        setEditedContent(content);
+        setReviewFiles((files) => files.map((file) => file.path === selectedFile ? { ...file, content } : file));
+        setSaved(true);
+        return;
+      }
       const response = await fetch(`/api/pipeline/jobs/${job.id}/files`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path: selectedFile, content }) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not save file.");
