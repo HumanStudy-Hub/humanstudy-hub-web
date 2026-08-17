@@ -31,6 +31,7 @@ export type PlaygroundRun = {
   studyTitle?: string;
   jobId?: string;
   packageSlug?: string;
+  cached?: boolean;
   model: string;
   preset: string;
   systemPrompt?: string;
@@ -276,8 +277,38 @@ function validate(input: CreateRunInput) {
   };
 }
 
+async function findCachedRun(checked: ReturnType<typeof validate>): Promise<PlaygroundRun | null> {
+  const api = octokit();
+  const target = splitRepo(jobsRepo);
+  const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
+  const runBranches = branches.filter((branch) => branch.name.startsWith("runs/")).reverse().slice(0, 30);
+  for (const branch of runBranches) {
+    const id = branch.name.slice("runs/".length);
+    try {
+      const run = await getJson(branch.name, runPath(id, "run.json"));
+      if (!run || run.status !== "complete" || !run.resultsReady) continue;
+      if (run.studyId !== checked.studyId) continue;
+      if ((run.jobId ?? undefined) !== (checked.jobId ?? undefined)) continue;
+      if (run.model !== checked.model) continue;
+      if (run.preset !== checked.preset) continue;
+      if ((run.systemPrompt ?? "") !== (checked.systemPrompt ?? "")) continue;
+      if (run.participantsPerScenario !== checked.participantsPerScenario) continue;
+      if ((run.temperature ?? 1) !== checked.temperature) continue;
+      if ((run.seed ?? 42) !== checked.seed) continue;
+      if (JSON.stringify(run.demographics ?? null) !== JSON.stringify(checked.demographics ?? null)) continue;
+      if (JSON.stringify(run.personaGroup ?? null) !== JSON.stringify(checked.personaGroup ?? null)) continue;
+      return run as PlaygroundRun;
+    } catch {
+      // A half-written run branch is skipped rather than failing the cache lookup.
+    }
+  }
+  return null;
+}
+
 export async function createRun(input: CreateRunInput) {
   const checked = validate(input);
+  const cached = await findCachedRun(checked);
+  if (cached) return { ...cached, cached: true };
   const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
   const branch = branchName(id);
   await ensureBranch(branch);
