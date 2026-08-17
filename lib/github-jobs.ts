@@ -350,31 +350,37 @@ export async function listBufferStudies(): Promise<BufferStudy[]> {
   const api = octokit();
   const target = splitRepo(jobsRepo);
   const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
-  const jobBranches = branches.filter((branch) => branch.name.startsWith("jobs/")).reverse();
+  const jobBranches = branches.filter((branch) => branch.name.startsWith("jobs/")).reverse().slice(0, 60);
   const out: BufferStudy[] = [];
-  for (const branch of jobBranches.slice(0, 60)) {
-    const id = branch.name.slice("jobs/".length);
-    try {
-      const job = JSON.parse((await getFile(branch.name, jobPath(id, "job.json"))).toString("utf8")) as PipelineJob;
-      if (!job.packageReady && job.status !== "review" && job.status !== "complete") continue;
-      const slug = await packageSlug(id);
-      if (!slug) continue;
-      let title = slug.replace(/[-_]+/g, " ");
+  // Fetch a handful of branches in parallel rather than one at a time, so the
+  // playground page load does not spend minutes on sequential GitHub calls.
+  for (let i = 0; i < jobBranches.length; i += 6) {
+    const chunk = jobBranches.slice(i, i + 6);
+    const results = await Promise.all(chunk.map(async (branch): Promise<BufferStudy | null> => {
+      const id = branch.name.slice("jobs/".length);
       try {
-        const index = JSON.parse((await getFile(branch.name, jobPath(id, `package/${slug}/index.json`))).toString("utf8"));
-        if (index.title) title = index.title;
-      } catch {
+        const job = JSON.parse((await getFile(branch.name, jobPath(id, "job.json"))).toString("utf8")) as PipelineJob;
+        if (!job.packageReady && job.status !== "review" && job.status !== "complete") return null;
+        const slug = await packageSlug(id);
+        if (!slug) return null;
+        let title = slug.replace(/[-_]+/g, " ");
         try {
-          const study = JSON.parse((await getFile(branch.name, jobPath(id, `package/${slug}/study.json`))).toString("utf8"));
-          title = study.title || study.paper?.title || title;
+          const index = JSON.parse((await getFile(branch.name, jobPath(id, `package/${slug}/index.json`))).toString("utf8"));
+          if (index.title) title = index.title;
         } catch {
-          // keep the slug-derived title
+          try {
+            const study = JSON.parse((await getFile(branch.name, jobPath(id, `package/${slug}/study.json`))).toString("utf8"));
+            title = study.title || study.paper?.title || title;
+          } catch {
+            // keep the slug-derived title
+          }
         }
+        return { studyId: slug, title, jobId: id, packageSlug: slug, paperName: job.paperName, createdAt: job.createdAt };
+      } catch {
+        return null;
       }
-      out.push({ studyId: slug, title, jobId: id, packageSlug: slug, paperName: job.paperName, createdAt: job.createdAt });
-    } catch {
-      // A half-built job branch is skipped rather than failing the listing.
-    }
+    }));
+    for (const result of results) if (result) out.push(result);
   }
   return out;
 }

@@ -285,14 +285,18 @@ export async function listRunsByStudy(studyId: string): Promise<PlaygroundRun[]>
   const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
   const runBranches = branches.filter((branch) => branch.name.startsWith("runs/"));
   const out: PlaygroundRun[] = [];
-  for (const branch of runBranches) {
-    const id = branch.name.slice("runs/".length);
-    try {
-      const run = await getJson(branch.name, runPath(id, "run.json"));
-      if (run && run.studyId === studyId) out.push(run as PlaygroundRun);
-    } catch {
-      // A half-written run branch is skipped rather than failing the listing.
-    }
+  for (let i = 0; i < runBranches.length; i += 8) {
+    const chunk = runBranches.slice(i, i + 8);
+    const results = await Promise.all(chunk.map(async (branch): Promise<PlaygroundRun | null> => {
+      const id = branch.name.slice("runs/".length);
+      try {
+        const run = await getJson(branch.name, runPath(id, "run.json"));
+        return run && run.studyId === studyId ? (run as PlaygroundRun) : null;
+      } catch {
+        return null;
+      }
+    }));
+    for (const result of results) if (result) out.push(result);
   }
   return out.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 }
