@@ -55,6 +55,7 @@ type Run = {
   summary?: Summary;
   progress?: Progress;
   selection?: RunSelection;
+  partial?: boolean;
   createdAt?: string;
 };
 type RunSelection = { mode: "whole" | "material"; materialId?: string; itemId?: string; label?: string };
@@ -412,6 +413,23 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
       setStalled(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not restart this run.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function stop() {
+    if (!run) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/playground/runs/${run.id}/stop`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not stop this run.");
+      setRun(data.run);
+      setStalled(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not stop this run.");
     } finally {
       setBusy(false);
     }
@@ -848,6 +866,10 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                     ? <div className="h-full bg-cyan-700 transition-[width] duration-500" style={{ width: `${Math.min(100, (completed / total) * 100)}%` }} />
                     : <div className="h-full w-1/2 animate-pulse bg-cyan-700" />}
                 </div>
+                <div className="mt-4 flex items-center justify-between gap-3">
+                  <p className="text-xs text-gray-500">Iterate faster: stop the run and the sessions finished so far are scored and charted.</p>
+                  <button type="button" disabled={busy} onClick={stop} className="h-9 shrink-0 border border-red-300 bg-white px-4 text-xs font-semibold text-red-700 hover:border-red-500 disabled:bg-gray-100 disabled:text-gray-400">{busy ? "Stopping…" : "Stop run & see partial results"}</button>
+                </div>
                 {log && <pre className="mt-5 max-h-64 overflow-auto bg-gray-950 p-4 text-xs leading-5 text-gray-200">{log}</pre>}
               </div>
             )}
@@ -862,6 +884,11 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
 
             {run.status === "complete" && (
               <div className="space-y-6 p-6">
+                {run.partial && (
+                  <div className="border-l-2 border-amber-500 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+                    This run was stopped early, so the results below cover only the sessions that had finished by then. Run the remaining conditions separately, or run the whole study again to resume from the saved cache.
+                  </div>
+                )}
                 {run.summary && (
                   <div className="grid gap-px bg-gray-200 sm:grid-cols-4">
                     {[

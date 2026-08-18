@@ -68,6 +68,8 @@ export type PlaygroundRun = {
   totalTokens?: number;
   summary?: PlaygroundSummary;
   progress?: PlaygroundProgress;
+  workflowRunId?: number;
+  partial?: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -203,23 +205,25 @@ function sealApiKey(apiKey: string) {
 }
 
 // createWorkflowDispatch returns 204 whether or not a run was queued, so confirm
-// one actually appeared rather than leaving the run stuck on "queued".
-async function dispatchStarted(after: Date) {
+// one actually appeared rather than leaving the run stuck on "queued". Returns
+// the workflow run id so the run can be stopped later.
+async function dispatchStarted(after: Date): Promise<number | null> {
   const api = octokit();
   const target = splitRepo(benchRepo);
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 1500));
     try {
       const runs = await api.actions.listWorkflowRuns({ ...target, workflow_id: workflowFile, event: "workflow_dispatch", per_page: 20 });
-      if (runs.data.workflow_runs.some((run) => new Date(run.created_at) >= after)) return true;
+      const run = runs.data.workflow_runs.find((entry) => new Date(entry.created_at) >= after);
+      if (run) return run.id;
     } catch {
       // A transient list failure is not proof the run is missing.
     }
   }
-  return false;
+  return null;
 }
 
-async function dispatch(id: string) {
+async function dispatch(id: string): Promise<number | null> {
   const api = octokit();
   const after = new Date(Date.now() - 5000);
   await api.actions.createWorkflowDispatch({
@@ -393,7 +397,12 @@ export async function createRun(input: CreateRunInput) {
   const stored = checked.apiKey ? { ...run, sealedApiKey: sealApiKey(checked.apiKey) } : run;
   await putFile(branch, runPath(id, "run.json"), JSON.stringify(stored, null, 2) + "\n", `playground: create ${id}`);
 
-  if (await dispatch(id)) return run;
+  const workflowRunId = await dispatch(id);
+  if (workflowRunId) {
+    const withWorkflow = { ...run, workflowRunId };
+    await putFile(branch, runPath(id, "run.json"), JSON.stringify(withWorkflow, null, 2) + "\n", `playground: workflow ${workflowRunId}`);
+    return withWorkflow;
+  }
   const failed: PlaygroundRun = {
     ...run,
     status: "failed",
@@ -469,6 +478,18 @@ export async function retryRun(id: string) {
   if (!stored) throw new Error("This run could not be found.");
   const next = { ...stored, status: "queued", message: "Waiting for a runner to pick up this run", error: undefined, updatedAt: new Date().toISOString() };
   await putFile(branch, runPath(id, "run.json"), JSON.stringify(next, null, 2) + "\n", `playground: retry ${id}`);
-  if (await dispatch(id)) return readRun(id);
+  const workflowRunId = await dispatch(id);
+  if (workflowRunId) {
+    await putFile(branch, runPath(id, "run.json"), JSON.stringify({ ...next, workflowRunId }, null, 2) + "\n", `playground: workflow ${workflowRunId}`);
+    return readRun(id);
+  }
   throw new Error("GitHub Actions did not start a run. Please try again.");
+}
+
+export async function stopRun(id: string) {
+  const run = await readRun(id);
+  if (!run.workflowRunId) throw new Error("This run has no active workflow to stop.");
+  const api = octokit();
+  await api.actions.cancelWorkflowRun({ ...splitRepo(benchRepo), run_id: run.workflowRunId });
+  return readRun(id);
 }
