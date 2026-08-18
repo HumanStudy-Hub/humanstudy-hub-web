@@ -180,6 +180,19 @@ async function getFile(branch: string, filePath: string) {
   return Buffer.from(result.data.content, "base64").toString("utf8");
 }
 
+async function deleteFile(branch: string, filePath: string) {
+  const api = jobsOctokit();
+  const target = splitRepo(jobsRepo);
+  try {
+    const existing = await api.repos.getContent({ ...target, path: filePath, ref: branch });
+    if (!Array.isArray(existing.data) && "sha" in existing.data) {
+      await api.repos.deleteFile({ ...target, path: filePath, branch, message: `playground: clear ${filePath}`, sha: existing.data.sha });
+    }
+  } catch {
+    // A missing marker is already clear.
+  }
+}
+
 async function getJson(branch: string, filePath: string) {
   try {
     return JSON.parse(await getFile(branch, filePath));
@@ -479,6 +492,7 @@ export async function retryRun(id: string) {
   const branch = branchName(id);
   const stored = (await getJson(branch, runPath(id, "run.json"))) as Record<string, unknown> | null;
   if (!stored) throw new Error("This run could not be found.");
+  await deleteFile(branch, runPath(id, "stop_requested"));
   const next = { ...stored, status: "queued", message: "Waiting for a runner to pick up this run", error: undefined, updatedAt: new Date().toISOString() };
   await putFile(branch, runPath(id, "run.json"), JSON.stringify(next, null, 2) + "\n", `playground: retry ${id}`);
   const workflowRunId = await dispatch(id);
@@ -491,8 +505,12 @@ export async function retryRun(id: string) {
 
 export async function stopRun(id: string) {
   const run = await readRun(id);
-  if (!run.workflowRunId) throw new Error("This run has no active workflow to stop.");
-  const api = octokit();
-  await api.actions.cancelWorkflowRun({ ...splitRepo(benchRepo), run_id: run.workflowRunId });
+  if (run.status !== "queued" && run.status !== "running" && run.status !== "analysing") {
+    throw new Error("This run is not running.");
+  }
+  // Write a stop marker instead of cancelling the workflow. The runner polls for
+  // this file and exits cleanly (exit 0), so the workflow's `if: success()` chart
+  // step still runs and the run is finalized rather than marked cancelled.
+  await putFile(branchName(id), runPath(id, "stop_requested"), JSON.stringify({ at: new Date().toISOString() }) + "\n", `playground: stop ${id}`);
   return readRun(id);
 }
