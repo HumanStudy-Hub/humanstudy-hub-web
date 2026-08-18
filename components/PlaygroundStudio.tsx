@@ -335,7 +335,9 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   }, [run]);
 
   useEffect(() => {
-    if (!run?.resultsReady || resultsLoaded.current === run.id) return;
+    // Fetch results for completed runs, and also for failed ones: a run that was
+    // stopped early still carries partial results the researcher asked to see.
+    if ((run?.status !== "complete" && run?.status !== "failed") || resultsLoaded.current === run.id) return;
     resultsLoaded.current = run.id;
     fetch(`/api/playground/runs/${run.id}/results`, { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
@@ -898,9 +900,9 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
               </div>
             )}
 
-            {run.status === "complete" && (
+            {(run.status === "complete" || (run.status === "failed" && (analysis || charts))) && (
               <div className="space-y-6 p-6">
-                {run.partial && (
+                {(run.partial || run.status === "failed") && (
                   <div className="border-l-2 border-amber-500 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
                     This run was stopped early, so the results below cover only the sessions that had finished by then. Run the remaining conditions separately, or run the whole study again to resume from the saved cache.
                   </div>
