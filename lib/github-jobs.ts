@@ -431,6 +431,54 @@ export async function listBenchmarkStudyFiles(studyId: string): Promise<Array<{ 
   return out;
 }
 
+export type BenchmarkMaterial = { id: string; label: string; items: Array<{ id: string; label: string }> };
+
+function materialItemId(item: Record<string, unknown>) {
+  const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata as Record<string, unknown> : {};
+  for (const value of [item.id, item.item_id, item.name, item.label, metadata.id, metadata.label]) {
+    const key = String(value ?? "").trim();
+    if (/^[a-zA-Z0-9_.:-]+$/.test(key)) return key;
+  }
+  return "";
+}
+
+function materialItemLabel(item: Record<string, unknown>, fallback: string) {
+  const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata as Record<string, unknown> : {};
+  const key = materialItemId(item);
+  const explicit = String(item.label ?? item.name ?? metadata.label ?? "").trim();
+  if (explicit && explicit !== key) return explicit.slice(0, 180);
+  if (key) return key.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return String(item.question ?? item.prompt ?? fallback).trim().slice(0, 180);
+}
+
+// List a benchmark study's experiment materials and the items inside each, so
+// the playground can preview and scope a run to one material before it starts.
+export async function listBenchmarkMaterials(studyId: string): Promise<BenchmarkMaterial[]> {
+  if (!/^study_[a-zA-Z0-9_-]+$/.test(studyId)) throw new Error("Invalid study id.");
+  const api = octokit();
+  const bench = splitRepo(pipelineRepo);
+  const ref = process.env.GITHUB_PIPELINE_REF || await defaultBranch(pipelineRepo);
+  const tree = await api.git.getTree({ ...bench, tree_sha: ref, recursive: "1" });
+  const paths = tree.data.tree
+    .map((entry) => entry.path ?? "")
+    .filter((path) => path.startsWith(`studies/${studyId}/`) && /\/materials\/[^/]+\.json$/.test(path))
+    .slice(0, 40);
+  const loaded = await Promise.all(paths.map(async (path): Promise<BenchmarkMaterial | null> => {
+    const file = await api.repos.getContent({ ...bench, path, ref });
+    if (Array.isArray(file.data) || !("content" in file.data)) return null;
+    const parsed = JSON.parse(Buffer.from(file.data.content, "base64").toString("utf8"));
+    const id = path.split("/").pop()?.replace(/\.json$/, "") ?? "";
+    const rawItems = Array.isArray(parsed?.items) ? parsed.items : [];
+    const items = rawItems.slice(0, 250).flatMap((item: unknown, index: number) => {
+      if (!item || typeof item !== "object") return [];
+      const key = materialItemId(item as Record<string, unknown>);
+      return key ? [{ id: key, label: materialItemLabel(item as Record<string, unknown>, `Item ${index + 1}`) }] : [];
+    });
+    return { id, label: String(parsed?.title ?? parsed?.name ?? id).replace(/_/g, " "), items };
+  }));
+  return loaded.filter((entry): entry is BenchmarkMaterial => entry !== null);
+}
+
 export async function assignStudyId(id: string) {
   const job = await readJob(id);
   if (!job.experimentId.startsWith("draft_")) return job;

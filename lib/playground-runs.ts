@@ -25,6 +25,21 @@ export type PlaygroundSummary = {
   studyScore: number | null;
 };
 
+// A run can replay the whole study or be scoped to one experiment material (and
+// optionally one item inside it). The runner narrows the trials accordingly.
+export type PlaygroundSelection = {
+  mode: "whole" | "material";
+  materialId?: string;
+  itemId?: string;
+  label?: string;
+};
+
+export type PlaygroundReview = {
+  studyNote: string;
+  itemNotes: Record<string, string>;
+  updatedAt?: string;
+};
+
 export type PlaygroundRun = {
   id: string;
   studyId: string;
@@ -40,6 +55,7 @@ export type PlaygroundRun = {
   participantsPerScenario: number;
   temperature: number;
   seed: number;
+  selection?: PlaygroundSelection;
   researcherName?: string;
   usedOwnKey?: boolean;
   status: PlaygroundStatus;
@@ -229,11 +245,17 @@ export type CreateRunInput = {
   seed?: number;
   researcherName?: string;
   apiKey?: string;
+  selection?: PlaygroundSelection;
 };
 
 // Only the profile fields the participant prompts actually read, so an arbitrary
 // object cannot be pushed into the run configuration.
 const DEMOGRAPHIC_FIELDS = ["age", "gender", "education", "background", "population", "persona"] as const;
+
+function selectionKey(value: unknown) {
+  const key = String(value || "").trim().slice(0, 160);
+  return /^[a-zA-Z0-9_.:-]+$/.test(key) ? key : "";
+}
 
 function cleanDemographics(value: CreateRunInput["demographics"]) {
   if (!value || typeof value !== "object") return undefined;
@@ -270,6 +292,16 @@ function validate(input: CreateRunInput) {
   // A persona group replaces the study's own participant sampling, so it is
   // validated here rather than discovered to be unusable on the runner.
   const personaGroup = input.personaGroup ? normaliseGroup(input.personaGroup) : undefined;
+  const requestedSelection = input.selection;
+  const selection: PlaygroundSelection = requestedSelection?.mode === "material"
+    ? {
+        mode: "material",
+        materialId: selectionKey(requestedSelection.materialId),
+        itemId: requestedSelection.itemId ? selectionKey(requestedSelection.itemId) : undefined,
+        label: String(requestedSelection.label || "").trim().slice(0, 200) || undefined,
+      }
+    : { mode: "whole" };
+  if (selection.mode === "material" && !selection.materialId) throw new Error("Choose a material to run.");
   return {
     studyId,
     jobId: input.jobId?.trim() || undefined,
@@ -283,6 +315,7 @@ function validate(input: CreateRunInput) {
     participantsPerScenario: Math.min(Math.floor(requested), limit),
     temperature: Math.min(2, Math.max(0, Number(input.temperature ?? 1))),
     seed: Math.floor(Number(input.seed ?? 42)) || 42,
+    selection,
   };
 }
 
@@ -322,6 +355,7 @@ async function findCachedRun(checked: ReturnType<typeof validate>): Promise<Play
     if ((run.seed ?? 42) !== checked.seed) continue;
     if (JSON.stringify(run.demographics ?? null) !== JSON.stringify(checked.demographics ?? null)) continue;
     if (JSON.stringify(run.personaGroup ?? null) !== JSON.stringify(checked.personaGroup ?? null)) continue;
+    if (JSON.stringify(run.selection ?? null) !== JSON.stringify(checked.selection ?? null)) continue;
     return run;
   }
   return null;
@@ -348,6 +382,7 @@ export async function createRun(input: CreateRunInput) {
     participantsPerScenario: checked.participantsPerScenario,
     temperature: checked.temperature,
     seed: checked.seed,
+    selection: checked.selection,
     researcherName: input.researcherName?.trim() || undefined,
     usedOwnKey: Boolean(checked.apiKey),
     status: "queued",
@@ -397,6 +432,33 @@ export async function readResults(id: string): Promise<PlaygroundResults> {
     getJson(branch, runPath(id, "output/transcript_sample.json")),
   ]);
   return { analysis, charts, transcript };
+}
+
+export async function readReview(id: string): Promise<PlaygroundReview> {
+  const review = await getJson(branchName(id), runPath(id, "review.json"));
+  return {
+    studyNote: typeof review?.studyNote === "string" ? review.studyNote : "",
+    itemNotes: review?.itemNotes && typeof review.itemNotes === "object" ? review.itemNotes : {},
+    updatedAt: typeof review?.updatedAt === "string" ? review.updatedAt : undefined,
+  };
+}
+
+export async function saveReview(id: string, input: unknown): Promise<PlaygroundReview> {
+  await readRun(id);
+  const value = input && typeof input === "object" ? input as Record<string, unknown> : {};
+  const rawNotes = value.itemNotes && typeof value.itemNotes === "object" ? value.itemNotes as Record<string, unknown> : {};
+  const itemNotes: Record<string, string> = {};
+  for (const [key, note] of Object.entries(rawNotes).slice(0, 250)) {
+    const safeKey = safe(key);
+    if (safeKey && typeof note === "string" && note.trim()) itemNotes[safeKey] = note.trim().slice(0, 4000);
+  }
+  const review: PlaygroundReview = {
+    studyNote: typeof value.studyNote === "string" ? value.studyNote.trim().slice(0, 8000) : "",
+    itemNotes,
+    updatedAt: new Date().toISOString(),
+  };
+  await putFile(branchName(id), runPath(id, "review.json"), JSON.stringify(review, null, 2) + "\n", `playground: review ${id}`);
+  return review;
 }
 
 export async function retryRun(id: string) {
