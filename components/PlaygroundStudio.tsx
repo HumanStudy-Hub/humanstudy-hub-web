@@ -76,7 +76,7 @@ type TestRow = {
   direction_match: boolean | null;
   replicated: boolean | null;
 };
-type Analysis = { summary: Summary; tests: TestRow[] };
+type Analysis = { summary: Summary; tests: TestRow[]; reading?: string };
 type Transcript = Array<{ participantId: number; profile: Record<string, string | number>; prompt: string | null; response: string | null }>;
 
 const MODELS: SelectOption[] = [
@@ -905,6 +905,12 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                 {(run.partial || run.status === "failed") && (
                   <div className="border-l-2 border-amber-500 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
                     This run was stopped early, so the results below cover only the sessions that had finished by then. Run the remaining conditions separately, or run the whole study again to resume from the saved cache.
+                  </div>
+                )}
+                {analysis?.reading && (
+                  <div className="border-l-2 border-cyan-700 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">
+                    <p className="text-xs font-semibold uppercase text-cyan-700">Run summary</p>
+                    <p className="mt-1">{analysis.reading}</p>
                   </div>
                 )}
                 {run.summary && (
