@@ -489,14 +489,21 @@ export async function listBufferArms(jobId: string, slug: string): Promise<Buffe
   if (!id || !packageSlug) throw new Error("Choose a study to preview.");
   const raw = await getFile(`jobs/${id}`, jobPath(id, `package/${packageSlug}/task/task.json`));
   const task = JSON.parse(raw.toString("utf8"));
-  const conditions = Array.isArray(task?.conditions) ? task.conditions : [];
+  const rawConditions = task?.conditions;
+  // Newer packages list arms; a few older ones expose them as a dict keyed by arm.
+  const conditions: Record<string, unknown>[] = Array.isArray(rawConditions)
+    ? rawConditions
+    : (rawConditions && typeof rawConditions === "object"
+        ? Object.entries(rawConditions).map(([arm, value]) => ({ arm, ...(value && typeof value === "object" ? value as Record<string, unknown> : {}) }))
+        : []);
   return conditions.flatMap((condition: unknown): BufferArm[] => {
     if (!condition || typeof condition !== "object") return [];
     const entry = condition as Record<string, unknown>;
     const arm = String(entry.arm || "").trim();
     if (!arm) return [];
+    const explicitLabel = String(entry.label || "").trim();
     const detail = String(entry.structure || entry.size || entry.proposing || "").trim();
-    const label = detail ? `${arm} — ${detail.replace(/[_-]+/g, " ")}` : arm;
+    const label = explicitLabel || (detail ? `${arm} — ${detail.replace(/[_-]+/g, " ")}` : arm);
     return [{ id: arm, label }];
   });
 }
