@@ -58,7 +58,7 @@ type Run = {
   createdAt?: string;
 };
 type RunSelection = { mode: "whole" | "material"; materialId?: string; itemId?: string; label?: string };
-type MaterialOption = { id: string; label: string; items: Array<{ id: string; label: string }> };
+type MaterialOption = { id: string; label: string; items: Array<{ id: string; label: string }>; description?: string; detail?: Record<string, unknown> };
 type Review = { studyNote: string; itemNotes: Record<string, string>; updatedAt?: string };
 type TestRow = {
   test_id: string;
@@ -225,7 +225,14 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   }, [age, gender, background, persona]);
   const sameIdentity = castMode === "simple" && identitySummary.length > 0;
   const selectedMaterial = materials.find((entry) => entry.id === materialId);
-  const scopeUnit = study?.source === "buffer" ? "arm" : "material";
+  const scopeUnit = study?.source === "buffer" ? "condition" : "material";
+
+  // Latest run status for a scoped entry (condition/material), used to show
+  // which ones have already been completed before starting a new run.
+  function scopeStatus(entryId: string) {
+    const scoped = history.filter((run) => run.selection?.mode === "material" && run.selection.materialId === entryId);
+    return scoped.length > 0 ? scoped[0].status : null;
+  }
 
   // Benchmark studies preview their material catalog; buffer (agent-built)
   // packages preview their condition arms from task.json. Both reuse the same
@@ -244,7 +251,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
       .then(async (response) => response.ok ? response.json() : Promise.reject(new Error("Unavailable")))
       .then((data) => {
         const next: MaterialOption[] = buffer
-          ? (Array.isArray(data.arms) ? data.arms.map((arm: { id: string; label: string }) => ({ id: arm.id, label: arm.label, items: [] })) : [])
+          ? (Array.isArray(data.arms) ? data.arms.map((arm: { id: string; label: string; description?: string; detail?: Record<string, unknown> }) => ({ id: arm.id, label: arm.label, items: [], description: arm.description, detail: arm.detail })) : [])
           : (Array.isArray(data.materials) ? data.materials as MaterialOption[] : []);
         setMaterials(next);
         setMaterialId(next[0]?.id || "");
@@ -538,26 +545,54 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                 </div>
                 {scope === "whole" ? (
                   <p className="mt-2 text-xs text-gray-500">Runs every experiment {scopeUnit} in the study.</p>
+                ) : study?.source === "buffer" ? (
+                  <div className="mt-3 grid gap-2">
+                    {materialsLoading && <p className="text-xs text-gray-500">Loading conditions…</p>}
+                    {!materialsLoading && materials.length === 0 && <p className="text-xs text-gray-500">No conditions found for this study.</p>}
+                    {materials.map((entry) => {
+                      const status = scopeStatus(entry.id);
+                      return (
+                        <label key={entry.id} className={`flex cursor-pointer items-start gap-3 border p-3 ${materialId === entry.id ? "border-cyan-700 bg-cyan-50" : "border-gray-200 bg-white hover:border-gray-300"}`}>
+                          <input type="radio" name="condition" checked={materialId === entry.id} onChange={() => { setMaterialId(entry.id); setItemId(""); }} className="mt-1 shrink-0 accent-cyan-700" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                              <span className="text-sm font-semibold text-gray-900">{entry.label}</span>
+                              <span className={`shrink-0 px-1.5 py-0.5 text-[10px] font-semibold uppercase ${status === "complete" ? "bg-emerald-100 text-emerald-800" : status === "failed" ? "bg-red-100 text-red-800" : status ? "bg-cyan-100 text-cyan-800" : "bg-gray-100 text-gray-500"}`}>
+                                {status === "complete" ? "done" : status === "failed" ? "failed" : status ? status : "not run"}
+                              </span>
+                            </div>
+                            {entry.description && <p className="mt-0.5 text-xs text-gray-500">{entry.description}</p>}
+                            <p className="mt-0.5 font-mono text-[10px] text-gray-400">{entry.id}</p>
+                            {entry.detail && Object.keys(entry.detail).length > 0 && (
+                              <details className="mt-2">
+                                <summary className="cursor-pointer text-[11px] font-semibold text-cyan-700">Show condition details</summary>
+                                <pre className="mt-2 max-h-48 overflow-auto bg-gray-50 p-2 font-mono text-[11px] leading-5 text-gray-600">{JSON.stringify(entry.detail, null, 2)}</pre>
+                              </details>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })}
+                    <p className="text-xs leading-5 text-gray-500">A scoped run runs only this condition and is evaluated on its responses. Each condition keeps its own cache, so re-running one does not re-bill the others.</p>
+                  </div>
                 ) : (
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <div className={study?.source === "buffer" ? "sm:col-span-2" : ""}>
-                      <label htmlFor="material" className="block text-xs font-semibold text-gray-700">Experiment {scopeUnit}</label>
+                    <div>
+                      <label htmlFor="material" className="block text-xs font-semibold text-gray-700">Experiment material</label>
                       <select id="material" value={materialId} disabled={materialsLoading || materials.length === 0} onChange={(event) => { setMaterialId(event.target.value); setItemId(""); }} className="mt-1 h-10 w-full border border-gray-300 bg-white px-3 text-sm outline-none focus:border-cyan-700 disabled:bg-gray-100">
-                        {materialsLoading && <option>Loading {scopeUnit}s...</option>}
-                        {!materialsLoading && materials.length === 0 && <option>No {scopeUnit}s found</option>}
+                        {materialsLoading && <option>Loading materials...</option>}
+                        {!materialsLoading && materials.length === 0 && <option>No materials found</option>}
                         {materials.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
                       </select>
                     </div>
-                    {study?.source !== "buffer" && (
-                      <div>
-                        <label htmlFor="material-item" className="block text-xs font-semibold text-gray-700">Item <span className="font-normal text-gray-400">optional</span></label>
-                        <select id="material-item" value={itemId} disabled={!selectedMaterial?.items.length} onChange={(event) => setItemId(event.target.value)} className="mt-1 h-10 w-full border border-gray-300 bg-white px-3 text-sm outline-none focus:border-cyan-700 disabled:bg-gray-100">
-                          <option value="">All items in this material</option>
-                          {selectedMaterial?.items.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
-                        </select>
-                      </div>
-                    )}
-                    <p className="text-xs leading-5 text-gray-500 sm:col-span-2">A scoped run is evaluated only on the responses produced for this {scopeUnit}. Some paper-level tests may be unavailable.</p>
+                    <div>
+                      <label htmlFor="material-item" className="block text-xs font-semibold text-gray-700">Item <span className="font-normal text-gray-400">optional</span></label>
+                      <select id="material-item" value={itemId} disabled={!selectedMaterial?.items.length} onChange={(event) => setItemId(event.target.value)} className="mt-1 h-10 w-full border border-gray-300 bg-white px-3 text-sm outline-none focus:border-cyan-700 disabled:bg-gray-100">
+                        <option value="">All items in this material</option>
+                        {selectedMaterial?.items.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
+                      </select>
+                    </div>
+                    <p className="text-xs leading-5 text-gray-500 sm:col-span-2">A scoped run is evaluated only on the responses produced for this material. Some paper-level tests may be unavailable.</p>
                   </div>
                 )}
               </div>

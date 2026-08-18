@@ -479,10 +479,14 @@ export async function listBenchmarkMaterials(studyId: string): Promise<Benchmark
   return loaded.filter((entry): entry is BenchmarkMaterial => entry !== null);
 }
 
-export type BufferArm = { id: string; label: string };
+export type BufferArm = { id: string; label: string; description: string; detail: Record<string, unknown> };
 
-// List a buffer (agent-built) package's experiment arms from its task.json
-// conditions, so the playground can preview and scope a run to one arm.
+function humanize(value: string) {
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+// List a buffer (agent-built) package's experiment conditions from its task.json
+// conditions, so the playground can preview and scope a run to one condition.
 export async function listBufferArms(jobId: string, slug: string): Promise<BufferArm[]> {
   const id = safe(jobId);
   const packageSlug = safe(slug);
@@ -490,7 +494,8 @@ export async function listBufferArms(jobId: string, slug: string): Promise<Buffe
   const raw = await getFile(`jobs/${id}`, jobPath(id, `package/${packageSlug}/task/task.json`));
   const task = JSON.parse(raw.toString("utf8"));
   const rawConditions = task?.conditions;
-  // Newer packages list arms; a few older ones expose them as a dict keyed by arm.
+  // Newer packages list conditions; a few older ones expose them as a dict keyed
+  // by condition id.
   const conditions: Record<string, unknown>[] = Array.isArray(rawConditions)
     ? rawConditions
     : (rawConditions && typeof rawConditions === "object"
@@ -501,10 +506,17 @@ export async function listBufferArms(jobId: string, slug: string): Promise<Buffe
     const entry = condition as Record<string, unknown>;
     const arm = String(entry.arm || "").trim();
     if (!arm) return [];
+    const structure = String(entry.structure || "").trim();
+    const size = String(entry.size || "").trim();
+    const proposing = String(entry.proposing || "").trim();
     const explicitLabel = String(entry.label || "").trim();
-    const detail = String(entry.structure || entry.size || entry.proposing || "").trim();
-    const label = explicitLabel || (detail ? `${arm} — ${detail.replace(/[_-]+/g, " ")}` : arm);
-    return [{ id: arm, label }];
+    const label = explicitLabel || humanize(structure) || humanize(arm);
+    const bits = [
+      size ? `size ${size}` : "",
+      proposing ? humanize(proposing) : "",
+      entry.n_per_side !== undefined && entry.n_per_side !== null ? `${entry.n_per_side} per side` : "",
+    ].filter(Boolean);
+    return [{ id: arm, label, description: bits.join(" · "), detail: entry }];
   });
 }
 
