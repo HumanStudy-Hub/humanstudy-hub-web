@@ -479,6 +479,28 @@ export async function listBenchmarkMaterials(studyId: string): Promise<Benchmark
   return loaded.filter((entry): entry is BenchmarkMaterial => entry !== null);
 }
 
+export type BufferArm = { id: string; label: string };
+
+// List a buffer (agent-built) package's experiment arms from its task.json
+// conditions, so the playground can preview and scope a run to one arm.
+export async function listBufferArms(jobId: string, slug: string): Promise<BufferArm[]> {
+  const id = safe(jobId);
+  const packageSlug = safe(slug);
+  if (!id || !packageSlug) throw new Error("Choose a study to preview.");
+  const raw = await getFile(`jobs/${id}`, jobPath(id, `package/${packageSlug}/task/task.json`));
+  const task = JSON.parse(raw.toString("utf8"));
+  const conditions = Array.isArray(task?.conditions) ? task.conditions : [];
+  return conditions.flatMap((condition: unknown): BufferArm[] => {
+    if (!condition || typeof condition !== "object") return [];
+    const entry = condition as Record<string, unknown>;
+    const arm = String(entry.arm || "").trim();
+    if (!arm) return [];
+    const detail = String(entry.structure || entry.size || entry.proposing || "").trim();
+    const label = detail ? `${arm} — ${detail.replace(/[_-]+/g, " ")}` : arm;
+    return [{ id: arm, label }];
+  });
+}
+
 export async function assignStudyId(id: string) {
   const job = await readJob(id);
   if (!job.experimentId.startsWith("draft_")) return job;

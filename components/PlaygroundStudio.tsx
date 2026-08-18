@@ -225,29 +225,33 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   }, [age, gender, background, persona]);
   const sameIdentity = castMode === "simple" && identitySummary.length > 0;
   const selectedMaterial = materials.find((entry) => entry.id === materialId);
+  const scopeUnit = study?.source === "buffer" ? "arm" : "material";
 
-  // The material catalog only exists for benchmark studies; buffer (agent-built)
-  // packages are driven by their own task and are always run whole.
+  // Benchmark studies preview their material catalog; buffer (agent-built)
+  // packages preview their condition arms from task.json. Both reuse the same
+  // "Run scope" control with a different data source.
   useEffect(() => {
     setMaterials([]);
     setMaterialId("");
     setItemId("");
-    if (study?.source === "buffer") {
-      setScope("whole");
-      return;
-    }
     if (scope !== "material" || !studyId) return;
     setMaterialsLoading(true);
-    fetch(`/api/playground/studies/${encodeURIComponent(studyId)}/materials`, { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() : Promise.reject(new Error("Materials unavailable")))
+    const buffer = study?.source === "buffer";
+    const url = buffer
+      ? `/api/playground/buffer-arms?jobId=${encodeURIComponent(study?.jobId || "")}&slug=${encodeURIComponent(study?.packageSlug || "")}`
+      : `/api/playground/studies/${encodeURIComponent(studyId)}/materials`;
+    fetch(url, { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() : Promise.reject(new Error("Unavailable")))
       .then((data) => {
-        const next = Array.isArray(data.materials) ? data.materials as MaterialOption[] : [];
+        const next: MaterialOption[] = buffer
+          ? (Array.isArray(data.arms) ? data.arms.map((arm: { id: string; label: string }) => ({ id: arm.id, label: arm.label, items: [] })) : [])
+          : (Array.isArray(data.materials) ? data.materials as MaterialOption[] : []);
         setMaterials(next);
         setMaterialId(next[0]?.id || "");
       })
       .catch(() => setMaterials([]))
       .finally(() => setMaterialsLoading(false));
-  }, [scope, studyId, study?.source]);
+  }, [scope, studyId, study?.source, study?.jobId, study?.packageSlug]);
 
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("run");
@@ -525,26 +529,26 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                 </p>
               </div>
 
-              {study?.source !== "buffer" && (
-                <div className="sm:col-span-2">
-                  <p className="text-sm font-semibold text-gray-900">Run scope</p>
-                  <div className="mt-2 inline-flex border border-gray-300">
-                    {[["whole", "Whole study"], ["material", "Selected material"]].map(([id, label]) => (
-                      <button key={id} type="button" onClick={() => setScope(id as "whole" | "material")} className={`h-9 px-4 text-xs font-semibold ${scope === id ? "bg-cyan-700 text-white" : "bg-white text-gray-600 hover:text-gray-950"}`}>{label}</button>
-                    ))}
-                  </div>
-                  {scope === "whole" ? (
-                    <p className="mt-2 text-xs text-gray-500">Runs every experiment material in the study.</p>
-                  ) : (
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label htmlFor="material" className="block text-xs font-semibold text-gray-700">Experiment material</label>
-                        <select id="material" value={materialId} disabled={materialsLoading || materials.length === 0} onChange={(event) => { setMaterialId(event.target.value); setItemId(""); }} className="mt-1 h-10 w-full border border-gray-300 bg-white px-3 text-sm outline-none focus:border-cyan-700 disabled:bg-gray-100">
-                          {materialsLoading && <option>Loading materials...</option>}
-                          {!materialsLoading && materials.length === 0 && <option>No materials found</option>}
-                          {materials.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
-                        </select>
-                      </div>
+              <div className="sm:col-span-2">
+                <p className="text-sm font-semibold text-gray-900">Run scope</p>
+                <div className="mt-2 inline-flex border border-gray-300">
+                  {[["whole", "Whole study"], ["material", `Selected ${scopeUnit}`]].map(([id, label]) => (
+                    <button key={id} type="button" onClick={() => setScope(id as "whole" | "material")} className={`h-9 px-4 text-xs font-semibold ${scope === id ? "bg-cyan-700 text-white" : "bg-white text-gray-600 hover:text-gray-950"}`}>{label}</button>
+                  ))}
+                </div>
+                {scope === "whole" ? (
+                  <p className="mt-2 text-xs text-gray-500">Runs every experiment {scopeUnit} in the study.</p>
+                ) : (
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className={study?.source === "buffer" ? "sm:col-span-2" : ""}>
+                      <label htmlFor="material" className="block text-xs font-semibold text-gray-700">Experiment {scopeUnit}</label>
+                      <select id="material" value={materialId} disabled={materialsLoading || materials.length === 0} onChange={(event) => { setMaterialId(event.target.value); setItemId(""); }} className="mt-1 h-10 w-full border border-gray-300 bg-white px-3 text-sm outline-none focus:border-cyan-700 disabled:bg-gray-100">
+                        {materialsLoading && <option>Loading {scopeUnit}s...</option>}
+                        {!materialsLoading && materials.length === 0 && <option>No {scopeUnit}s found</option>}
+                        {materials.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
+                      </select>
+                    </div>
+                    {study?.source !== "buffer" && (
                       <div>
                         <label htmlFor="material-item" className="block text-xs font-semibold text-gray-700">Item <span className="font-normal text-gray-400">optional</span></label>
                         <select id="material-item" value={itemId} disabled={!selectedMaterial?.items.length} onChange={(event) => setItemId(event.target.value)} className="mt-1 h-10 w-full border border-gray-300 bg-white px-3 text-sm outline-none focus:border-cyan-700 disabled:bg-gray-100">
@@ -552,11 +556,11 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                           {selectedMaterial?.items.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
                         </select>
                       </div>
-                      <p className="text-xs leading-5 text-gray-500 sm:col-span-2">A scoped run is evaluated only on the responses produced for this material. Some paper-level tests may be unavailable.</p>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                    <p className="text-xs leading-5 text-gray-500 sm:col-span-2">A scoped run is evaluated only on the responses produced for this {scopeUnit}. Some paper-level tests may be unavailable.</p>
+                  </div>
+                )}
+              </div>
 
               <div>
                 <label className="block text-sm font-semibold text-gray-900" htmlFor="model">Base model</label>
