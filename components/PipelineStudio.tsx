@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import Link from "next/link";
 import { upload } from "@vercel/blob/client";
+import JSZip from "jszip";
 
 const MAX_PAPER_BYTES = 50 * 1024 * 1024;
+const MAX_MATERIALS_BYTES = 100 * 1024 * 1024;
 // A dispatched run normally reports back within a minute. Longer than this and
 // GitHub most likely never gave the job a runner.
 const STALL_MS = 5 * 60 * 1000;
+// Browsers expose a folder picker through the non-standard webkitdirectory
+// attribute; TypeScript's DOM types do not include it, hence the cast.
+const directoryInputProps = { webkitdirectory: "", directory: "" } as unknown as InputHTMLAttributes<HTMLInputElement>;
 
 type JobStatus = "queued" | "running" | "review" | "complete" | "failed";
 type PipelineProgress = {
@@ -412,6 +417,10 @@ export default function PipelineStudio() {
   const [foundJobs, setFoundJobs] = useState<Array<{ id: string; paperName: string; status: JobStatus; createdAt?: string }> | null>(null);
   const [searching, setSearching] = useState(false);
   const [importStudyId, setImportStudyId] = useState("study_001");
+  const [openMaterialsFiles, setOpenMaterialsFiles] = useState<File[] | null>(null);
+  const [openMaterialsName, setOpenMaterialsName] = useState("");
+  const openMaterialsZipInput = useRef<HTMLInputElement>(null);
+  const openMaterialsFolderInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const requestedJobId = new URLSearchParams(window.location.search).get("job");
@@ -488,6 +497,38 @@ export default function PipelineStudio() {
     setPaper(file);
   }
 
+  function chooseOpenMaterialsZip(file?: File) {
+    if (!file) return;
+    if (file.size > MAX_MATERIALS_BYTES) {
+      setError(`This file is ${(file.size / 1024 / 1024).toFixed(1)} MB. Open materials are capped at 100 MB.`);
+      return;
+    }
+    setError("");
+    setOpenMaterialsFiles([file]);
+    setOpenMaterialsName(file.name);
+  }
+
+  function chooseOpenMaterialsFolder(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0) return;
+    const files = Array.from(fileList);
+    const total = files.reduce((sum, file) => sum + file.size, 0);
+    if (total > MAX_MATERIALS_BYTES) {
+      setError(`This folder is ${(total / 1024 / 1024).toFixed(1)} MB. Open materials are capped at 100 MB.`);
+      return;
+    }
+    const root = (files[0].webkitRelativePath || "materials").split("/")[0] || "materials";
+    setError("");
+    setOpenMaterialsFiles(files);
+    setOpenMaterialsName(`${root}.zip`);
+  }
+
+  function clearOpenMaterials() {
+    setOpenMaterialsFiles(null);
+    setOpenMaterialsName("");
+    if (openMaterialsZipInput.current) openMaterialsZipInput.current.value = "";
+    if (openMaterialsFolderInput.current) openMaterialsFolderInput.current.value = "";
+  }
+
   async function start() {
     if (!paper) return;
     setBusy(true);
@@ -503,11 +544,33 @@ export default function PipelineStudio() {
         multipart: paper.size > 8 * 1024 * 1024,
         onUploadProgress: ({ percentage }) => setUploadPercent(percentage),
       });
+      // Open materials are optional. A single .zip uploads as-is; a chosen
+      // folder is zipped here in the browser so it travels as one blob.
+      let openMaterialsPathname: string | undefined;
+      if (openMaterialsFiles && openMaterialsFiles.length > 0) {
+        const singleZip = openMaterialsFiles.length === 1 && openMaterialsFiles[0].name.toLowerCase().endsWith(".zip");
+        let materialsBlob: Blob;
+        if (singleZip) {
+          materialsBlob = openMaterialsFiles[0];
+        } else {
+          const zip = new JSZip();
+          for (const file of openMaterialsFiles) zip.file(file.webkitRelativePath || file.name, file);
+          materialsBlob = await zip.generateAsync({ type: "blob" });
+        }
+        const materials = await upload(openMaterialsName || "open-materials.zip", materialsBlob, {
+          access: "private",
+          handleUploadUrl: "/api/pipeline/upload-materials",
+          contentType: "application/zip",
+          multipart: materialsBlob.size > 8 * 1024 * 1024,
+          onUploadProgress: ({ percentage }) => setUploadPercent(percentage),
+        });
+        openMaterialsPathname = materials.pathname;
+      }
       setUploadPercent(null);
       const response = await fetch("/api/pipeline/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ paperPathname: blob.pathname, paperName: paper.name, osfUrl: osf, contributorName, contributorGithub: contributorId }),
+        body: JSON.stringify({ paperPathname: blob.pathname, paperName: paper.name, osfUrl: osf, openMaterialsPathname, openMaterialsName: openMaterialsPathname ? openMaterialsName : undefined, contributorName, contributorGithub: contributorId }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Could not start conversion.");
@@ -716,7 +779,20 @@ export default function PipelineStudio() {
 
             <div className="mt-6 border-b border-gray-100 pb-3"><p className="text-sm font-semibold text-gray-950">2. Add study details</p></div>
             <label className="mt-5 block text-sm font-semibold text-gray-900" htmlFor="osf-url">Open materials <span className="font-normal text-gray-400">optional</span></label>
-            <input id="osf-url" value={osf} onChange={(event) => setOsf(event.target.value)} placeholder="https://osf.io/..." className="mt-2 h-10 w-full border border-gray-300 px-3 text-sm outline-none focus:border-cyan-700" />
+            <input id="osf-url" value={osf} onChange={(event) => setOsf(event.target.value)} placeholder="https://osf.io/... or another materials URL" className="mt-2 h-10 w-full border border-gray-300 px-3 text-sm outline-none focus:border-cyan-700" />
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <input ref={openMaterialsZipInput} type="file" accept=".zip,application/zip,application/x-zip-compressed" className="hidden" onChange={(event) => chooseOpenMaterialsZip(event.target.files?.[0])} />
+              <input ref={openMaterialsFolderInput} type="file" multiple className="hidden" {...directoryInputProps} onChange={(event) => chooseOpenMaterialsFolder(event.target.files)} />
+              <button type="button" disabled={busy} onClick={() => openMaterialsZipInput.current?.click()} className="h-9 border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-cyan-400 disabled:bg-gray-100">Upload a ZIP</button>
+              <button type="button" disabled={busy} onClick={() => openMaterialsFolderInput.current?.click()} className="h-9 border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-cyan-400 disabled:bg-gray-100">Upload a folder</button>
+              {openMaterialsFiles && openMaterialsFiles.length > 0 && (
+                <span className="flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
+                  <span className="font-semibold">{openMaterialsFiles.length === 1 && openMaterialsFiles[0].name.toLowerCase().endsWith(".zip") ? openMaterialsFiles[0].name : `${(openMaterialsFiles[0].webkitRelativePath || "materials").split("/")[0]}/ · ${openMaterialsFiles.length} files`}</span>
+                  <button type="button" onClick={clearOpenMaterials} className="font-bold text-emerald-600 hover:text-red-700">✕</button>
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-[11px] text-gray-500">Questionnaires, stimuli, or data. A URL is followed online; a ZIP or folder is extracted for the agent (folders are zipped in your browser, up to 100 MB).</p>
 
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <div>

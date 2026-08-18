@@ -22,6 +22,12 @@ export type PipelineJob = {
   // expires, so a retry re-signs from this.
   paperPathname?: string;
   paperUrl?: string;
+  // Optional uploaded open materials (a zip of the contributor's folder or zip
+  // file). Same Blob-store treatment as the paper: pathname is durable, the URL
+  // is a short-lived signed link re-issued on retry.
+  openMaterialsPathname?: string;
+  openMaterialsUrl?: string;
+  openMaterialsName?: string;
   currentStage: number;
   status: JobStatus;
   message: string;
@@ -216,18 +222,25 @@ export async function readJob(id: string): Promise<PipelineJob> {
 
 // The paper is already in the private Blob store; the Actions runner downloads
 // it from the signed paperUrl and commits it to the job branch.
-export async function createJob(input: { paperPathname: string; paperName: string; contributorName: string; contributorGithub?: string; osfUrl?: string }) {
+export async function createJob(input: { paperPathname: string; paperName: string; contributorName: string; contributorGithub?: string; osfUrl?: string; openMaterialsPathname?: string; openMaterialsName?: string }) {
   if (!input.contributorName.trim()) throw new Error("Contributor name is required.");
   if (!input.paperName.toLowerCase().endsWith(".pdf")) throw new Error("Please upload a PDF.");
   const pathname = safePathname(input.paperPathname);
   if (!pathname || !(await blobUpload(pathname))) {
     throw new Error("The uploaded paper could not be located. Please try the upload again.");
   }
+  const materialsPathname = safePathname(input.openMaterialsPathname);
+  if (input.openMaterialsPathname && !materialsPathname) {
+    throw new Error("The uploaded open materials could not be read.");
+  }
+  if (materialsPathname && !(await blobUpload(materialsPathname))) {
+    throw new Error("The uploaded open materials could not be located. Please try the upload again.");
+  }
   const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
   const branch = `jobs/${id}`;
   await ensureBranch(branch);
   const now = new Date().toISOString();
-  const job: PipelineJob = { id, experimentId: draftId(input.paperName, id), contributorName: input.contributorName.trim(), contributorGithub: input.contributorGithub?.trim() || undefined, osfUrl: input.osfUrl?.trim() || undefined, paperName: input.paperName, paperPathname: pathname, paperUrl: await signedBlobUrl(pathname), currentStage: 1, status: "queued", message: "Waiting for the study-building agent", packageReady: false, createdAt: now, updatedAt: now, reviews: {} };
+  const job: PipelineJob = { id, experimentId: draftId(input.paperName, id), contributorName: input.contributorName.trim(), contributorGithub: input.contributorGithub?.trim() || undefined, osfUrl: input.osfUrl?.trim() || undefined, paperName: input.paperName, paperPathname: pathname, paperUrl: await signedBlobUrl(pathname), openMaterialsPathname: materialsPathname || undefined, openMaterialsUrl: materialsPathname ? await signedBlobUrl(materialsPathname) : undefined, openMaterialsName: input.openMaterialsName?.trim() || undefined, currentStage: 1, status: "queued", message: "Waiting for the study-building agent", packageReady: false, createdAt: now, updatedAt: now, reviews: {} };
   await putFile(branch, jobPath(id, "job.json"), JSON.stringify(job, null, 2) + "\n", `pipeline: create ${id}`);
   // Nothing writes to this branch after the dispatch. From here the runner owns
   // it, and a second writer only costs it its push.
@@ -258,6 +271,7 @@ export async function retryJob(id: string) {
   }
   // The stored link is only valid for a day, so a later retry needs a fresh one.
   if (job.paperPathname) job.paperUrl = await signedBlobUrl(job.paperPathname);
+  if (job.openMaterialsPathname) job.openMaterialsUrl = await signedBlobUrl(job.openMaterialsPathname);
   job.status = "queued";
   job.message = "Waiting for the study-building agent";
   job.error = undefined;

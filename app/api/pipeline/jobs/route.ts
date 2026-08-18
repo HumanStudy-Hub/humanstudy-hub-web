@@ -18,6 +18,8 @@ export async function POST(request: Request) {
       contributorName: String(body.contributorName || ""),
       contributorGithub: String(body.contributorGithub || ""),
       osfUrl: String(body.osfUrl || ""),
+      openMaterialsPathname: String(body.openMaterialsPathname || ""),
+      openMaterialsName: String(body.openMaterialsName || ""),
     });
     return NextResponse.json({ job }, { status: 202 });
   } catch (error) {
