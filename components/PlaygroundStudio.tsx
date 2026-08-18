@@ -228,11 +228,20 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   const selectedMaterial = materials.find((entry) => entry.id === materialId);
   const scopeUnit = study?.source === "buffer" ? "condition" : "material";
 
-  // Latest run status for a scoped entry (condition/material), used to show
-  // which ones have already been completed before starting a new run.
-  function scopeStatus(entryId: string) {
+  // Run status for a scoped entry (condition/material). Scoped runs report the
+  // condition directly; when only a whole-study run exists, surface that instead
+  // so "not run" is reserved for conditions with no run coverage at all.
+  function scopeBadge(entryId: string): { label: string; className: string } {
     const scoped = history.filter((run) => run.selection?.mode === "material" && run.selection.materialId === entryId);
-    return scoped.length > 0 ? scoped[0].status : null;
+    if (scoped.length > 0) {
+      const status = scoped[0].status;
+      if (status === "complete") return { label: "done", className: "bg-emerald-100 text-emerald-800" };
+      if (status === "failed") return { label: "failed", className: "bg-red-100 text-red-800" };
+      return { label: status, className: "bg-cyan-100 text-cyan-800" };
+    }
+    const whole = history.find((run) => !run.selection || run.selection.mode !== "material");
+    if (whole) return { label: `whole · ${whole.status}`, className: "bg-amber-100 text-amber-800" };
+    return { label: "not run", className: "bg-gray-100 text-gray-500" };
   }
 
   // Benchmark studies preview their material catalog; buffer (agent-built)
@@ -568,15 +577,15 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                     {materialsLoading && <p className="text-xs text-gray-500">Loading conditions…</p>}
                     {!materialsLoading && materials.length === 0 && <p className="text-xs text-gray-500">No conditions found for this study.</p>}
                     {materials.map((entry) => {
-                      const status = scopeStatus(entry.id);
+                      const badge = scopeBadge(entry.id);
                       return (
                         <label key={entry.id} className={`flex cursor-pointer items-start gap-3 border p-3 ${materialId === entry.id ? "border-cyan-700 bg-cyan-50" : "border-gray-200 bg-white hover:border-gray-300"}`}>
                           <input type="radio" name="condition" checked={materialId === entry.id} onChange={() => { setMaterialId(entry.id); setItemId(""); }} className="mt-1 shrink-0 accent-cyan-700" />
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-baseline justify-between gap-2">
                               <span className="text-sm font-semibold text-gray-900">{entry.label}</span>
-                              <span className={`shrink-0 px-1.5 py-0.5 text-[10px] font-semibold uppercase ${status === "complete" ? "bg-emerald-100 text-emerald-800" : status === "failed" ? "bg-red-100 text-red-800" : status ? "bg-cyan-100 text-cyan-800" : "bg-gray-100 text-gray-500"}`}>
-                                {status === "complete" ? "done" : status === "failed" ? "failed" : status ? status : "not run"}
+                              <span className={`shrink-0 px-1.5 py-0.5 text-[10px] font-semibold uppercase ${badge.className}`}>
+                                {badge.label}
                               </span>
                             </div>
                             {entry.description && <p className="mt-0.5 text-xs text-gray-500">{entry.description}</p>}
