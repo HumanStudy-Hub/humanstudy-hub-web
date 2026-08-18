@@ -70,6 +70,7 @@ export type PlaygroundRun = {
   progress?: PlaygroundProgress;
   workflowRunId?: number;
   partial?: boolean;
+  coverage?: Record<string, number>;
   createdAt: string;
   updatedAt: string;
 };
@@ -337,7 +338,9 @@ export async function listRunsByStudy(studyId: string): Promise<PlaygroundRun[]>
       const id = branch.name.slice("runs/".length);
       try {
         const run = await getJson(branch.name, runPath(id, "run.json"));
-        return run && run.studyId === studyId ? (run as PlaygroundRun) : null;
+        if (!run || run.studyId !== studyId) return null;
+        const coverage = await getJson(branch.name, runPath(id, "output/coverage.json"));
+        return { ...(run as PlaygroundRun), ...(coverage && typeof coverage === "object" ? { coverage: coverage as Record<string, number> } : {}) };
       } catch {
         return null;
       }

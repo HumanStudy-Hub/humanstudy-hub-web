@@ -56,6 +56,7 @@ type Run = {
   progress?: Progress;
   selection?: RunSelection;
   partial?: boolean;
+  coverage?: Record<string, number>;
   createdAt?: string;
 };
 type RunSelection = { mode: "whole" | "material"; materialId?: string; itemId?: string; label?: string };
@@ -234,13 +235,19 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
   function scopeBadge(entryId: string): { label: string; className: string } {
     const scoped = history.filter((run) => run.selection?.mode === "material" && run.selection.materialId === entryId);
     if (scoped.length > 0) {
-      const status = scoped[0].status;
-      if (status === "complete") return { label: "done", className: "bg-emerald-100 text-emerald-800" };
-      if (status === "failed") return { label: "failed", className: "bg-red-100 text-red-800" };
-      return { label: status, className: "bg-cyan-100 text-cyan-800" };
+      const run = scoped[0];
+      const status = run.status;
+      const count = run.coverage?.[entryId] !== undefined ? ` · ${run.coverage[entryId]} sessions` : "";
+      if (status === "complete") return { label: `done${count}`, className: "bg-emerald-100 text-emerald-800" };
+      if (status === "failed") return { label: `failed${count}`, className: "bg-red-100 text-red-800" };
+      return { label: `${status}${count}`, className: "bg-cyan-100 text-cyan-800" };
     }
     const whole = history.find((run) => !run.selection || run.selection.mode !== "material");
-    if (whole) return { label: `whole · ${whole.status}`, className: "bg-amber-100 text-amber-800" };
+    if (whole) {
+      const count = whole.coverage?.[entryId];
+      if (count !== undefined) return { label: `${count} sessions`, className: "bg-amber-100 text-amber-800" };
+      return { label: `whole · ${whole.status}`, className: "bg-amber-100 text-amber-800" };
+    }
     return { label: "not run", className: "bg-gray-100 text-gray-500" };
   }
 
