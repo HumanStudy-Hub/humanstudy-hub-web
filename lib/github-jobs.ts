@@ -293,6 +293,18 @@ export async function approveStage(id: string, input: { decision: "approved" | "
   return job;
 }
 
+// Send an already-approved job back to review so its files can be re-inspected
+// and re-approved (or changed). Does not re-run the build.
+export async function reopenReview(id: string) {
+  const job = await readJob(id);
+  if (job.status !== "complete") throw new Error("Only an approved job can be reopened for review.");
+  job.status = "review";
+  job.message = "Study package is waiting for researcher review";
+  job.updatedAt = new Date().toISOString();
+  await saveJob(job, `pipeline: reopen review ${id}`);
+  return job;
+}
+
 export async function readLog(id: string) {
   try { return (await getFile(`jobs/${safe(id)}`, jobPath(id, "logs/agent.log"))).toString("utf8").slice(-12000); } catch { return ""; }
 }

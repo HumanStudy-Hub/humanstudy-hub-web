@@ -406,7 +406,6 @@ export default function PipelineStudio() {
   const [error, setError] = useState("");
   const [prUrl, setPrUrl] = useState("");
   const [reviewFiles, setReviewFiles] = useState<ReviewFile[]>([]);
-  const [viewingReview, setViewingReview] = useState(false);
   const [selectedFile, setSelectedFile] = useState("");
   const [editedContent, setEditedContent] = useState("");
   const [editedJson, setEditedJson] = useState<JsonValue | null>(null);
@@ -733,19 +732,19 @@ export default function PipelineStudio() {
     }
   }
 
-  // Open the extracted files of an already-approved job for inspection (read-only).
-  async function viewReviewFiles() {
+  // Send an already-approved job back to review so its files can be re-inspected
+  // and re-approved. Does not re-run the build.
+  async function reopenReview() {
     if (!job) return;
     setBusy(true);
     setError("");
     try {
-      const response = await fetch(`/api/pipeline/jobs/${job.id}/files`, { cache: "no-store" });
+      const response = await fetch(`/api/pipeline/jobs/${job.id}/reopen`, { method: "POST" });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Could not load the files.");
-      setReviewFiles(data.files);
-      setViewingReview(true);
+      if (!response.ok) throw new Error(data.error || "Could not reopen the review.");
+      setJob(data.job);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load the files.");
+      setError(caught instanceof Error ? caught.message : "Could not reopen the review.");
     } finally {
       setBusy(false);
     }
@@ -757,7 +756,6 @@ export default function PipelineStudio() {
     setLog("");
     setReviewFiles([]);
     setSelectedFile("");
-    setViewingReview(false);
     window.history.replaceState({}, "", "/pipeline");
   }
 
@@ -953,18 +951,11 @@ export default function PipelineStudio() {
             </div>
           )}
 
-          {(job.status === "review" || (job.status === "complete" && viewingReview)) && (
+          {job.status === "review" && (
             <div className="p-6">
-              {job.status === "review" ? (
-                <div className="border-l-2 border-amber-500 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-                  Review the extracted study and materials. Correct inaccurate values, resolve highlighted missing information when possible, then approve the package for download.
-                </div>
-              ) : (
-                <div className="flex items-center justify-between gap-3 border-l-2 border-emerald-600 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">
-                  <span>Read-only view of the approved study package.</span>
-                  <button type="button" onClick={() => setViewingReview(false)} className="shrink-0 text-xs font-semibold text-emerald-700 hover:text-emerald-900">← Back to job</button>
-                </div>
-              )}
+              <div className="border-l-2 border-amber-500 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+                Review the extracted study and materials. Correct inaccurate values, resolve highlighted missing information when possible, then approve the package for download.
+              </div>
               <div className="mt-6 space-y-4">
                 <div>
                   <p className="text-sm font-semibold text-gray-900">Final study package review</p>
@@ -993,8 +984,8 @@ export default function PipelineStudio() {
                           <p className="truncate font-mono text-[10px] text-gray-400" title={selectedFile}>{selectedFile}</p>
                         </div>
                         <div className="flex shrink-0 items-center gap-3">
-                          {job.status === "review" && !saved && <span className="text-xs text-amber-700">Unsaved changes</span>}
-                          {job.status === "review" && <button disabled={busy || saved} onClick={saveFile} className="h-8 shrink-0 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : saved ? "Saved" : "Save changes"}</button>}
+                          {!saved && <span className="text-xs text-amber-700">Unsaved changes</span>}
+                          <button disabled={busy || saved} onClick={saveFile} className="h-8 shrink-0 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : saved ? "Saved" : "Save changes"}</button>
                         </div>
                       </div>
                       {selectedFile.endsWith(".json") && editedJson !== null ? <div className="max-h-[34rem] min-w-0 overflow-auto bg-gray-50 p-4"><JsonEditor value={editedJson} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[28rem] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}
@@ -1002,16 +993,12 @@ export default function PipelineStudio() {
                   </div>
                 </div>}
               </div>
-              {job.status === "review" && (
-                <>
-                  <label htmlFor="review-note" className="mt-6 block text-sm font-semibold">Review note</label>
-                  <textarea id="review-note" value={note} onChange={(event) => setNote(event.target.value)} className="mt-2 h-32 w-full border border-gray-300 p-3 text-sm outline-none focus:border-cyan-700" placeholder="Corrections, missing evidence, or approval rationale" />
-                  <div className="mt-4 flex justify-end gap-2">
-                    <button disabled={busy || !note.trim()} onClick={() => review("changes_requested")} className="h-10 border border-gray-300 px-4 text-sm font-semibold text-gray-700 disabled:text-gray-300">Request changes</button>
-                    <button disabled={busy || !saved} onClick={() => review("approved")} className="h-10 bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-600 disabled:bg-gray-300">Approve package</button>
-                  </div>
-                </>
-              )}
+              <label htmlFor="review-note" className="mt-6 block text-sm font-semibold">Review note</label>
+              <textarea id="review-note" value={note} onChange={(event) => setNote(event.target.value)} className="mt-2 h-32 w-full border border-gray-300 p-3 text-sm outline-none focus:border-cyan-700" placeholder="Corrections, missing evidence, or approval rationale" />
+              <div className="mt-4 flex justify-end gap-2">
+                <button disabled={busy || !note.trim()} onClick={() => review("changes_requested")} className="h-10 border border-gray-300 px-4 text-sm font-semibold text-gray-700 disabled:text-gray-300">Request changes</button>
+                <button disabled={busy || !saved} onClick={() => review("approved")} className="h-10 bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-600 disabled:bg-gray-300">Approve package</button>
+              </div>
             </div>
           )}
 
@@ -1024,7 +1011,7 @@ export default function PipelineStudio() {
 
           {job.status === "complete" && (
             <div className="p-6">
-              {job.packageReady ? <><div className="border-l-2 border-emerald-600 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">The reviewed HumanStudy-Bench package is ready for download and can be used by the Run Experiment workspace.</div><div className="mt-5 flex flex-wrap gap-2"><Link href={job.source === "import" ? `/playground?mode=reproduce&study=${job.experimentId}` : `/playground?mode=reproduce&job=${job.id}`} className="inline-flex h-10 items-center bg-emerald-700 px-5 text-sm font-semibold text-white hover:bg-emerald-600">Ship to playground</Link>{job.source !== "import" && <><button disabled={busy} onClick={viewReviewFiles} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Loading..." : "Review files"}</button><a href={`/api/pipeline/jobs/${job.id}/download`} className="inline-flex h-10 items-center bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600">Download experiment ZIP</a><button disabled={busy || Boolean(prUrl)} onClick={publish} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Saving..." : prUrl ? "Contributed to benchmark" : "Contribute this study to benchmark"}</button></>}</div>{prUrl && <a href={prUrl} target="_blank" rel="noreferrer" className="mt-4 block text-sm font-semibold text-cyan-700 hover:underline">Open pull request</a>}</> : <div className="border-l-2 border-cyan-700 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">The extraction is saved, but the study is not yet a runnable package.</div>}
+              {job.packageReady ? <><div className="border-l-2 border-emerald-600 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">The reviewed HumanStudy-Bench package is ready for download and can be used by the Run Experiment workspace.</div><div className="mt-5 flex flex-wrap gap-2"><Link href={job.source === "import" ? `/playground?mode=reproduce&study=${job.experimentId}` : `/playground?mode=reproduce&job=${job.id}`} className="inline-flex h-10 items-center bg-emerald-700 px-5 text-sm font-semibold text-white hover:bg-emerald-600">Ship to playground</Link>{job.source !== "import" && <><button disabled={busy} onClick={reopenReview} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Opening..." : "Reopen review"}</button><a href={`/api/pipeline/jobs/${job.id}/download`} className="inline-flex h-10 items-center bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600">Download experiment ZIP</a><button disabled={busy || Boolean(prUrl)} onClick={publish} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Saving..." : prUrl ? "Contributed to benchmark" : "Contribute this study to benchmark"}</button></>}</div>{prUrl && <a href={prUrl} target="_blank" rel="noreferrer" className="mt-4 block text-sm font-semibold text-cyan-700 hover:underline">Open pull request</a>}</> : <div className="border-l-2 border-cyan-700 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">The extraction is saved, but the study is not yet a runnable package.</div>}
             </div>
           )}
 
