@@ -76,8 +76,17 @@ type TestRow = {
   direction_match: boolean | null;
   replicated: boolean | null;
 };
-type Analysis = { summary: Summary; tests: TestRow[]; reading?: string };
-type Transcript = Array<{ participantId: number; profile: Record<string, string | number>; prompt: string | null; response: string | null }>;
+type Analysis = { summary: Summary; tests: TestRow[]; reading?: string; bufferSummary?: BufferSummary; metrics?: MetricRow[] };
+type BufferSummary = {
+  sessions: number;
+  coverage: Record<string, number>;
+  formatCompliance: number | null;
+  fallbackRate: number | null;
+  numericMetrics: number;
+  headline: number | null;
+};
+type MetricRow = { arm: string; metric: string; value: number };
+type Transcript = Array<{ participantId: number | string; profile: Record<string, string | number>; prompt: string | null; response: string | null; arm?: string; events?: string[] }>;
 
 const MODELS: SelectOption[] = [
   { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", note: "fast, inexpensive" },
@@ -936,6 +945,55 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                   </div>
                 )}
 
+                {(analysis?.bufferSummary || analysis?.metrics?.length) && (
+                  <div className="space-y-4">
+                    {analysis.bufferSummary && (
+                      <div className="grid gap-px bg-gray-200 sm:grid-cols-4">
+                        {[
+                          ["Sessions", String(analysis.bufferSummary.sessions ?? "—"), "completed sessions"],
+                          ["Format compliance", analysis.bufferSummary.formatCompliance === null ? "—" : `${Math.round(analysis.bufferSummary.formatCompliance)}%`, "model replies parsed cleanly"],
+                          ["Fallback rate", analysis.bufferSummary.fallbackRate === null ? "—" : `${Math.round(analysis.bufferSummary.fallbackRate)}%`, "replies that fell back to a default action"],
+                          ["Metrics reported", String(analysis.bufferSummary.numericMetrics ?? analysis.metrics?.length ?? 0), "numeric evaluator outputs"],
+                        ].map(([label, value, note]) => (
+                          <div key={label} className="bg-white p-4">
+                            <p className="text-[11px] font-semibold uppercase text-gray-500">{label}</p>
+                            <p className="mt-1 font-serif text-2xl font-bold text-gray-950">{value}</p>
+                            <p className="mt-1 text-[11px] leading-4 text-gray-500">{note}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {analysis.metrics && analysis.metrics.length > 0 && (
+                      <section className="border border-gray-200">
+                        <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
+                          <p className="text-sm font-semibold text-gray-900">Detailed results</p>
+                          <p className="mt-1 text-xs text-gray-500">Every numeric metric the study&apos;s evaluator reported, by condition.</p>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[600px] text-left text-sm">
+                            <thead className="bg-white text-[11px] uppercase text-gray-500">
+                              <tr>
+                                <th className="px-4 py-2 font-semibold">Condition</th>
+                                <th className="px-4 py-2 font-semibold">Metric</th>
+                                <th className="px-4 py-2 font-semibold">Value</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {analysis.metrics.map((row, index) => (
+                                <tr key={index} className="border-t border-gray-100 align-top">
+                                  <td className="px-4 py-2 font-semibold text-gray-800">{row.arm}</td>
+                                  <td className="px-4 py-2 font-mono text-xs text-gray-600">{row.metric.replaceAll("_", " ")}</td>
+                                  <td className="px-4 py-2 font-mono text-xs text-gray-700">{decimal(row.value)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    )}
+                  </div>
+                )}
+
                 {!charts && <p className="border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">Loading the charts for this run…</p>}
                 {charts && charts.charts.length === 0 && (
                   <div className="border-l-2 border-amber-500 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
@@ -1003,13 +1061,17 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
                       {transcript.map((sample, index) => (
                         <div key={index} className="border-l-2 border-cyan-700 pl-4">
                           <p className="text-xs font-semibold text-gray-700">
-                            Participant {sample.participantId}
+                            {typeof sample.participantId === "number" ? `Participant ${sample.participantId}` : String(sample.participantId)}
+                            {sample.arm && <span className="font-normal text-gray-500"> · {sample.arm}</span>}
                             {Object.entries(sample.profile || {}).length > 0 && (
                               <span className="font-normal text-gray-500"> · {Object.entries(sample.profile).map(([key, value]) => `${key}: ${value}`).join(", ")}</span>
                             )}
                           </p>
+                          {Array.isArray(sample.events) && sample.events.length > 0 && (
+                            <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap bg-cyan-50 p-3 text-[11px] leading-5 text-cyan-950">{sample.events.join("\n")}</pre>
+                          )}
                           {sample.prompt && <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap bg-gray-50 p-3 text-[11px] leading-5 text-gray-600">{sample.prompt}</pre>}
-                          <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap bg-cyan-50 p-3 text-[11px] leading-5 text-cyan-950">{sample.response || "(no answer)"}</pre>
+                          {!Array.isArray(sample.events) && <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap bg-cyan-50 p-3 text-[11px] leading-5 text-cyan-950">{sample.response || "(no answer)"}</pre>}
                         </div>
                       ))}
                     </div>
