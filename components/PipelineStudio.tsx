@@ -48,7 +48,10 @@ function label(key: string) {
 }
 
 function isPlaceholder(raw: string) {
-  return /^\s*(\[填写\]|tbd|unknown|not available|n\/a)?\s*$/i.test(raw);
+  // "missing" is the evidence label the agent writes when it could not determine
+  // a value from the paper, so it is just as much an open question as an empty
+  // field or an explicit [填写] marker. All of these turn the field amber.
+  return /^\s*(\[填写\]|\[missing\]|missing|tbd|unknown|not available|n\/a)?\s*$/i.test(raw);
 }
 
 // A reviewer being asked to fill something in needs to know what is being asked
@@ -880,7 +883,7 @@ export default function PipelineStudio() {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[#f7f9fa]">
       <header className="border-b border-gray-200 bg-white px-5 py-4">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div>
             <p className="text-sm font-semibold text-gray-950">{job.paperName}</p>
             <p className="mt-1 font-mono text-xs text-gray-500">{job.experimentId.startsWith("draft_") ? "Draft study" : `studies/${job.experimentId}/`}</p>
@@ -910,7 +913,7 @@ export default function PipelineStudio() {
         </div>
       )}
 
-      <main className="mx-auto grid max-w-6xl gap-6 px-5 py-8 lg:grid-cols-[240px_minmax(0,1fr)]">
+      <main className="mx-auto grid max-w-7xl gap-6 px-5 py-8 lg:grid-cols-[240px_minmax(0,1fr)]">
         <nav className="border border-gray-200 bg-white p-3">
           <p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase text-gray-500">Agent workflow</p>
           {agentTasks.map(([label, detail]) => (
@@ -953,14 +956,13 @@ export default function PipelineStudio() {
 
           {job.status === "review" && (
             <div className="p-6">
-              <div className="border-l-2 border-amber-500 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
-                Review the extracted study and materials. Correct inaccurate values, resolve highlighted missing information when possible, then approve the package for download.
+              <div className="border-l-2 border-amber-500 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+                Correct anything the agent got wrong and fill amber-highlighted gaps, then save and approve.
               </div>
               <div className="mt-6 space-y-4">
                 <div>
                   <p className="text-sm font-semibold text-gray-900">Final study package review</p>
-                  <p className="mt-1 text-sm text-gray-500">Choose a file to inspect. Edit only values that are missing or incorrect, then save before approving.</p>
-                  <div className="mt-3 border-l-2 border-cyan-700 bg-cyan-50 p-3 text-xs leading-5 text-cyan-950">Start with the study overview, materials, task definition, and missing-information checklist. Supporting evidence and technical records are available under Additional files.</div>
+                  <p className="mt-1 text-sm text-gray-500">Pick a file on the left, edit what needs input, save, then approve below.</p>
                 </div>
                 {reviewFiles.length === 0 ? <p className="border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">Loading generated files...</p> : <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
                   <div className="border border-gray-200 bg-gray-50 p-2">
@@ -988,7 +990,7 @@ export default function PipelineStudio() {
                           <button disabled={busy || saved} onClick={saveFile} className="h-8 shrink-0 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : saved ? "Saved" : "Save changes"}</button>
                         </div>
                       </div>
-                      {selectedFile.endsWith(".json") && editedJson !== null ? <div className="max-h-[34rem] min-w-0 overflow-auto bg-gray-50 p-4"><JsonEditor value={editedJson} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[28rem] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}
+                      {selectedFile.endsWith(".json") && editedJson !== null ? <div className="max-h-[calc(100vh-13rem)] min-w-0 overflow-auto bg-gray-50 p-4"><JsonEditor value={editedJson} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[calc(100vh-18rem)] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}
                     </> : <p className="p-6 text-sm text-gray-500">Select a file to inspect and edit.</p>}
                   </div>
                 </div>}
