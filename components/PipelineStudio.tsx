@@ -111,6 +111,22 @@ function needsInputCount(value: JsonValue): number {
   return isPlaceholder(value === null ? "" : String(value)) ? 1 : 0;
 }
 
+// audit/missing_information.json is the checklist of gaps the paper could not
+// answer. Each of its `entries` is one unresolved researcher decision even when
+// its prose is filled in, so a checklist with entries is never "settled" — it
+// still owes the researcher N decisions. This makes that file (and any JSON file
+// with `missing`-labelled evidence) amber at the file-list level, not just per
+// leaf, so a reviewer can see what needs attention before opening anything.
+function filePendingCount(path: string, content: string): number {
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed && Array.isArray(parsed.entries)) return parsed.entries.length;
+    return needsInputCount(parsed);
+  } catch {
+    return 0;
+  }
+}
+
 function LeafField({ value, onChange }: { value: JsonValue; onChange: (value: JsonValue) => void }) {
   const raw = value === null ? "" : String(value);
   const placeholder = isPlaceholder(raw);
@@ -261,7 +277,7 @@ function JsonNode({ value, onChange, path = "", depth = 1, onlyMissing = false }
 // The top level of a study file is its table of contents. Presenting it as
 // collapsible sections with a jump list is what keeps a large file navigable;
 // everything below is ordinary nesting.
-export function JsonEditor({ value, onChange }: { value: JsonValue; onChange: (value: JsonValue) => void }) {
+export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; onChange: (value: JsonValue) => void; path?: string }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [onlyMissing, setOnlyMissing] = useState(false);
 
@@ -273,7 +289,8 @@ export function JsonEditor({ value, onChange }: { value: JsonValue; onChange: (v
   const visible = entries.filter(([key]) => !TECHNICAL_KEYS.has(key));
   const technical = entries.filter(([key]) => TECHNICAL_KEYS.has(key));
   const sectionId = (key: string) => `section-${key.replace(/[^a-zA-Z0-9_-]/g, "")}`;
-  const totalMissing = needsInputCount(value);
+  const isChecklist = path.endsWith("missing_information.json");
+  const totalMissing = isChecklist ? (Array.isArray((value as { entries?: JsonValue }).entries) ? ((value as { entries: JsonValue[] }).entries.length) : needsInputCount(value)) : needsInputCount(value);
 
   function jump(key: string) {
     setCollapsed((current) => ({ ...current, [key]: false }));
@@ -321,7 +338,11 @@ export function JsonEditor({ value, onChange }: { value: JsonValue; onChange: (v
             that are already settled. */}
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-2">
           <p className={`text-xs font-semibold ${totalMissing > 0 ? "text-amber-700" : "text-emerald-700"}`}>
-            {totalMissing > 0 ? `${totalMissing} field${totalMissing === 1 ? "" : "s"} still need your input` : "Nothing in this file is waiting on you"}
+            {totalMissing > 0
+              ? isChecklist
+                ? `${totalMissing} researcher decision${totalMissing === 1 ? "" : "s"} still need input`
+                : `${totalMissing} field${totalMissing === 1 ? "" : "s"} still need your input`
+              : "Nothing in this file is waiting on you"}
           </p>
           {totalMissing > 0 && (
             <button
@@ -972,7 +993,7 @@ export default function PipelineStudio() {
                       const additional = reviewFiles.filter((file) => !priority.includes(file));
                       // What a file contains is what a reviewer is choosing between;
                       // its path only matters once they need to find it on disk.
-                      const fileButton = (file: ReviewFile) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); setEditedJson(file.path.endsWith(".json") ? JSON.parse(file.content) : null); setSaved(true); }} className={`block w-full border-l-2 px-3 py-2 text-left ${selectedFile === file.path ? "border-cyan-700 bg-white" : "border-transparent hover:bg-white"}`}><span className={`block text-xs font-semibold leading-5 ${selectedFile === file.path ? "text-cyan-800" : "text-gray-800"}`}>{fileGuide(file.path)}</span><span className="mt-1 block break-all font-mono text-[10px] leading-4 text-gray-400">{file.path.split("/").slice(1).join("/") || file.path}</span></button>;
+                      const fileButton = (file: ReviewFile) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); setEditedJson(file.path.endsWith(".json") ? JSON.parse(file.content) : null); setSaved(true); }} className={`block w-full border-l-2 px-3 py-2 text-left ${selectedFile === file.path ? "border-cyan-700 bg-white" : "border-transparent hover:bg-white"}`}><span className="flex items-center gap-1.5"><span className={`block text-xs font-semibold leading-5 ${selectedFile === file.path ? "text-cyan-800" : "text-gray-800"}`}>{fileGuide(file.path)}</span>{(() => { const pending = filePendingCount(file.path, file.content); return pending > 0 ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${file.path.endsWith("missing_information.json") ? "bg-amber-200 text-amber-900" : "bg-amber-100 text-amber-800"}`}>{pending}</span> : null; })()}</span><span className="mt-1 block break-all font-mono text-[10px] leading-4 text-gray-400">{file.path.split("/").slice(1).join("/") || file.path}</span></button>;
                       return <><p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wide text-cyan-800">Review first</p>{priority.map(fileButton)}<details className="mt-2 border-t border-gray-200 pt-2"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-gray-600">Additional files ({additional.length})</summary>{additional.map(fileButton)}</details></>;
                     })()}
                   </div>
@@ -990,7 +1011,7 @@ export default function PipelineStudio() {
                           <button disabled={busy || saved} onClick={saveFile} className="h-8 shrink-0 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : saved ? "Saved" : "Save changes"}</button>
                         </div>
                       </div>
-                      {selectedFile.endsWith(".json") && editedJson !== null ? <div className="max-h-[calc(100vh-13rem)] min-w-0 overflow-auto bg-gray-50 p-4"><JsonEditor value={editedJson} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[calc(100vh-18rem)] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}
+                      {selectedFile.endsWith(".json") && editedJson !== null ? <div className="max-h-[calc(100vh-13rem)] min-w-0 overflow-auto bg-gray-50 p-4"><JsonEditor value={editedJson} path={selectedFile} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[calc(100vh-18rem)] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}
                     </> : <p className="p-6 text-sm text-gray-500">Select a file to inspect and edit.</p>}
                   </div>
                 </div>}
