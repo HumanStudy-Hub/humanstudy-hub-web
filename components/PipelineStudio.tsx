@@ -277,6 +277,143 @@ function JsonNode({ value, onChange, path = "", depth = 1, onlyMissing = false }
 // The top level of a study file is its table of contents. Presenting it as
 // collapsible sections with a jump list is what keeps a large file navigable;
 // everything below is ordinary nesting.
+
+type MapNode = { label: string; kind: "section" | "leaf"; detail?: string; children?: MapNode[]; target?: string };
+
+// A compact, expandable mind-map of the study's structure, drawn from the same
+// study.json the reviewer is editing. It is intentionally built from a small set
+// of well-known keys (with graceful fallbacks) rather than the whole file, so a
+// reviewer can see each study, its arms/conditions, outcomes, and analyses as
+// branches without wading through the raw JSON. Every node links to the matching
+// section in the editor below.
+function buildStudyMap(value: JsonValue): MapNode {
+  const obj = (value && typeof value === "object" && !Array.isArray(value) ? value : {}) as Record<string, JsonValue>;
+  const get = (key: string): JsonValue | undefined => obj[key];
+  const asArray = (v: JsonValue | undefined): JsonValue[] => (Array.isArray(v) ? v : []);
+  const str = (v: JsonValue | undefined): string => (typeof v === "string" ? v : String(v ?? ""));
+
+  const paperTitle = (() => {
+    const sp = get("source_paper");
+    if (sp && typeof sp === "object" && !Array.isArray(sp)) {
+      const t = (sp as Record<string, JsonValue>).title;
+      if (typeof t === "string") return t;
+    }
+    return str(get("package_id")) || "Study";
+  })();
+
+  const studies: MapNode[] = asArray(get("empirical_studies_identified_in_paper")).map((s) => {
+    const so = (s && typeof s === "object" && !Array.isArray(s) ? s : {}) as Record<string, JsonValue>;
+    const name = str(so.name) || str(so.id) || "Study";
+    const children: MapNode[] = [];
+    const purpose = str(so.purpose); if (purpose) children.push({ label: "Purpose", kind: "leaf", detail: purpose });
+    const participants = str(so.participants); if (participants) children.push({ label: "Participants", kind: "leaf", detail: participants });
+    const design = str(so.design); if (design) children.push({ label: "Design", kind: "leaf", detail: design });
+    return { label: name, kind: "section", target: "empirical_studies_identified_in_paper", children: children.length ? children : undefined };
+  });
+
+  const conditionBranches: MapNode[] = [];
+  const cond = get("conditions");
+  if (cond && typeof cond === "object" && !Array.isArray(cond)) {
+    for (const [studyKey, cv] of Object.entries(cond as Record<string, JsonValue>)) {
+      if (cv && typeof cv === "object" && !Array.isArray(cv)) {
+        const factors = Object.entries(cv as Record<string, JsonValue>).map(([factor, values]) => {
+          const vals = asArray(values);
+          return { label: label(factor), kind: "leaf" as const, detail: vals.map((v) => (typeof v === "string" ? v : JSON.stringify(v))).join(" · ") || undefined };
+        });
+        if (factors.length) conditionBranches.push({ label: label(studyKey), kind: "section", target: "conditions", children: factors });
+      }
+    }
+  }
+
+  const outcomes = asArray(get("primary_outcomes")).map((o) => ({ label: str(o), kind: "leaf" as const }));
+  const analyses = get("planned_analyses");
+  const analysisChildren: MapNode[] = [];
+  if (analyses && typeof analyses === "object" && !Array.isArray(analyses)) {
+    for (const [k, v] of Object.entries(analyses as Record<string, JsonValue>)) {
+      if (typeof v === "string" && v) analysisChildren.push({ label: label(k), kind: "leaf", detail: v });
+    }
+  }
+
+  const branches: MapNode[] = [];
+  if (studies.length) branches.push({ label: "Studies", kind: "section", target: "empirical_studies_identified_in_paper", children: studies });
+  if (conditionBranches.length) branches.push({ label: "Conditions / arms", kind: "section", target: "conditions", children: conditionBranches });
+  if (outcomes.length) branches.push({ label: "Outcomes", kind: "section", target: "primary_outcomes", children: outcomes });
+  if (analysisChildren.length) branches.push({ label: "Planned analyses", kind: "section", target: "planned_analyses", children: analysisChildren });
+
+  return { label: paperTitle, kind: "section", children: branches };
+}
+
+const mapGoTo = (target?: string) => {
+  if (!target) return;
+  const id = `section-${target.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  window.requestAnimationFrame(() => document.getElementById(id)?.scrollIntoView({ block: "start", behavior: "smooth" }));
+};
+
+// A "locate" affordance that is separate from expand/collapse so the two
+// interactions never fight each other. Clicking it scrolls the JSON editor to
+// the section a node describes.
+function LocateLink({ target }: { target?: string }) {
+  if (!target) return null;
+  return (
+    <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); mapGoTo(target); }} className="shrink-0 text-[10px] font-semibold text-cyan-600 hover:text-cyan-800" title="Jump to this section in the editor">Locate</button>
+  );
+}
+
+function MapNodeView({ node, depth }: { node: MapNode; depth: number }) {
+  // A leaf carries a single labelled fact (e.g. an outcome, a condition factor).
+  if (node.kind === "leaf") {
+    return (
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold text-gray-700">{node.label}</p>
+        {node.detail && <p className="text-[11px] leading-5 text-gray-500">{node.detail}</p>}
+      </div>
+    );
+  }
+
+  const hasChildren = Boolean(node.children && node.children.length > 0);
+  const label = (
+    <span className={`${depth === 0 ? "text-sm font-bold text-gray-950" : "text-xs font-semibold text-gray-800"}`}>{node.label}</span>
+  );
+
+  if (!hasChildren) {
+    // A section with no recognised children still lets you jump to it.
+    return (
+      <div className="flex items-center gap-1.5">
+        {label}
+        <LocateLink target={node.target} />
+      </div>
+    );
+  }
+
+  return (
+    <details open={depth < 2}>
+      <summary className="flex cursor-pointer list-none items-center gap-1.5">
+        <span className="text-[10px] text-gray-400">▸</span>
+        {label}
+        <LocateLink target={node.target} />
+      </summary>
+      <div className="mt-1 space-y-1 border-l border-gray-200 pl-3">
+        {node.children!.map((child, i) => <MapNodeView key={i} node={child} depth={depth + 1} />)}
+      </div>
+    </details>
+  );
+}
+
+function StructureMap({ value }: { value: JsonValue }) {
+  const root = buildStudyMap(value);
+  if (!root.children || root.children.length === 0) return null;
+  return (
+    <div className="border border-gray-200 bg-white">
+      <div className="border-b border-gray-100 bg-gray-50 px-4 py-2">
+        <p className="text-[10px] font-bold uppercase text-cyan-800">Study structure</p>
+      </div>
+      <div className="space-y-3 p-4">
+        <MapNodeView node={root} depth={0} />
+      </div>
+    </div>
+  );
+}
+
 export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; onChange: (value: JsonValue) => void; path?: string }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [onlyMissing, setOnlyMissing] = useState(false);
@@ -1011,7 +1148,7 @@ export default function PipelineStudio() {
                           <button disabled={busy || saved} onClick={saveFile} className="h-8 shrink-0 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : saved ? "Saved" : "Save changes"}</button>
                         </div>
                       </div>
-                      {selectedFile.endsWith(".json") && editedJson !== null ? <div className="max-h-[calc(100vh-13rem)] min-w-0 overflow-auto bg-gray-50 p-4"><JsonEditor value={editedJson} path={selectedFile} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[calc(100vh-18rem)] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}
+                      {selectedFile.endsWith(".json") && editedJson !== null ? <div className="min-w-0"><div className="max-h-[calc(100vh-13rem)] overflow-auto bg-gray-50">{selectedFile.endsWith("study.json") && <div className="p-4"><StructureMap value={editedJson} /></div>}<div className="p-4"><JsonEditor value={editedJson} path={selectedFile} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div></div></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[calc(100vh-18rem)] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}
                     </> : <p className="p-6 text-sm text-gray-500">Select a file to inspect and edit.</p>}
                   </div>
                 </div>}
