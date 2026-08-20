@@ -114,13 +114,13 @@ function needsInputCount(value: JsonValue): number {
 // audit/missing_information.json is the checklist of gaps the paper could not
 // answer. Each of its `entries` is one unresolved researcher decision even when
 // its prose is filled in, so a checklist with entries is never "settled" — it
-// still owes the researcher N decisions. This makes that file (and any JSON file
-// with `missing`-labelled evidence) amber at the file-list level, not just per
-// leaf, so a reviewer can see what needs attention before opening anything.
+// still owes the researcher N decisions. Only that file is treated as a
+// checklist; other files (e.g. evidence.json, which also has an `entries` array)
+// are counted by the leaf values that are actually missing-labelled.
 function filePendingCount(path: string, content: string): number {
   try {
     const parsed = JSON.parse(content);
-    if (parsed && Array.isArray(parsed.entries)) return parsed.entries.length;
+    if (path.endsWith("missing_information.json") && parsed && Array.isArray(parsed.entries)) return parsed.entries.length;
     return needsInputCount(parsed);
   } catch {
     return 0;
