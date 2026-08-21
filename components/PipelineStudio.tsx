@@ -352,18 +352,19 @@ const mapGoTo = (target?: string) => {
 // A "locate" affordance that is separate from expand/collapse so the two
 // interactions never fight each other. Clicking it scrolls the JSON editor to
 // the section a node describes.
-function LocateLink({ target }: { target?: string }) {
+function LocateLink({ target, onGoTo }: { target?: string; onGoTo?: (target: string) => void }) {
   if (!target) return null;
   return (
-    <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); mapGoTo(target); }} className="shrink-0 text-[10px] font-semibold text-cyan-600 hover:text-cyan-800" title="Jump to this section in the editor">Locate</button>
+    <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); (onGoTo ?? mapGoTo)(target); }} className="shrink-0 text-[10px] font-semibold text-cyan-600 hover:text-cyan-800" title="Jump to this section in the editor">Locate</button>
   );
 }
 
-function MapNodeView({ node, depth }: { node: MapNode; depth: number }) {
+function MapNodeView({ node, depth, activeTarget, onGoTo }: { node: MapNode; depth: number; activeTarget?: string; onGoTo?: (target: string) => void }) {
+  const isActive = Boolean(node.target && node.target === activeTarget);
   // A leaf carries a single labelled fact (e.g. an outcome, a condition factor).
   if (node.kind === "leaf") {
     return (
-      <div className="min-w-0">
+      <div className={`min-w-0 ${isActive ? "rounded bg-cyan-50 px-1 -mx-1" : ""}`}>
         <p className="text-[11px] font-semibold text-gray-700">{node.label}</p>
         {node.detail && <p className="text-[11px] leading-5 text-gray-500">{node.detail}</p>}
       </div>
@@ -372,43 +373,44 @@ function MapNodeView({ node, depth }: { node: MapNode; depth: number }) {
 
   const hasChildren = Boolean(node.children && node.children.length > 0);
   const label = (
-    <span className={`${depth === 0 ? "text-sm font-bold text-gray-950" : "text-xs font-semibold text-gray-800"}`}>{node.label}</span>
+    <span className={`${depth === 0 ? "text-sm font-bold text-gray-950" : "text-xs font-semibold text-gray-800"} ${isActive ? "text-cyan-800" : ""}`}>{node.label}</span>
   );
 
   if (!hasChildren) {
     // A section with no recognised children still lets you jump to it.
     return (
-      <div className="flex items-center gap-1.5">
+      <div className={`flex items-center gap-1.5 ${isActive ? "rounded bg-cyan-50 px-1 -mx-1" : ""}`}>
         {label}
-        <LocateLink target={node.target} />
+        <LocateLink target={node.target} onGoTo={onGoTo} />
       </div>
     );
   }
 
   return (
     <details open={depth < 2}>
-      <summary className="flex cursor-pointer list-none items-center gap-1.5">
-        <span className="text-[10px] text-gray-400">▸</span>
+      <summary className={`flex cursor-pointer list-none items-center gap-1.5 ${isActive ? "rounded bg-cyan-50 px-1" : ""}`}>
+        <span className={`text-[10px] ${isActive ? "text-cyan-600" : "text-gray-400"}`}>▸</span>
         {label}
-        <LocateLink target={node.target} />
+        <LocateLink target={node.target} onGoTo={onGoTo} />
       </summary>
       <div className="mt-1 space-y-1 border-l border-gray-200 pl-3">
-        {node.children!.map((child, i) => <MapNodeView key={i} node={child} depth={depth + 1} />)}
+        {node.children!.map((child, i) => <MapNodeView key={i} node={child} depth={depth + 1} activeTarget={activeTarget} onGoTo={onGoTo} />)}
       </div>
     </details>
   );
 }
 
-function StructureMap({ value }: { value: JsonValue }) {
+function StructureMap({ value, activeTarget, onGoTo }: { value: JsonValue; activeTarget?: string; onGoTo?: (target: string) => void }) {
   const root = buildStudyMap(value);
   if (!root.children || root.children.length === 0) return null;
   return (
     <div className="border border-gray-200 bg-white">
       <div className="border-b border-gray-100 bg-gray-50 px-4 py-2">
-        <p className="text-[10px] font-bold uppercase text-cyan-800">Study structure</p>
+        <p className="text-[10px] font-bold uppercase text-cyan-800">Study map</p>
+        <p className="mt-0.5 text-[10px] leading-4 text-gray-400">Minimap — highlights the section you are viewing.</p>
       </div>
       <div className="space-y-3 p-4">
-        <MapNodeView node={root} depth={0} />
+        <MapNodeView node={root} depth={0} activeTarget={activeTarget} onGoTo={onGoTo} />
       </div>
     </div>
   );
@@ -571,6 +573,7 @@ export default function PipelineStudio() {
   const [editedContent, setEditedContent] = useState("");
   const [editedJson, setEditedJson] = useState<JsonValue | null>(null);
   const [saved, setSaved] = useState(true);
+  const [activeSection, setActiveSection] = useState("");
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [stalled, setStalled] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -643,6 +646,25 @@ export default function PipelineStudio() {
     const timer = window.setTimeout(() => setStalled(true), remaining);
     return () => window.clearTimeout(timer);
   }, [job]);
+
+  // Highlight the map node for the section currently in view. When study.json is
+  // selected its top-level keys render as `section-<key>` anchors, so a
+  // scroll-tracking observer keeps the minimap in step with the editor.
+  useEffect(() => {
+    if (!selectedFile.endsWith("study.json")) { setActiveSection(""); return; }
+    const sections = Array.from(document.querySelectorAll<HTMLElement>("section[id^='section-']"));
+    if (sections.length === 0) { setActiveSection(""); return; }
+    const observer = new IntersectionObserver((entries) => {
+      // Prefer the entry nearest the top of the scroll container.
+      const visible = entries.filter((entry) => entry.isIntersecting);
+      if (visible.length === 0) return;
+      const topmost = visible.reduce((a, b) => (a.boundingClientRect.top <= b.boundingClientRect.top ? a : b));
+      const key = topmost.target.id.replace(/^section-/, "");
+      setActiveSection(key);
+    }, { root: null, rootMargin: "0px 0px -70% 0px", threshold: 0 });
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, [selectedFile, editedJson]);
 
   function chooseFile(file?: File) {
     if (!file) return;
@@ -842,6 +864,24 @@ export default function PipelineStudio() {
       setSaved(true);
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Could not save file."); }
     finally { setBusy(false); }
+  }
+
+  // Called by the minimap: jump to a study.json section, first switching to
+  // study.json if another file is currently selected.
+  function goToStudySection(target: string) {
+    const studyFile = reviewFiles.find((file) => file.path.endsWith("study.json"));
+    if (!studyFile) return;
+    if (!selectedFile.endsWith("study.json")) {
+      setSelectedFile(studyFile.path);
+      setEditedContent(studyFile.content);
+      setEditedJson(JSON.parse(studyFile.content));
+      setSaved(true);
+    }
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const id = `section-${target.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ block: "start", behavior: "smooth" });
+    }));
   }
 
   async function publish() {
@@ -1122,16 +1162,50 @@ export default function PipelineStudio() {
                   <p className="text-sm font-semibold text-gray-900">Final study package review</p>
                   <p className="mt-1 text-sm text-gray-500">Pick a file on the left, edit what needs input, save, then approve below.</p>
                 </div>
+                {(() => {
+                  const studyFile = reviewFiles.find((file) => file.path.endsWith("study.json"));
+                  if (!studyFile) return null;
+                  let json: JsonValue | null = null;
+                  try { json = JSON.parse(studyFile.content); } catch { json = null; }
+                  if (!json) return null;
+                  const map = buildStudyMap(json);
+                  const decisions = filePendingCount("/audit/missing_information.json", reviewFiles.find((f) => f.path.endsWith("missing_information.json"))?.content || "{}");
+                  return (
+                    <div className="border border-gray-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-gray-900">Where to start</p>
+                        <span className="text-[11px] text-gray-400">{map.children?.length ?? 0} sections · {decisions} decisions to confirm</span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {map.children?.map((branch) => {
+                          const target = branch.target;
+                          return target ? (
+                            <button key={target} type="button" onClick={() => goToStudySection(target)} className="border border-gray-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-700 hover:border-cyan-500 hover:text-cyan-800">{label(branch.label)}{branch.children?.length ? ` (${branch.children.length})` : ""}</button>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {reviewFiles.length === 0 ? <p className="border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">Loading generated files...</p> : <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
-                  <div className="border border-gray-200 bg-gray-50 p-2">
+                  <div className="space-y-4">
+                    <div className="border border-gray-200 bg-gray-50 p-2">
+                      {(() => {
+                        const priorityPaths = ["/study.json", "/materials/materials.json", "/task/task.json", "/audit/missing_information.json", "/audit/agent_report.md"];
+                        const priority = reviewFiles.filter((file) => priorityPaths.some((suffix) => file.path.endsWith(suffix)));
+                        const additional = reviewFiles.filter((file) => !priority.includes(file));
+                        // What a file contains is what a reviewer is choosing between;
+                        // its path only matters once they need to find it on disk.
+                        const fileButton = (file: ReviewFile) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); setEditedJson(file.path.endsWith(".json") ? JSON.parse(file.content) : null); setSaved(true); }} className={`block w-full border-l-2 px-3 py-2 text-left ${selectedFile === file.path ? "border-cyan-700 bg-white" : "border-transparent hover:bg-white"}`}><span className="flex items-center gap-1.5"><span className={`block text-xs font-semibold leading-5 ${selectedFile === file.path ? "text-cyan-800" : "text-gray-800"}`}>{fileGuide(file.path)}</span>{(() => { const pending = filePendingCount(file.path, file.content); return pending > 0 ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${file.path.endsWith("missing_information.json") ? "bg-amber-200 text-amber-900" : "bg-amber-100 text-amber-800"}`}>{pending}</span> : null; })()}</span><span className="mt-1 block break-all font-mono text-[10px] leading-4 text-gray-400">{file.path.split("/").slice(1).join("/") || file.path}</span></button>;
+                        return <><p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wide text-cyan-800">Review first</p>{priority.map(fileButton)}<details className="mt-2 border-t border-gray-200 pt-2"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-gray-600">Additional files ({additional.length})</summary>{additional.map(fileButton)}</details></>;
+                      })()}
+                    </div>
                     {(() => {
-                      const priorityPaths = ["/study.json", "/materials/materials.json", "/task/task.json", "/audit/missing_information.json", "/audit/agent_report.md"];
-                      const priority = reviewFiles.filter((file) => priorityPaths.some((suffix) => file.path.endsWith(suffix)));
-                      const additional = reviewFiles.filter((file) => !priority.includes(file));
-                      // What a file contains is what a reviewer is choosing between;
-                      // its path only matters once they need to find it on disk.
-                      const fileButton = (file: ReviewFile) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); setEditedJson(file.path.endsWith(".json") ? JSON.parse(file.content) : null); setSaved(true); }} className={`block w-full border-l-2 px-3 py-2 text-left ${selectedFile === file.path ? "border-cyan-700 bg-white" : "border-transparent hover:bg-white"}`}><span className="flex items-center gap-1.5"><span className={`block text-xs font-semibold leading-5 ${selectedFile === file.path ? "text-cyan-800" : "text-gray-800"}`}>{fileGuide(file.path)}</span>{(() => { const pending = filePendingCount(file.path, file.content); return pending > 0 ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${file.path.endsWith("missing_information.json") ? "bg-amber-200 text-amber-900" : "bg-amber-100 text-amber-800"}`}>{pending}</span> : null; })()}</span><span className="mt-1 block break-all font-mono text-[10px] leading-4 text-gray-400">{file.path.split("/").slice(1).join("/") || file.path}</span></button>;
-                      return <><p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wide text-cyan-800">Review first</p>{priority.map(fileButton)}<details className="mt-2 border-t border-gray-200 pt-2"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-gray-600">Additional files ({additional.length})</summary>{additional.map(fileButton)}</details></>;
+                      const studyFile = reviewFiles.find((file) => file.path.endsWith("study.json"));
+                      if (!studyFile) return null;
+                      let json: JsonValue | null = null;
+                      try { json = JSON.parse(studyFile.content); } catch { json = null; }
+                      return json ? <StructureMap value={json} activeTarget={activeSection} onGoTo={goToStudySection} /> : null;
                     })()}
                   </div>
                   <div className="min-w-0 border border-gray-200">
@@ -1148,7 +1222,7 @@ export default function PipelineStudio() {
                           <button disabled={busy || saved} onClick={saveFile} className="h-8 shrink-0 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : saved ? "Saved" : "Save changes"}</button>
                         </div>
                       </div>
-                      {selectedFile.endsWith(".json") && editedJson !== null ? <div className="min-w-0"><div className="max-h-[calc(100vh-13rem)] overflow-auto bg-gray-50">{selectedFile.endsWith("study.json") && <div className="p-4"><StructureMap value={editedJson} /></div>}<div className="p-4"><JsonEditor value={editedJson} path={selectedFile} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div></div></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[calc(100vh-18rem)] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}
+                      {selectedFile.endsWith(".json") && editedJson !== null ? <div className="min-w-0"><div className="max-h-[calc(100vh-13rem)] overflow-auto bg-gray-50"><div className="p-4"><JsonEditor value={editedJson} path={selectedFile} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div></div></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[calc(100vh-18rem)] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}
                     </> : <p className="p-6 text-sm text-gray-500">Select a file to inspect and edit.</p>}
                   </div>
                 </div>}
