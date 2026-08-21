@@ -431,6 +431,16 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
   const isChecklist = path.endsWith("missing_information.json");
   const totalMissing = isChecklist ? (Array.isArray((value as { entries?: JsonValue }).entries) ? ((value as { entries: JsonValue[] }).entries.length) : needsInputCount(value)) : needsInputCount(value);
 
+  // The count used to decide whether a section survives "show only what needs
+  // input" must AGREE with totalMissing, or the toggle blanks out the whole
+  // file. For the checklist, each entry is one pending decision even though its
+  // prose fields are filled in, so a checklist section's count is its entry
+  // count, not the leaf-level needsInputCount (which would be 0).
+  const sectionMissingCount = (child: JsonValue): number => {
+    if (isChecklist && Array.isArray(child)) return child.length;
+    return needsInputCount(child);
+  };
+
   function jump(key: string) {
     setCollapsed((current) => ({ ...current, [key]: false }));
     // The section has to be open before it can be scrolled to.
@@ -438,7 +448,7 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
   }
 
   const section = ([key, child]: [string, JsonValue]) => {
-    const missing = needsInputCount(child);
+    const missing = sectionMissingCount(child);
     if (onlyMissing && missing === 0) return null;
     const isOpen = !collapsed[key];
     return (
@@ -495,7 +505,7 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {visible.map(([key, child]) => {
-            const missing = needsInputCount(child);
+            const missing = sectionMissingCount(child);
             if (onlyMissing && missing === 0) return null;
             return (
               <button
@@ -1168,21 +1178,42 @@ export default function PipelineStudio() {
                   let json: JsonValue | null = null;
                   try { json = JSON.parse(studyFile.content); } catch { json = null; }
                   if (!json) return null;
-                  const map = buildStudyMap(json);
+                  const root = (json && typeof json === "object" && !Array.isArray(json) ? json : {}) as Record<string, JsonValue>;
+                  const studies = Array.isArray(root.empirical_studies_identified_in_paper) ? root.empirical_studies_identified_in_paper : [];
                   const decisions = filePendingCount("/audit/missing_information.json", reviewFiles.find((f) => f.path.endsWith("missing_information.json"))?.content || "{}");
                   return (
-                    <div className="border border-gray-200 bg-white p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-semibold text-gray-900">Where to start</p>
-                        <span className="text-[11px] text-gray-400">{map.children?.length ?? 0} sections · {decisions} decisions to confirm</span>
+                    <div className="border border-gray-200 bg-white">
+                      <div className="border-b border-gray-100 bg-gray-50 px-4 py-2">
+                        <p className="text-[10px] font-bold uppercase text-cyan-800">Before you start</p>
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {map.children?.map((branch) => {
-                          const target = branch.target;
-                          return target ? (
-                            <button key={target} type="button" onClick={() => goToStudySection(target)} className="border border-gray-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-gray-700 hover:border-cyan-500 hover:text-cyan-800">{label(branch.label)}{branch.children?.length ? ` (${branch.children.length})` : ""}</button>
-                          ) : null;
-                        })}
+                      <div className="space-y-3 p-4">
+                        <p className="text-sm leading-6 text-gray-600">
+                          This paper was split into <b>{studies.length} empirical stud{studies.length === 1 ? "y" : "ies"}</b>. Below is what each one is and what needs your attention.
+                        </p>
+                        <div className="space-y-2">
+                          {studies.map((s, i) => {
+                            const so = (s && typeof s === "object" && !Array.isArray(s) ? s : {}) as Record<string, JsonValue>;
+                            const name = typeof so.name === "string" ? so.name : (typeof so.id === "string" ? so.id : `Study ${i + 1}`);
+                            const participants = typeof so.participants === "string" ? so.participants : "";
+                            const design = typeof so.design === "string" ? so.design : "";
+                            return (
+                              <button key={i} type="button" onClick={() => goToStudySection("empirical_studies_identified_in_paper")} className="block w-full rounded border border-gray-200 bg-white p-3 text-left hover:border-cyan-500">
+                                <p className="text-sm font-semibold text-gray-900">{name}</p>
+                                {participants && <p className="mt-1 text-xs leading-5 text-gray-600"><span className="font-semibold text-gray-500">Participants:</span> {participants}</p>}
+                                {design && <p className="mt-1 text-xs leading-5 text-gray-600"><span className="font-semibold text-gray-500">Design:</span> {design}</p>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
+                          <button type="button" onClick={() => goToStudySection("planned_analyses")} className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">📊 Check the statistics &amp; analyses</button>
+                          <span className={`text-xs font-semibold ${decisions > 0 ? "text-amber-700" : "text-emerald-600"}`}>
+                            {decisions > 0 ? `${decisions} decisions still need input` : "No decisions left"}
+                          </span>
+                        </div>
+                        {decisions > 0 && (
+                          <p className="text-xs leading-5 text-gray-500">Your job, in order: <b>1.</b> check the statistics are correct, <b>2.</b> resolve the amber decisions, <b>3.</b> approve. Choose a file on the left to edit.</p>
+                        )}
                       </div>
                     </div>
                   );
