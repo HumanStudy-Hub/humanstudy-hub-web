@@ -161,7 +161,7 @@ function renameKey(source: Record<string, JsonValue>, from: string, to: string) 
   return Object.fromEntries(Object.entries(source).map(([key, value]) => (key === from ? [to, value] : [key, value])));
 }
 
-function JsonNode({ value, onChange, path = "", depth = 1, onlyMissing = false }: { value: JsonValue; onChange: (value: JsonValue) => void; path?: string; depth?: number; onlyMissing?: boolean }) {
+function JsonNode({ value, onChange, path = "", depth = 1 }: { value: JsonValue; onChange: (value: JsonValue) => void; path?: string; depth?: number }) {
   const [renaming, setRenaming] = useState("");
   const [draftKey, setDraftKey] = useState("");
 
@@ -172,8 +172,6 @@ function JsonNode({ value, onChange, path = "", depth = 1, onlyMissing = false }
     const technical = entries.filter(([key]) => TECHNICAL_KEYS.has(key));
     const field = ([key, child]: [string, JsonValue]) => {
       const missing = needsInputCount(child);
-      // In review-what-is-left mode a settled field is not the reviewer's problem.
-      if (onlyMissing && missing === 0) return null;
       const help = fieldHelp(key);
       const isRenaming = renaming === key;
       return (
@@ -210,7 +208,7 @@ function JsonNode({ value, onChange, path = "", depth = 1, onlyMissing = false }
           </div>
           {help && <p className="mb-1.5 text-[11px] leading-4 text-gray-500">{help}</p>}
           <div className={depth < 3 ? "border-l-2 border-gray-100 pl-3" : ""}>
-            <JsonNode value={child} path={`${path}.${key}`} depth={depth + 1} onlyMissing={onlyMissing} onChange={(next) => onChange({ ...record, [key]: next })} />
+            <JsonNode value={child} path={`${path}.${key}`} depth={depth + 1} onChange={(next) => onChange({ ...record, [key]: next })} />
           </div>
         </div>
       );
@@ -237,7 +235,6 @@ function JsonNode({ value, onChange, path = "", depth = 1, onlyMissing = false }
         <div className="min-w-0 space-y-1">
           {value.map((child, index) => {
             const missing = needsInputCount(child);
-            if (onlyMissing && missing === 0) return null;
             return (
               <details key={`${path}.${index}`} className="border border-gray-200 bg-white">
                 <summary className="group flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50">
@@ -248,7 +245,7 @@ function JsonNode({ value, onChange, path = "", depth = 1, onlyMissing = false }
                   </span>
                 </summary>
                 <div className="border-t border-gray-100 p-3">
-                  <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onlyMissing={onlyMissing} onChange={(next) => update(index, next)} />
+                  <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onChange={(next) => update(index, next)} />
                 </div>
               </details>
             );
@@ -264,7 +261,7 @@ function JsonNode({ value, onChange, path = "", depth = 1, onlyMissing = false }
               <span>Item {index + 1}</span>
               <button type="button" onClick={() => onChange(value.filter((_, at) => at !== index))} className="text-[11px] text-gray-400 opacity-0 transition-opacity hover:text-red-700 group-hover:opacity-100">Remove</button>
             </p>
-            <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onlyMissing={onlyMissing} onChange={(next) => update(index, next)} />
+            <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onChange={(next) => update(index, next)} />
           </div>
         ))}
       </div>
@@ -418,7 +415,6 @@ function StructureMap({ value, activeTarget, onGoTo }: { value: JsonValue; activ
 
 export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; onChange: (value: JsonValue) => void; path?: string }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [onlyMissing, setOnlyMissing] = useState(false);
 
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return <JsonNode value={value} onChange={onChange} />;
@@ -431,11 +427,9 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
   const isChecklist = path.endsWith("missing_information.json");
   const totalMissing = isChecklist ? (Array.isArray((value as { entries?: JsonValue }).entries) ? ((value as { entries: JsonValue[] }).entries.length) : needsInputCount(value)) : needsInputCount(value);
 
-  // The count used to decide whether a section survives "show only what needs
-  // input" must AGREE with totalMissing, or the toggle blanks out the whole
-  // file. For the checklist, each entry is one pending decision even though its
-  // prose fields are filled in, so a checklist section's count is its entry
-  // count, not the leaf-level needsInputCount (which would be 0).
+  // For the checklist, each entry is one pending decision even though its prose
+  // fields are filled in, so a checklist section's amber count is its entry
+  // count rather than the leaf-level needsInputCount (which would be 0).
   const sectionMissingCount = (child: JsonValue): number => {
     if (isChecklist && Array.isArray(child)) return child.length;
     return needsInputCount(child);
@@ -449,7 +443,6 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
 
   const section = ([key, child]: [string, JsonValue]) => {
     const missing = sectionMissingCount(child);
-    if (onlyMissing && missing === 0) return null;
     const isOpen = !collapsed[key];
     return (
       <section key={key} id={sectionId(key)} className="scroll-mt-2 border border-gray-200 bg-white">
@@ -466,7 +459,7 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
         </button>
         {isOpen && (
           <div className="min-w-0 border-t border-gray-100 p-4">
-            <JsonNode value={child} path={key} depth={1} onlyMissing={onlyMissing} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} />
+            <JsonNode value={child} path={key} depth={1} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} />
           </div>
         )}
       </section>
@@ -483,8 +476,6 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
             <button type="button" onClick={() => setCollapsed({})} className="text-[11px] font-semibold text-gray-500 hover:text-gray-900">Expand all</button>
           </div>
         </div>
-        {/* The fastest way through a large file is to stop looking at the parts
-            that are already settled. */}
         <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-2">
           <p className={`text-xs font-semibold ${totalMissing > 0 ? "text-amber-700" : "text-emerald-700"}`}>
             {totalMissing > 0
@@ -493,20 +484,10 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
                 : `${totalMissing} field${totalMissing === 1 ? "" : "s"} still need your input`
               : "Nothing in this file is waiting on you"}
           </p>
-          {totalMissing > 0 && (
-            <button
-              type="button"
-              onClick={() => { setOnlyMissing((current) => !current); setCollapsed({}); }}
-              className={`border px-3 py-1.5 text-[11px] font-semibold ${onlyMissing ? "border-amber-500 bg-amber-100 text-amber-900" : "border-gray-300 bg-white text-gray-700 hover:border-amber-400"}`}
-            >
-              {onlyMissing ? "Showing only what needs input · show everything" : "Show only what needs input"}
-            </button>
-          )}
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {visible.map(([key, child]) => {
             const missing = sectionMissingCount(child);
-            if (onlyMissing && missing === 0) return null;
             return (
               <button
                 key={key}
@@ -1206,14 +1187,10 @@ export default function PipelineStudio() {
                           })}
                         </div>
                         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
-                          <button type="button" onClick={() => goToStudySection("planned_analyses")} className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">📊 Check the statistics &amp; analyses</button>
                           <span className={`text-xs font-semibold ${decisions > 0 ? "text-amber-700" : "text-emerald-600"}`}>
                             {decisions > 0 ? `${decisions} decisions still need input` : "No decisions left"}
                           </span>
                         </div>
-                        {decisions > 0 && (
-                          <p className="text-xs leading-5 text-gray-500">Your job, in order: <b>1.</b> check the statistics are correct, <b>2.</b> resolve the amber decisions, <b>3.</b> approve. Choose a file on the left to edit.</p>
-                        )}
                       </div>
                     </div>
                   );
