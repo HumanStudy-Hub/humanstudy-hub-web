@@ -208,5 +208,11 @@ export function validateStudioDocument(input: unknown): StudioDocument {
   const activeConversationId = value.activeConversationId === undefined ? undefined : id(value.activeConversationId, "document.activeConversationId");
   if (activeConversationId && !conversations.some(c => c.id === activeConversationId)) fail("document.activeConversationId refers to a missing conversation.");
   const artifacts = validateStudioArtifacts(value.artifacts, sources);
-  return { version: 1, title: string(value.title, "document.title", 300, true), model, sources, annotations, conversations, reviewResponses, ...(artifacts ? { artifacts } : {}), ...(activeConversationId ? { activeConversationId } : {}) };
+  const pipeline = value.pipeline === undefined ? undefined : (() => {
+    const p = object(value.pipeline, "pipeline");
+    const jobId = string(p.jobId, "pipeline.jobId", 80, true);
+    if (!/^studio-[0-9a-f-]{73}$/i.test(jobId)) fail("Invalid pipeline job ID.");
+    return {jobId,requestId:id(p.requestId,"pipeline.requestId"),conversationId:id(p.conversationId,"pipeline.conversationId"),sourceId:id(p.sourceId,"pipeline.sourceId"),status:oneOf(p.status,"pipeline.status",["preparing","queued","running","review","complete","failed"] as const),message:string(p.message,"pipeline.message",4000),updatedAt:timestamp(p.updatedAt,"pipeline.updatedAt"),...(p.proposalId?{proposalId:id(p.proposalId,"pipeline.proposalId")}: {})};
+  })();
+  return { ...(pipeline ? {pipeline} : {}), version: 1, title: string(value.title, "document.title", 300, true), model, sources, annotations, conversations, reviewResponses, ...(artifacts ? { artifacts } : {}), ...(activeConversationId ? { activeConversationId } : {}) };
 }

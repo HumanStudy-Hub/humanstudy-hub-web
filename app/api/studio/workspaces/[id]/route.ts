@@ -25,6 +25,10 @@ export async function PATCH(request: Request, context: Context) {
     if (!body || typeof body !== "object") throw new StudioError(400, "invalid_request");
     const { document, expectedRevision } = body as Record<string, unknown>;
     const validated = validateStudioDocument(document);
+    const existing = await getWorkspace(ctx,id);
+    if(!existing)throw new StudioError(404,"not_found");
+    // Autosave cannot replace the server's in-flight task pointer.
+    validated.pipeline=existing.document.pipeline;
     const result = await saveWorkspace(ctx, id, validated, expectedRevision as number);
     if ("conflict" in result) {
       if (!result.latest) throw new StudioError(404, "not_found");

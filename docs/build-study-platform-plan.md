@@ -8,7 +8,7 @@ Build the reviewed three-pane interface into an authenticated, source-grounded r
 2. Add `/build` for account access and a project list, and `/build/[id]` for the workspace. Email accounts use Supabase Auth. Workspace documents and revisions use Postgres with owner-only RLS; source PDFs use a private storage bucket. Missing configuration must produce an explicit setup state, never a fake authenticated session.
 3. Replace isolated local state with saved workspace documents, resumable conversations and source/model selection references. Keep `/build-preview` as the visual sandbox. Save through revision checks to avoid overwriting work from another tab.
 4. Add PDF intake and original-page viewing, selectable text and region annotations. Source anchors include document identity, page, rectangles and quoted text. Preserve original instruments; label absent information rather than fabricate it.
-5. Connect contextual chat through the existing OpenRouter provider, with server-only credentials. The assistant proposes a validated study model; the researcher reviews and applies changes explicitly. Keep inputs, actors, procedure, records, statistical variables and analyses distinct. Need input remains tied to objects and source evidence.
+5. Connect contextual requests to the existing Claude Code GitHub Actions workflow, reusing its package contract, tools and secrets. Do not substitute a separate chat model. The assistant proposes a validated study model; the researcher reviews and applies changes explicitly. Keep inputs, actors, procedure, records, statistical variables and analyses distinct. Need input remains tied to objects and source evidence.
 6. Record website clicks, timing, scrolling, selection and sampled pointer locations, plus conversations. Use authenticated, bounded batches and idempotent event IDs; do not record password fields or keystrokes. Raw research content belongs in workspace records rather than DOM-wide text capture.
 7. Export a versioned ZIP containing the model, original-source references, source files when available, annotations, conversations, review decisions, auxiliary material manifest and a local-agent handoff. Do not describe unresolved drafts as executable studies.
 
@@ -24,7 +24,7 @@ The web app handles conversational co-design and bounded file metadata. Existing
 
 Run lint and type checks, schema and revision tests, malformed-provider response tests, authorization/ownership checks, bounded telemetry tests, and an end-to-end account → workspace → source → selection → chat → apply → export exercise when service credentials are available. Distinguish local contract tests from a live service test.
 
-Production requires a Supabase project URL and publishable key, applied SQL migrations, a private source bucket, configured email confirmation/redirects and a server OpenRouter key/model. No such credentials are present in the checked-out web repository. Email confirmation and multi-user RLS need live verification before external users are invited.
+Production requires a Supabase project URL and publishable key, applied SQL migrations, a private source bucket, configured email confirmation/redirects and GitHub workflow/job access with the selected backend branch. Model credentials stay in Actions. No such credentials are present in the checked-out web repository. Email confirmation and multi-user RLS need live verification before external users are invited.
 
 ## Current task ownership
 

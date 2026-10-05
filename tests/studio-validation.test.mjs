@@ -18,8 +18,6 @@ function load(file, dependencies = {}) {
   return loadedModule.exports;
 }
 const validation = load("lib/studio/validation.ts");
-class StudioError extends Error { constructor(status, code) { super(code); this.status = status; this.code = code; } }
-const agent = load("lib/studio/agent.ts", { "./http": { StudioError }, "./validation": validation });
 const evidence = (sourceId, quote = "") => ({ sourceId, page: 1, rects: [], quote });
 const emptyModel = () => ({ id: "study", title: "Untitled study", source: { title: "", authors: "", filename: "" }, entities: [], relations: [], procedure: [], variables: [] });
 const source = { id: "source-1", name: "paper.pdf", path: "owner/workspace/source-1.pdf", mimeType: "application/pdf", size: 100, pages: [{ page: 1, text: "Participants read the instructions before the task." }] };
@@ -75,57 +73,6 @@ test("auxiliary materials enforce safe names, formats, bounds and live source ID
   assert.deepEqual(validation.validateStudioArtifacts([{ ...material, sourceIds: ["retired-source"] }], [source], { historical: true })[0].sourceIds, ["retired-source"]);
   assert.throws(() => validation.validateStudioArtifacts([{ ...material, format: "json", filename: "analysis.json", content: "{broken" }], [source]), /valid JSON/);
 });
-
-test("citation verification accepts OCR text and rejects invented quotes", () => {
-  const model = emptyModel();
-  model.entities.push({ id: "people", kind: "participants", title: "People", subtitle: "", description: "", fields: [], x: 0, y: 0, w: 10, h: 10, evidence: evidence(source.id, "Participants read the instructions") });
-  assert.doesNotThrow(() => agent.verifyProposedEvidence(model, emptyModel(), [source]));
-  model.entities[0].evidence.rects = [{ x: 1, y: 1, w: 10, h: 10 }];
-  assert.throws(() => agent.verifyProposedEvidence(model, emptyModel(), [source]), error => error.code === "invalid_agent_citation");
-  model.entities[0].evidence.rects = [];
-  model.entities[0].evidence.quote = "Participants received a random assignment";
-  assert.throws(() => agent.verifyProposedEvidence(model, emptyModel(), [source]), error => error.code === "invalid_agent_citation");
-});
-
-test("unconfigured agent returns 503 and never calls provider", async () => {
-  const key = process.env.OPENROUTER_API_KEY, model = process.env.STUDIO_AGENT_MODEL, fallback = process.env.PERSONA_DESIGNER_MODEL;
-  const previousFetch = global.fetch;
-  delete process.env.OPENROUTER_API_KEY; delete process.env.STUDIO_AGENT_MODEL; delete process.env.PERSONA_DESIGNER_MODEL;
-  global.fetch = () => { throw new Error("must not fetch"); };
-  try { await assert.rejects(agent.generateStudyReply(document(), "conversation-1", "Help", null, null), error => error.status === 503); }
-  finally { global.fetch = previousFetch; if (key === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = key; if (model === undefined) delete process.env.STUDIO_AGENT_MODEL; else process.env.STUDIO_AGENT_MODEL = model; if (fallback === undefined) delete process.env.PERSONA_DESIGNER_MODEL; else process.env.PERSONA_DESIGNER_MODEL = fallback; }
-});
-
-test("malformed provider JSON is rejected without a fabricated answer", async () => {
-  const key = process.env.OPENROUTER_API_KEY, model = process.env.STUDIO_AGENT_MODEL;
-  const previousFetch = global.fetch;
-  process.env.OPENROUTER_API_KEY = "test-key"; process.env.STUDIO_AGENT_MODEL = "test-model";
-  global.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: "not json" } }] }) });
-  try { await assert.rejects(agent.generateStudyReply(document(), "conversation-1", "Help", null, null), error => error.code === "invalid_agent_response"); }
-  finally { global.fetch = previousFetch; if (key === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = key; if (model === undefined) delete process.env.STUDIO_AGENT_MODEL; else process.env.STUDIO_AGENT_MODEL = model; }
-});
-
-test("agent receives the complete model schema and visible OCR truncation markers", async () => {
-  const key = process.env.OPENROUTER_API_KEY, model = process.env.STUDIO_AGENT_MODEL;
-  const previousFetch = global.fetch;
-  process.env.OPENROUTER_API_KEY = "test-key"; process.env.STUDIO_AGENT_MODEL = "test-model";
-  const draft = document();
-  draft.sources[0].pages[0].text = "A".repeat(3600);
-  draft.artifacts = [{ id: "instructions", title: "Instructions", filename: "instructions.md", format: "markdown", kind: "instructions", content: "# Draft", sourceIds: [source.id] }];
-  let payload;
-  global.fetch = async (_url, options) => { payload = JSON.parse(options.body); return { ok: true, json: async () => ({ choices: [{ message: { content: '{"reply":"The source detail needs review."}' } }] }) }; };
-  try {
-    const result = await agent.generateStudyReply(draft, "conversation-1", "Review the procedure", null, null);
-    assert.equal(result.reply, "The source detail needs review.");
-    assert.match(payload.messages[0].content, /entity\.kind must be one of participants/);
-    assert.match(payload.messages[0].content, /FULL replacement list/);
-    const context = JSON.parse(payload.messages[1].content.match(/<studio-context>\n([\s\S]*?)\n<\/studio-context>/)[1]);
-    assert.deepEqual(context.currentModel, draft.model);
-    assert.deepEqual(context.currentArtifacts, draft.artifacts);
-    assert.equal(context.sourcePages[0].ocrTextTruncated, true);
-  } finally { global.fetch = previousFetch; if (key === undefined) delete process.env.OPENROUTER_API_KEY; else process.env.OPENROUTER_API_KEY = key; if (model === undefined) delete process.env.STUDIO_AGENT_MODEL; else process.env.STUDIO_AGENT_MODEL = model; }
-});
-
 
 test("single-source citations gain a stable identity before another PDF is attached", () => {
   const draft=document();

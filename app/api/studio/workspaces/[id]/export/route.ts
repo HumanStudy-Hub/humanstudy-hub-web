@@ -1,3 +1,5 @@
+import { ownedPipeline } from "@/lib/studio/pipeline";
+import { listPackageFiles } from "@/lib/github-jobs";
 import JSZip from "jszip";
 import { requireStudioUser } from "@/lib/studio/auth";
 import { routeError, studioFetch, StudioError } from "@/lib/studio/http";
@@ -80,6 +82,22 @@ export async function GET(_request: Request, { params }: Context) {
       }
       fileManifest.push(item);
     }
+    let buildPackage: {jobId:string;status?:string;files?:string[];reason?:string}|undefined;
+    if(document.pipeline){
+      buildPackage={jobId:document.pipeline.jobId};
+      try{
+        const job=await ownedPipeline(ctx,workspace);buildPackage.status=job.status;
+        if(job.status==='review'||job.status==='complete'){
+          const files=await listPackageFiles(job.id,{ownerId:ctx.user.id,workspaceId:id});
+          if(files.reduce((n,file)=>n+file.content.length,0)>40*1024*1024)throw new Error('Package exceeds export limit');
+          for(const file of files){
+            if(!file.path.split('/').every(part=>part&&part!=='.'&&part!=='..')||file.path.includes('\\'))throw new Error('Invalid package path');
+          }
+          buildPackage.files=files.map(file=>`build-package/${file.path}`);
+          files.forEach(file=>zip.file(`build-package/${file.path}`,file.content));
+        }else buildPackage.reason='The agent has not finished a package yet.';
+      }catch{buildPackage.reason='The original package could not be retrieved; workspace data remains included.';}
+    }
     const unresolved = [
       ...document.model.entities.flatMap(entity => entity.fields.filter(field => field.status === "unresolved").map(field => `${entity.title}: ${field.name} — ${field.value}`)),
       ...document.model.variables.filter(variable => variable.status === "unresolved").map(variable => `${variable.name}: ${variable.definition}`),
@@ -89,13 +107,13 @@ export async function GET(_request: Request, { params }: Context) {
       ...document.model.entities.map(entity => ({ objectId: entity.id, sourceId: entity.evidence.sourceId, page: entity.evidence.page, quote: entity.evidence.quote })),
       ...document.model.procedure.map(step => ({ objectId: step.id, sourceId: step.evidence.sourceId, page: step.evidence.page, quote: step.evidence.quote })),
     ];
-    json("manifest.json", { format: "humanstudy-studio-export", version: 1, exportedAt: new Date().toISOString(), workspaceId: id, revision: workspace.revision, sourceFiles: fileManifest, auxiliaryMaterials, pendingProposals, unresolved, sourceReferences, executable: false });
+    json("manifest.json", { format: "humanstudy-studio-export", version: 1, exportedAt: new Date().toISOString(), workspaceId: id, revision: workspace.revision, sourceFiles: fileManifest, buildPackage, auxiliaryMaterials, pendingProposals, unresolved, sourceReferences, executable: false });
     zip.file("HANDOFF.md", [
       `# ${document.title}`,
       "",
       `Workspace: ${id} · revision ${workspace.revision}`,
       "",
-      "This is a research workspace handoff, not an executable study. Review and resolve open design decisions before generating runnable materials or analysis code.",
+      "This handoff contains the workspace and, when available, the original agent package under build-package/. Check manifest.json for its build/review status and any omissions. Review unresolved design decisions before execution.",
       "",
       "## Open decisions",
       ...(unresolved.length ? unresolved.map(item => `- ${item}`) : ["- No fields are marked unresolved; verify the protocol and source evidence before execution."]),

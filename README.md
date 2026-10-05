@@ -20,9 +20,8 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-The account-based Build Study workspace is at `/build`; `/build-preview` remains
-the standalone interface sandbox. See [workspace setup](docs/studio-setup.md)
-for the Supabase migration, private PDF storage, server-side AI, and verification
+The account-based Build Study workspace is at `/build`; `/build/example` is an offline example in the same UI, and `/build-preview` redirects there. See [workspace setup](docs/studio-setup.md)
+for the Supabase migration, private PDF storage, original agent integration, and verification
 steps. The implementation plan is in [docs/build-study-platform-plan.md](docs/build-study-platform-plan.md).
 
 Legacy Build Study jobs at `/pipeline` are stored in the private `HumanStudy-Hub/humanstudy-hub-jobs`
@@ -38,7 +37,7 @@ npm run test:studio
 npm run build
 ```
 
-## Legacy Build Study backend (`/pipeline`)
+## Shared Build Study backend (`/pipeline` and `/build`)
 
 The browser uploads the paper directly to Vercel Blob and posts only the
 resulting URL to the API, because Vercel rejects any function request body over

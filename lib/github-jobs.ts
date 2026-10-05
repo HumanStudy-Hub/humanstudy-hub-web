@@ -161,12 +161,29 @@ async function getFile(branch: string, filePath: string) {
   return Buffer.from(result.data.content, "base64");
 }
 
-export async function listPackageFiles(id: string) {
+export async function listPackageFiles(id: string, studioIdentity?:Pick<StudioJobIdentity,'ownerId'|'workspaceId'>) {
+  if(safe(id).startsWith('studio-')) {
+    if(!studioIdentity)throw new Error('Use the authenticated study workspace.');
+    await readOwnedStudioJob(id,studioIdentity);
+  }
   const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   const branch = `jobs/${safe(id)}`;
   const root = jobPath(id, "package");
   const files: Array<{ path: string; content: Buffer }> = [];
+  if(studioIdentity){
+    const tree=await api.git.getTree({...target,tree_sha:branch,recursive:'1'});
+    if(tree.data.truncated)throw new Error('Package tree exceeds the preview limit.');
+    const blobs=tree.data.tree.filter(item=>item.type==='blob'&&item.path?.startsWith(`${root}/`));
+    if(blobs.length>300||blobs.reduce((n,item)=>n+(item.size||0),0)>40*1024*1024)throw new Error('Package exceeds the 40 MB / 300 file limit.');
+    for(let i=0;i<blobs.length;i+=8){
+      const batch=await Promise.all(blobs.slice(i,i+8).map(async item=>{
+        const blob=await api.git.getBlob({...target,file_sha:item.sha!});
+        return {path:item.path!.slice(root.length+1),content:Buffer.from(blob.data.content,'base64')};
+      }));files.push(...batch);
+    }
+    return files;
+  }
   async function walk(prefix: string) {
     const result = await api.repos.getContent({ ...target, path: prefix, ref: branch });
     if (!Array.isArray(result.data)) return;
@@ -209,7 +226,8 @@ async function saveJob(job: PipelineJob, message: string) {
   await putFile(branch, jobPath(job.id, "job.json"), JSON.stringify(job, null, 2) + "\n", message);
 }
 
-export async function readJob(id: string): Promise<PipelineJob> {
+export async function readJob(id: string, allowStudio=false): Promise<PipelineJob> {
+  if(safe(id).startsWith('studio-')&&!allowStudio)throw new Error('Use the authenticated study workspace.');
   const branch = `jobs/${safe(id)}`;
   const data = JSON.parse((await getFile(branch, jobPath(id, "job.json"))).toString("utf8")) as PipelineJob;
   try {
@@ -281,8 +299,8 @@ export async function retryJob(id: string) {
   return job;
 }
 
-export async function approveStage(id: string, input: { decision: "approved" | "changes_requested"; note?: string }) {
-  const job = await readJob(id);
+export async function approveStage(id: string, input: { decision: "approved" | "changes_requested"; note?: string }, studioIdentity?:Pick<StudioJobIdentity,'ownerId'|'workspaceId'>) {
+  const job = studioIdentity ? await readOwnedStudioJob(id,studioIdentity) : await readJob(id);
   if (job.status !== "review") throw new Error("This job is not waiting for review.");
   job.reviews[String(job.currentStage)] = { ...input, at: new Date().toISOString() };
   if (input.decision === "changes_requested") { job.message = "Changes requested; review note saved"; await saveJob(job, `pipeline: review ${id}`); return job; }
@@ -306,6 +324,7 @@ export async function reopenReview(id: string) {
 }
 
 export async function readLog(id: string) {
+  if(safe(id).startsWith('studio-'))throw new Error('Use the authenticated study workspace.');
   try { return (await getFile(`jobs/${safe(id)}`, jobPath(id, "logs/agent.log"))).toString("utf8").slice(-12000); } catch { return ""; }
 }
 
@@ -320,6 +339,7 @@ export async function readReviewFiles(id: string) {
 }
 
 export async function saveReviewFile(id: string, filePath: string, content: string) {
+  if(safe(id).startsWith('studio-'))throw new Error('Use the authenticated study workspace.');
   const editable = /^package\/.+\.(json|md)$/.test(filePath) && !filePath.includes("..");
   if (!editable) throw new Error("Only review JSON and Markdown files can be edited.");
   if (filePath.endsWith(".json")) JSON.parse(content);
@@ -344,7 +364,7 @@ export async function findJobsByContributor(name: string, limit = 10) {
   const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
-  const jobBranches = branches.filter((branch) => branch.name.startsWith("jobs/")).slice(-200).reverse();
+  const jobBranches = branches.filter((branch) => branch.name.startsWith("jobs/") && !branch.name.startsWith("jobs/studio-")).slice(-200).reverse();
   const found: PipelineJob[] = [];
   for (const branch of jobBranches) {
     if (found.length >= limit) break;
@@ -386,7 +406,7 @@ export async function listBufferStudies(): Promise<BufferStudy[]> {
   const api = jobsOctokit();
   const target = splitRepo(jobsRepo);
   const branches = await api.paginate(api.repos.listBranches, { ...target, per_page: 100 });
-  const jobBranches = branches.filter((branch) => branch.name.startsWith("jobs/")).reverse().slice(0, 60);
+  const jobBranches = branches.filter((branch) => branch.name.startsWith("jobs/") && !branch.name.startsWith("jobs/studio-")).reverse().slice(0, 60);
   const out: BufferStudy[] = [];
   // Fetch a handful of branches in parallel rather than one at a time, so the
   // playground page load does not spend minutes on sequential GitHub calls.
@@ -501,6 +521,7 @@ function humanize(value: string) {
 // conditions, so the playground can preview and scope a run to one condition.
 export async function listBufferArms(jobId: string, slug: string): Promise<BufferArm[]> {
   const id = safe(jobId);
+  if(id.startsWith('studio-'))throw new Error('Use the authenticated study workspace.');
   const packageSlug = safe(slug);
   if (!id || !packageSlug) throw new Error("Choose a study to preview.");
   const raw = await getFile(`jobs/${id}`, jobPath(id, `package/${packageSlug}/task/task.json`));
@@ -537,5 +558,64 @@ export async function assignStudyId(id: string) {
   if (!job.experimentId.startsWith("draft_")) return job;
   job.experimentId = await nextStudyId();
   await saveJob(job, `pipeline: assign ${job.experimentId}`);
+  return job;
+}
+
+// Studio uses the existing Claude Code workflow, with an immutable job for each
+// researcher request. Identity is written by the server, never inferred from UI state.
+export type StudioJobIdentity = { workspaceId:string; ownerId:string; requestId:string; conversationId:string };
+export type StudioPipelineJob = PipelineJob & { studio:StudioJobIdentity; pipelineRef:string };
+export function studioPipelineConfigured() {
+  return Boolean(process.env.GITHUB_TOKEN && (process.env.STUDIO_PIPELINE_REF || process.env.GITHUB_PIPELINE_REF));
+}
+export async function readOwnedStudioJob(id:string, identity:Pick<StudioJobIdentity,'ownerId'|'workspaceId'>):Promise<StudioPipelineJob> {
+  if (!/^studio-[0-9a-f-]{73}$/i.test(id)) throw new Error('Invalid studio job.');
+  const job=await readJob(id,true) as StudioPipelineJob;
+  if (!job.studio || job.studio.ownerId!==identity.ownerId || job.studio.workspaceId!==identity.workspaceId) throw new Error('Study job not found.');
+  return job;
+}
+export async function createStudioPipelineJob(input:{id:string;identity:StudioJobIdentity;paperName:string;paperUrl:string;request:unknown;previousJobId?:string}) {
+  if (!studioPipelineConfigured()) throw new Error('Studio pipeline GitHub token and branch are required.');
+  const ref=process.env.STUDIO_PIPELINE_REF || process.env.GITHUB_PIPELINE_REF!;
+  const api=jobsOctokit(), target=splitRepo(jobsRepo), now=new Date().toISOString();
+  const files:Array<{path:string;content:Buffer}>=[];
+  if(input.previousJobId){
+    const previous=await readOwnedStudioJob(input.previousJobId,input.identity);
+    if(previous.status!=='review'&&previous.status!=='complete')throw new Error('Previous package is not ready.');
+    for(const file of await listPackageFiles(previous.id,input.identity)) {
+      if (!file.path.split('/').every(part=>part&&part!=='.'&&part!=='..') || file.path.includes('\\')) throw new Error('Invalid package path.');
+      files.push({path:`package/${file.path}`,content:file.content});
+    }
+  }
+  if(files.reduce((n,f)=>n+f.content.length,0)>40*1024*1024)throw new Error('Package exceeds the 40 MB refinement limit.');
+  const job:StudioPipelineJob={id:input.id,experimentId:draftId(input.paperName,input.id),contributorName:'Studio researcher',paperName:input.paperName,paperUrl:input.paperUrl,currentStage:1,status:'queued',message:'Waiting for the study-building agent',packageReady:false,createdAt:now,updatedAt:now,reviews:{},studio:input.identity,pipelineRef:ref};
+  files.push({path:'job.json',content:Buffer.from(JSON.stringify(job))},{path:'studio_request.json',content:Buffer.from(JSON.stringify(input.request))});
+  const parent=await branchSha(await defaultBranch(jobsRepo));
+  // One initial commit prevents runners from seeing half-written context/files.
+  const entries=[];
+  for(let i=0;i<files.length;i+=8){
+    entries.push(...await Promise.all(files.slice(i,i+8).map(async file=>{
+      const blob=await api.git.createBlob({...target,content:file.content.toString('base64'),encoding:'base64'});
+      return {path:jobPath(job.id,file.path),mode:'100644' as const,type:'blob' as const,sha:blob.data.sha};
+    })));
+  }
+  const tree=await api.git.createTree({...target,tree:entries});
+  const commit=await api.git.createCommit({...target,message:`studio: prepare ${job.id}`,tree:tree.data.sha,parents:[parent]});
+  await api.git.createRef({...target,ref:`refs/heads/jobs/${job.id}`,sha:commit.data.sha});
+  return job;
+}
+export async function dispatchStudioPipelineJob(job:StudioPipelineJob) {
+  await octokit().actions.createWorkflowDispatch({...splitRepo(pipelineRepo),workflow_id:workflowFile,ref:job.pipelineRef,inputs:{job_id:job.id,jobs_repo:jobsRepo}});
+}
+
+export async function retryStudioPipelineJob(id:string,identity:Pick<StudioJobIdentity,'ownerId'|'workspaceId'>,paperUrl:string) {
+  const job=await readOwnedStudioJob(id,identity);
+  const age=Date.now()-Date.parse(job.updatedAt||job.createdAt);
+  if(!(job.status==='failed'||(job.status==='queued'&&age>5*60_000)||(job.status==='running'&&age>100*60_000)))throw new Error('This build is still active or ready for review.');
+  // Same branch and concurrency group: retry cannot fork a second live build.
+  job.paperUrl=paperUrl;job.status='queued';job.packageReady=false;job.error=undefined;
+  job.message='Waiting for the study-building agent';job.updatedAt=new Date().toISOString();
+  await saveJob(job,`studio: retry ${id}`);
+  await dispatchStudioPipelineJob(job);
   return job;
 }

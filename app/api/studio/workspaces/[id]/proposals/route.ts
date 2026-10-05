@@ -1,3 +1,5 @@
+import { ownedPipeline } from "@/lib/studio/pipeline";
+import { approveStage } from "@/lib/github-jobs";
 import { NextResponse } from "next/server";
 import { requireStudioUser } from "@/lib/studio/auth";
 import { assertSameOrigin, isUuid, readJsonBody, routeError, StudioError } from "@/lib/studio/http";
@@ -41,6 +43,11 @@ export async function POST(request: Request, { params }: Context) {
     let updated;
     try { updated = validateStudioDocument({ ...document, model: nextModel, ...(nextArtifacts !== undefined ? { artifacts: nextArtifacts } : {}), conversations }); }
     catch { throw new StudioError(409, "proposal_breaks_references"); }
+    if(document.pipeline?.proposalId===proposal.id){
+      const job=await ownedPipeline(ctx,workspace);
+      if(body.decision==='apply'){if(job.status==='review')await approveStage(job.id,{decision:'approved'},{ownerId:ctx.user.id,workspaceId:id});updated.pipeline={...document.pipeline,status:'complete',message:'Study package approved',updatedAt:new Date().toISOString()};}
+      if(body.decision==='reject'&&job.status==='review')await approveStage(job.id,{decision:'changes_requested',note:'Researcher rejected the proposed package in the study workspace.'},{ownerId:ctx.user.id,workspaceId:id});
+    }
     const saved = await saveWorkspace(ctx, id, updated, body.revision as number);
     if ("conflict" in saved) return NextResponse.json({ error: "revision_conflict", latest: saved.latest }, { status: 409 });
     return NextResponse.json({ workspace: saved, proposalId: body.proposalId, status });

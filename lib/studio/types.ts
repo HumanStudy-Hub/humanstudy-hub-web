@@ -7,7 +7,9 @@ export type StudioArtifact = { id:string; title:string; filename:string; format:
 export type StudioMessage = { id:string; role:"user"|"agent"; text:string; createdAt:string; entityId?:string; context?:string; modelAnchor?:ModelAnchor; sourceSelection?:SourceSelection; evidence?:StudySchema["entities"][number]["evidence"][]; proposal?:{ id:string; model:StudySchema; changesModel?:boolean; artifacts?:StudioArtifact[]; summary:string; status:"pending"|"applied"|"rejected" } };
 export type StudioConversation = { id:string; title:string; updatedAt:string; messages:StudioMessage[]; draft:string; modelAnchor:ModelAnchor|null; sourceSelection:SourceSelection|null; selected:string };
 export type StudioSource = { id:string; name:string; path:string; mimeType:string; size:number; text?:string; pages?:{page:number; text:string}[] };
+export type StudioPipeline = { jobId:string; requestId:string; conversationId:string; sourceId:string; status:"preparing"|"queued"|"running"|"review"|"complete"|"failed"; message:string; updatedAt:string; proposalId?:string };
 export type StudioDocument = {
+ pipeline?:StudioPipeline;
  version:1; title:string; model:StudySchema; sources:StudioSource[];
  annotations:StudioAnnotation[]; conversations:StudioConversation[];
  artifacts?:StudioArtifact[];

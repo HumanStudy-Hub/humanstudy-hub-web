@@ -1,4 +1,9 @@
 const messages:Record<string,string>={
+ pipeline_setup_required:'The original Build Study pipeline is not connected on this deployment. Configure GitHub access and its workflow branch.',
+ pipeline_busy:'The study-building agent is running. Keep your feedback here and send it when the build finishes.',
+ paper_required:'Upload a PDF before starting the study-building agent.',
+ pipeline_not_found:'Could not retrieve this study build. Check GitHub access or send the request again after a failed launch.',
+ package_preview_too_large:'This package is too large for the visual preview. Export the original package instead.',
  setup_required:'The workspace service is not configured yet.',
  agent_setup_required:'The AI provider is not configured yet. Your draft is saved; add the server key and model to enable chat.',
  unauthorized:'Your session expired. Save a local draft, then sign in again.',
