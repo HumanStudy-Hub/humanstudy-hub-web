@@ -28,7 +28,7 @@ export default function Home() {
           <dl className="mt-6 grid max-w-3xl gap-x-6 gap-y-3 border-t border-gray-300/70 pt-5 sm:grid-cols-3">
             {[
               ["Explore datasets", "Browse the human studies already turned into reusable data you can download."],
-              ["Build a study", "Upload a paper and our agent rebuilds it as a study an AI agent can run."],
+              ["Build a study", "Explore the demo, then develop a source-grounded study model with your agent."],
               ["Playground", "Run a model through one of those studies and see how it compares to real people."],
             ].map(([term, detail]) => (
               <div key={term}>
