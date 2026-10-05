@@ -1,10 +1,11 @@
 # Build Study workspace
 
-`/build` opens the three-pane workspace with an example study. Studies / Account
-opens login, saved studies and study creation inside that workspace. The example
-is stored locally and uses the demo agent; `/build/[id]` uses authenticated storage
-and the configured live agent. `/build-preview` redirects to `/build`. Existing
-`/pipeline` jobs continue unchanged.
+`/build` is the site-styled introduction with account access and saved studies.
+`/build/example` opens the example in the same three-pane workspace used by
+`/build/[id]`. The example is stored locally and uses the demo agent; saved
+studies use authenticated storage and the configured live agent. The old
+`/build-preview` address redirects to `/build/example`. Studies / Account also
+remains available inside the workspace. Existing `/pipeline` jobs are unchanged.
 
 ## Configure a development service
 

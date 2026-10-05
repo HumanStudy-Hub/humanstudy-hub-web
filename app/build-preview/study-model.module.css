@@ -22,3 +22,5 @@
 .headerActions{display:flex;align-items:center;gap:12px}.headerActions>button{font-size:10px;color:var(--muted);white-space:nowrap}.headerActions>button[aria-pressed=true]{color:var(--accent)}.headerActions span{font-size:10px}
 
 .heading>.headerActions{flex-direction:row;gap:10px}
+
+.overviewHeading h1,.inspector h3,.issueDetail h3{font-weight:700}

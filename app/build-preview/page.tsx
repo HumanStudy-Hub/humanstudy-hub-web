@@ -1,2 +1,2 @@
 import { redirect } from "next/navigation";
-export default function BuildPreviewPage(){redirect("/build");}
+export default function BuildPreviewPage(){redirect("/build/example");}
