@@ -20,7 +20,12 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-Build Study jobs are stored in the private `HumanStudy-Hub/humanstudy-hub-jobs`
+The account-based Build Study workspace is at `/build`; `/build-preview` remains
+the standalone interface sandbox. See [workspace setup](docs/studio-setup.md)
+for the Supabase migration, private PDF storage, server-side AI, and verification
+steps. The implementation plan is in [docs/build-study-platform-plan.md](docs/build-study-platform-plan.md).
+
+Legacy Build Study jobs at `/pipeline` are stored in the private `HumanStudy-Hub/humanstudy-hub-jobs`
 repository. The Vercel API dispatches the HumanStudy-Bench GitHub Actions
 workflow; Claude Code, document tools, and package validation run on the Actions
 runner, not inside Vercel.
@@ -29,10 +34,11 @@ runner, not inside Vercel.
 
 ```bash
 npm run lint
+npm run test:studio
 npm run build
 ```
 
-## Build Study backend
+## Legacy Build Study backend (`/pipeline`)
 
 The browser uploads the paper directly to Vercel Blob and posts only the
 resulting URL to the API, because Vercel rejects any function request body over
@@ -55,10 +61,10 @@ researcher review. Approval enables ZIP download and optional benchmark
 contribution. Set `GITHUB_TOKEN` to enable job storage, workflow dispatch, and
 publishing the final package as a contribution branch and pull request.
 
-Build Study never calls OpenRouter from Vercel. Store `OPENROUTER_API_KEY` as an
+The legacy pipeline never calls OpenRouter from Vercel. Store `OPENROUTER_API_KEY` as an
 Actions secret in `HumanStudy-Hub/HumanStudy-Bench`; the one Vercel variable of
-the same name is used only by the playground's persona designer, described
-below. The workflow also expects
+the same name is used by the playground's persona designer and the new
+interactive studio chat. The workflow also expects
 the `HUMANSTUDY_PIPELINE_TOKEN` Actions secret and accepts an optional
 `OPENROUTER_MODEL` Actions variable, which defaults to `moonshotai/kimi-k3`.
 

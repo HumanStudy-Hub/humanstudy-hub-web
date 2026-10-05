@@ -1,0 +1,249 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const requireLocal = createRequire(import.meta.url);
+const ts = requireLocal("typescript");
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const workspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const sourceId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const eventId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+const ctx = { user: { id: userId, email: "owner@example.test" }, accessToken: "verified-access" };
+const nextServer = { NextResponse: { json: (body, init = {}) => ({ body, status: init.status ?? 200, headers: init.headers ?? {} }) } };
+
+function load(file, dependencies = {}) {
+  const source = fs.readFileSync(path.join(root, file), "utf8");
+  const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const loadedModule = { exports: {} };
+  const localRequire = id => dependencies[id] || requireLocal(id);
+  new Function("require", "module", "exports", compiled)(localRequire, loadedModule, loadedModule.exports);
+  return loadedModule.exports;
+}
+
+const http = load("lib/studio/http.ts", { "next/server": nextServer });
+const store = load("lib/studio/store.ts", { "./http": http });
+const jarValues = new Map();
+const cookieWrites = [];
+const jar = {
+  get: key => jarValues.has(key) ? { value: jarValues.get(key) } : undefined,
+  set: (key, value, options) => { jarValues.set(key, value); cookieWrites.push({ key, value, options }); },
+  delete: key => { jarValues.delete(key); },
+};
+const auth = load("lib/studio/auth.ts", { "next/headers": { cookies: async () => jar }, "./http": http });
+
+async function withService(run) {
+  const prior = {
+    url: process.env.SUPABASE_URL,
+    key: process.env.SUPABASE_PUBLISHABLE_KEY,
+    publicUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    publicKey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    fetch: global.fetch,
+  };
+  process.env.SUPABASE_URL = "https://db.example.test";
+  process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-test";
+  delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+  delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+  jarValues.clear(); cookieWrites.length = 0;
+  try { return await run(); }
+  finally {
+    for (const [key, value] of [["SUPABASE_URL", prior.url], ["SUPABASE_PUBLISHABLE_KEY", prior.key], ["NEXT_PUBLIC_SUPABASE_URL", prior.publicUrl], ["NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", prior.publicKey]]) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    global.fetch = prior.fetch;
+    jarValues.clear(); cookieWrites.length = 0;
+  }
+}
+
+const jsonRequest = (body, origin = "https://app.example.test", url = "https://app.example.test/api/studio") =>
+  new Request(url, { method: "POST", headers: { "content-type": "application/json", origin }, body: JSON.stringify(body) });
+
+test("missing service configuration returns setup_required before cookie authentication", async () => {
+  await withService(async () => {
+    delete process.env.SUPABASE_URL; delete process.env.SUPABASE_PUBLISHABLE_KEY;
+    await assert.rejects(auth.requireStudioUser(), error => error.status === 503 && error.code === "setup_required");
+  });
+});
+
+test("access session uses a verified Supabase user and never trusts cookie identity", async () => withService(async () => {
+  jarValues.set("studio_access", "access-one");
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return Response.json({ id: userId, email: "owner@example.test" });
+  };
+  assert.deepEqual(await auth.requireStudioUser(), { user: ctx.user, accessToken: "access-one" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://db.example.test/auth/v1/user");
+  assert.equal(calls[0].options.headers.Authorization, "Bearer access-one");
+  assert.equal(calls[0].options.headers.apikey, "publishable-test");
+}));
+
+test("expired session refreshes and verifies the new access token before rotating HttpOnly cookies", async () => withService(async () => {
+  jarValues.set("studio_access", "expired"); jarValues.set("studio_refresh", "refresh-one");
+  const calls = [];
+  global.fetch = async (url, options) => {
+    calls.push({ url, options });
+    if (url.endsWith("/auth/v1/user") && options.headers.Authorization === "Bearer expired") return new Response(null, { status: 401 });
+    if (url.includes("grant_type=refresh_token")) return Response.json({ access_token: "access-two", refresh_token: "refresh-two", expires_in: 3600 });
+    return Response.json({ id: userId, email: "owner@example.test" });
+  };
+  assert.equal((await auth.requireStudioUser()).accessToken, "access-two");
+  assert.equal(calls.length, 3);
+  assert.equal(JSON.parse(calls[1].options.body).refresh_token, "refresh-one");
+  assert.equal(jarValues.get("studio_access"), "access-two");
+  assert.equal(jarValues.get("studio_refresh"), "refresh-two");
+  assert.ok(cookieWrites.every(write => write.options.httpOnly && write.options.sameSite === "lax" && write.options.path === "/"));
+}));
+
+test("rejected refresh clears both cookies and does not create a session", async () => withService(async () => {
+  jarValues.set("studio_access", "expired"); jarValues.set("studio_refresh", "bad-refresh");
+  global.fetch = async url => url.endsWith("/auth/v1/user") ? new Response(null, { status: 401 }) : new Response(null, { status: 400 });
+  await assert.rejects(auth.requireStudioUser(), error => error.status === 401 && error.code === "unauthorized");
+  assert.equal(jarValues.size, 0);
+}));
+
+test("signup without a Supabase session asks for confirmation without setting cookies", async () => withService(async () => {
+  const route = load("app/api/studio/auth/route.ts", {
+    "next/server": nextServer, "next/headers": { cookies: async () => jar },
+    "@/lib/studio/auth": auth, "@/lib/studio/http": http,
+  });
+  global.fetch = async url => {
+    assert.equal(url, "https://db.example.test/auth/v1/signup");
+    return Response.json({ user: { id: userId, email: "owner@example.test" }, session: null });
+  };
+  const response = await route.POST(jsonRequest({ action: "signup", email: "owner@example.test", password: "correct-horse" }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { user: null, requiresEmailConfirmation: true });
+  assert.equal(jarValues.size, 0);
+}));
+
+test("mutation origin accepts public proxy origin and rejects unrelated or absent origins", () => {
+  const proxied = new Request("http://internal.local/api/studio", { method: "POST", headers: {
+    origin: "https://app.example.test", host: "internal.local", "x-forwarded-host": "app.example.test", "x-forwarded-proto": "https",
+  } });
+  assert.doesNotThrow(() => http.assertSameOrigin(proxied));
+  assert.throws(() => http.assertSameOrigin(jsonRequest({}, "https://evil.example.test")), error => error.status === 403);
+  assert.throws(() => http.assertSameOrigin(new Request("https://app.example.test/api", { method: "POST" })), error => error.status === 403);
+});
+
+test("JSON reader rejects lookalike MIME, malformed JSON, declared and streamed oversize bodies", async () => {
+  await assert.rejects(http.readJsonBody(new Request("https://app.example.test", { method: "POST", headers: { "content-type": "application/jsonp" }, body: "{}" })), error => error.status === 415);
+  await assert.rejects(http.readJsonBody(new Request("https://app.example.test", { method: "POST", headers: { "content-type": "application/json" }, body: "{" })), error => error.status === 400);
+  await assert.rejects(http.readJsonBody(new Request("https://app.example.test", { method: "POST", headers: { "content-type": "application/json", "content-length": "999" }, body: "{}" }), 8), error => error.status === 413);
+  const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode("{" + "x".repeat(100) + "}")); controller.close(); } });
+  await assert.rejects(http.readJsonBody(new Request("https://app.example.test", { method: "POST", headers: { "content-type": "application/json" }, body: stream, duplex: "half" }), 16), error => error.status === 413);
+});
+
+test("workspace reads carry verified owner/token and stale save uses CAS RPC", async () => withService(async () => {
+  const calls = [];
+  const latest = { id: workspaceId, revision: 2, title: "Study", document: { title: "Study", sources: [] } };
+  global.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return Response.json(url.includes("/rpc/") ? [] : [latest]);
+  };
+  const document = { title: "Study", sources: [] };
+  assert.deepEqual(await store.saveWorkspace(ctx, workspaceId, document, 1), { conflict: true, latest });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url, "https://db.example.test/rest/v1/rpc/studio_cas_workspace");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { p_id: workspaceId, p_expected_revision: 1, p_document: document });
+  assert.equal(calls[0].options.headers.Authorization, "Bearer verified-access");
+  assert.match(calls[1].url, new RegExp(`owner_id=eq\\.${userId}`));
+}));
+
+test("store rejects foreign source paths and invalid revisions before calling storage", async () => withService(async () => {
+  global.fetch = () => { throw new Error("must not fetch"); };
+  const source = { id: sourceId, name: "paper.pdf", path: `other-user/${workspaceId}/${sourceId}.pdf`, mimeType: "application/pdf", size: 100 };
+  await assert.rejects(store.saveWorkspace(ctx, workspaceId, { title: "Study", sources: [source] }, 1), error => error.status === 400 && error.code === "invalid_sources");
+  await assert.rejects(store.saveWorkspace(ctx, workspaceId, { title: "Study", sources: [] }, 0), error => error.status === 400 && error.code === "invalid_revision");
+  await assert.rejects(store.getWorkspace(ctx, "not-a-uuid"), error => error.status === 404);
+}));
+
+const eventRoute = load("app/api/studio/workspaces/[id]/events/route.ts", {
+  "next/server": nextServer, "@/lib/studio/auth": { requireStudioUser: async () => ctx },
+  "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ id: workspaceId }) },
+});
+const eventContext = { params: Promise.resolve({ id: workspaceId }) };
+const validEvent = () => ({ id: eventId, sessionId: "session_1", type: "click", at: new Date().toISOString(), target: "button[role-tab]", metadata: { area: "source" } });
+
+test("event batch uses owner from verified context and idempotent insert preference", async () => withService(async () => {
+  let sent;
+  global.fetch = async (url, options) => { sent = { url, options }; return new Response(null, { status: 201 }); };
+  const response = await eventRoute.POST(jsonRequest({ events: [validEvent(), validEvent()] }), eventContext);
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { accepted: 2 });
+  assert.equal(sent.options.headers.Prefer, "resolution=ignore-duplicates,return=minimal");
+  const rows = JSON.parse(sent.options.body);
+  assert.equal(rows[0].owner_id, userId);
+  assert.equal(rows[0].workspace_id, workspaceId);
+  assert.equal(rows[0].id, rows[1].id);
+  assert.equal(rows[0].target, "button[role-tab]");
+  assert.equal(rows[0].metadata.area, "source");
+}));
+
+test("event route rejects raw DOM text, oversized batches, and cross-origin input before insert", async () => withService(async () => {
+  global.fetch = () => { throw new Error("must not fetch"); };
+  const rawText = { ...validEvent(), metadata: { text: "participant answer" } };
+  assert.equal((await eventRoute.POST(jsonRequest({ events: [rawText] }), eventContext)).status, 400);
+  assert.equal((await eventRoute.POST(jsonRequest({ events: [{ ...validEvent(), target: "Submit password" }] }), eventContext)).status, 400);
+  assert.equal((await eventRoute.POST(jsonRequest({ events: Array.from({ length: 101 }, validEvent) }), eventContext)).status, 400);
+  assert.equal((await eventRoute.POST(jsonRequest({ events: [validEvent()], padding: "x".repeat(130_000) }), eventContext)).status, 413);
+  assert.equal((await eventRoute.POST(jsonRequest({ events: [validEvent()] }, "https://evil.example.test"), eventContext)).status, 403);
+}));
+
+const sourceRoute = load("app/api/studio/workspaces/[id]/sources/route.ts", {
+  "next/server": nextServer, "@/lib/studio/auth": { requireStudioUser: async () => ctx },
+  "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ id: workspaceId }) },
+});
+
+test("signed upload uses owner/workspace PDF path, token, size cap, and authenticated signer", async () => withService(async () => {
+  let call;
+  global.fetch = async (url, options) => {
+    call = { url, options };
+    return Response.json({ url: "/object/upload/sign/studio-sources/path?token=upload-token" });
+  };
+  const response = await sourceRoute.POST(jsonRequest({ name: "paper.pdf", mimeType: "application/pdf", size: 500 }), eventContext);
+  assert.equal(response.status, 201);
+  assert.match(response.body.source.path, new RegExp(`^${userId}/${workspaceId}/[0-9a-f-]{36}\\.pdf$`));
+  assert.equal(response.body.uploadUrl, `https://db.example.test/storage/v1/object/upload/sign/studio-sources/${response.body.source.path}?token=upload-token`);
+  assert.equal(response.body.method, "PUT");
+  assert.equal(response.body.headers["Content-Type"], "application/pdf");
+  assert.equal(call.url, `https://db.example.test/storage/v1/object/upload/sign/studio-sources/${response.body.source.path}`);
+  assert.equal(call.options.headers.Authorization, "Bearer verified-access");
+  assert.equal((await sourceRoute.POST(jsonRequest({ name: "large.pdf", mimeType: "application/pdf", size: 25 * 1024 * 1024 + 1 }), eventContext)).status, 400);
+  assert.equal((await sourceRoute.POST(jsonRequest({ name: "paper.txt", mimeType: "text/plain", size: 500 }), eventContext)).status, 400);
+}));
+
+test("download signing rejects source metadata outside authenticated owner prefix", async () => withService(async () => {
+  const source = { id: sourceId, path: `other-user/${workspaceId}/${sourceId}.pdf` };
+  const route = load("app/api/studio/workspaces/[id]/sources/[sourceId]/route.ts", {
+    "next/server": nextServer, "@/lib/studio/auth": { requireStudioUser: async () => ctx },
+    "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ document: { sources: [source] } }) },
+  });
+  global.fetch = () => { throw new Error("must not fetch"); };
+  const response = await route.GET(new Request("https://app.example.test/api"), { params: Promise.resolve({ id: workspaceId, sourceId }) });
+  assert.equal(response.status, 404);
+  assert.deepEqual(response.body, { error: "not_found" });
+}));
+
+test("download signer returns only the owned PDF's Supabase signed URL", async () => withService(async () => {
+  const source = { id: sourceId, path: `${userId}/${workspaceId}/${sourceId}.pdf` };
+  const route = load("app/api/studio/workspaces/[id]/sources/[sourceId]/route.ts", {
+    "next/server": nextServer, "@/lib/studio/auth": { requireStudioUser: async () => ctx },
+    "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ document: { sources: [source] } }) },
+  });
+  let sent;
+  global.fetch = async (url, options) => {
+    sent = { url, options };
+    return Response.json({ signedURL: `/object/sign/studio-sources/${source.path}?token=download-token` });
+  };
+  const response = await route.GET(new Request("https://app.example.test/api"), { params: Promise.resolve({ id: workspaceId, sourceId }) });
+  assert.equal(response.status, 200);
+  assert.equal(response.body.url, `https://db.example.test/storage/v1/object/sign/studio-sources/${source.path}?token=download-token`);
+  assert.equal(sent.url, `https://db.example.test/storage/v1/object/sign/studio-sources/${source.path}`);
+  assert.equal(sent.options.headers.Authorization, "Bearer verified-access");
+  assert.deepEqual(JSON.parse(sent.options.body), { expiresIn: 3600 });
+}));

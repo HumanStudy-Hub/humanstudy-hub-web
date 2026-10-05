@@ -21,7 +21,7 @@ export default function Home() {
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link href="/dataset" className="bg-cyan-800 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-700">Explore datasets</Link>
-            <Link href="/pipeline" className="border border-gray-400 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:border-cyan-700 hover:text-cyan-800">Build a study</Link>
+            <Link href="/build" className="border border-gray-400 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:border-cyan-700 hover:text-cyan-800">Build a study</Link>
             <Link href="/playground" className="border border-gray-400 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:border-cyan-700 hover:text-cyan-800">Playground</Link>
           </div>
 
