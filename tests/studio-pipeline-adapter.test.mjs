@@ -89,3 +89,12 @@ test("maps legacy study package specification without inventing citations", () =
   assert.equal(result.model.entities.find(item => item.id === "materials").fields[0].status, "implementation");
   assert.equal(result.model.entities.every(item => item.evidence.quote === ""), true);
 });
+
+test('keeps live-run categorical variables with null units and list references', () => {
+  const sidecar={...document.model,id:'live-run',title:'Framing',entities:[{id:'choice',kind:'variable',title:'Choice',subtitle:'',description:'',evidence:{sourceId:'paper',page:2,rects:[],quote:''},fields:[],x:0,y:0,w:10,h:10}],variables:[{id:'choice-variable',name:'Choice',role:'dependent',type:'categorical',unit:null,producedBy:'record',usedBy:['compare','report'],definition:'Selected option',status:'reported',entity:'choice'}]};
+  const result=adaptPipelinePackage([file('studio-model.json',sidecar)],document);
+  assert.equal(result.model.id,'live-run');
+  assert.equal(result.model.variables[0].unit,'');
+  assert.equal(result.model.variables[0].usedBy,'compare, report');
+  assert.match(result.summary,/sidecar used/);
+});

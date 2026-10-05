@@ -136,3 +136,18 @@ Before inviting users, verify two accounts cannot read each other's study/file,
 then exercise signup → confirmation → study → PDF → selection/comment → chat →
 proposal → apply/reject → reload → ZIP. Also use two tabs to verify revision
 conflicts preserve local work, and inspect recorded events in the database.
+
+## Live original-agent verification (2026-10-05)
+
+The isolated development run [37383149808](https://github.com/HumanStudy-Hub/HumanStudy-Bench/actions/runs/37383149808)
+completed successfully on the matching Bench branch using the existing Claude Code
+workflow and its Actions secrets. It built the Asian disease framing experiment
+from the benchmark paper into 11 files, including the optional model/reply sidecars.
+The web adapter loaded and validated 9 model entities, 3 procedure steps and 2
+variables from that actual result. A null categorical unit and list-valued variable
+references observed in this run are normalized without discarding the model.
+The test job remains in the private jobs repository and is not a user study.
+
+This verifies real workflow dispatch, runner execution, package validation and
+presentation mapping. It does not verify a full browser signup/upload session;
+email delivery and the Vercel team's Preview environment still need configuration.

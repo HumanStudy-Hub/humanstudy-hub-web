@@ -45,7 +45,15 @@ function sidecarModel(files: PackageFile[], document: StudioDocument): StudySche
   const file = getFile(files, "studio-model.json");
   if (!file) return undefined;
   try {
-    const model = validateStudyModel(JSON.parse(file.content), { sources: document.sources });
+    const raw=record(JSON.parse(file.content));
+    // Categorical variables often have no physical unit. Null carries the same
+    // display meaning as an empty unit; it must not discard a complete model.
+    if(Array.isArray(raw.variables))raw.variables=raw.variables.map(value=>{
+      const variable=record(value);
+      const references=(value:unknown)=>Array.isArray(value)&&value.every(item=>typeof item==='string')?value.join(', '):value;
+      return {...variable,unit:variable.unit===null?"":variable.unit,producedBy:references(variable.producedBy),usedBy:references(variable.usedBy)};
+    });
+    const model = validateStudyModel(raw, { sources: document.sources });
     const grounded = { ...model,
       entities: model.entities.map(entity => ({ ...entity, evidence: cleanEvidence(entity.evidence, document) })),
       procedure: model.procedure.map(step => ({ ...step, evidence: cleanEvidence(step.evidence, document) })),
