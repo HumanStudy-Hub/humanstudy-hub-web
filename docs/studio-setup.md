@@ -25,8 +25,22 @@ it does not call the live agent. Existing `/pipeline` jobs continue unchanged.
 5. Run `npm run dev -- --hostname 127.0.0.1 --port 3100` and open
    `http://127.0.0.1:3100/build`. Restart after changing environment variables.
 
-The SQL migration and environment template are supplied; no hosted project has
-been created, migrated, or deployed by this implementation.
+Development project `humanstudy-hub-dev` (`zigbuogyerivbnxtnjjw`, us-west-1)
+was created on 2026-10-05. Both studio migrations have been applied. Local
+`.env.local` contains its URL and modern publishable key, is ignored by Git,
+and has file mode 0600. `/api/studio/auth` reports `configured: true`.
+The private PDF bucket has a 25 MB limit. No production website was deployed.
+
+Hosted transaction tests passed for revision updates, stale-write rejection,
+cross-owner workspace/event/file visibility and cross-owner event insertion
+denial. Fixtures were rolled back. These tests exercise database roles and
+policies, not the complete browser signup/upload journey.
+
+Remaining configuration: Auth Site URL/redirects and cohort email delivery.
+The connected MCP does not expose Auth configuration; the browser dashboard
+is signed out and the CLI has no management access token. Existing default
+email confirmation was preserved. No OpenRouter key or agent model is available
+in this checkout/environment, so live AI calls remain unconfigured.
 
 ## Workflow and persisted data
 
