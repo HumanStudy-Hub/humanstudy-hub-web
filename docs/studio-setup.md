@@ -1,8 +1,10 @@
 # Build Study workspace
 
-This branch adds `/build` (accounts and studies) and `/build/[id]` (the three-pane
-research workspace). `/build-preview` is the separate local-only design sandbox;
-it does not call the live agent. Existing `/pipeline` jobs continue unchanged.
+`/build` opens the three-pane workspace with an example study. Studies / Account
+opens login, saved studies and study creation inside that workspace. The example
+is stored locally and uses the demo agent; `/build/[id]` uses authenticated storage
+and the configured live agent. `/build-preview` redirects to `/build`. Existing
+`/pipeline` jobs continue unchanged.
 
 ## Configure a development service
 

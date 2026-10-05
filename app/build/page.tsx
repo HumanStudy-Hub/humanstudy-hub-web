@@ -1,2 +1,2 @@
-import StudioHome from "@/components/studio/home";
-export default function BuildPage(){return <StudioHome/>;}
+import Workspace from "@/app/build-preview/workspace";
+export default function BuildPage(){return <Workspace/>;}
