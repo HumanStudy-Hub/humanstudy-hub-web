@@ -1,11 +1,11 @@
 # Build Study workspace
 
 `/build` is the site-styled introduction with account access and saved studies.
-`/build/example` opens the example in the same three-pane workspace used by
+`/build/example` opens a full-window editor in the same workspace used by
 `/build/[id]`. The example is stored locally with the agent offline; saved
 studies use authenticated storage and the configured live agent. The old
-`/build-preview` address redirects to `/build/example`. Studies / Account also
-remains available inside the workspace. Existing `/pipeline` jobs are unchanged.
+`/build-preview` address redirects to `/build/example`. Studies / Account remains available in the workspace menu. Editor routes hide
+the public navigation/footer, while `/build` retains the original site styling. Existing `/pipeline` jobs are unchanged.
 
 ## Configure a development service
 
@@ -87,6 +87,34 @@ be resized with the separators (keyboard arrows also work), independently
 collapsed into rails, and reopened with the view buttons. At least one stays
 open. Layout preferences are stored on the current device; narrow screens show
 one active pane. PDF and study contents stay mounted while collapsed.
+
+The editor auto-saves changes to the signed-in account after a 900 ms debounce;
+Save or Cmd/Ctrl+S immediately flushes the same revision-checked save queue.
+The example saves locally. The status bar distinguishes account/local saves and
+reports conflicts or failures; saving does not run the agent. Language (EN/中文)
+is available directly in the header; theme and account access are in its menu.
+Human Program and Resources switch artifact views, Compare opens both, and
+Study agent toggles the conversation pane. Advanced focus/restore/layout commands
+remain in the command palette rather than competing toolbar buttons.
+
+History has separate Program versions and Conversations tabs. Program versions
+records an initial snapshot and the lineage of accepted scientific proposals;
+pending/rejected proposals branch from their recorded base fingerprint. Autosave
+revisions and material-only changes do not add scientific versions. Selecting a
+version previews its model against the current one and can anchor a discussion
+to the original proposal message; it does not restore it. Legacy proposals whose
+base snapshots were never saved show an explicit unavailable parent. The offline
+example has one current node until there are actual accepted changes. Version
+metadata is server-owned and persists in the existing owner-scoped workspace JSON.
+
+Human Program organizes background/hypotheses, study design, participant
+procedure, data/variables, analysis and reported results. Background, hypothesis,
+design and result entity kinds extend the original six kinds. The runner's optional
+sidecar and the older-package adapter share this contract. Legacy findings with
+hypotheses/planned tests remain distinct from observed results. Unreported results
+are labeled as absent rather than invented or treated as required runtime data.
+Quotes and provenance remain attached to detail cards, with original artifacts
+available as the complete underlying output.
 
 Chat history uses a simple indented branch list. Reply references an earlier
 message; Side talk forks context at that message. Later parent messages and
@@ -183,13 +211,15 @@ establish that every research decision has been found.
   original PDF.
 - PDF text placement for unusual fonts or right-to-left text is approximate;
   the original raster page remains the visual reference.
-- The reported `removeChild` error has no reproducible stack yet. Native text
-  ranges are cleared before source/page changes, workspace translation is
-  disabled, and route error boundaries provide reload recovery. These guards
-  are not evidence that the original cause has been confirmed or eliminated.
+- A reproduced `removeChild` stack points to Webpack's bundled
+  `mini-css-extract-plugin/hmr/hotModuleReplacement.js`: its link load/error
+  callback accesses a detached link's parent. Development now uses Turbopack
+  to avoid that CSS HMR path; production still builds with Webpack. Native text
+  ranges are also cleared before source/page changes and workspace translation
+  is disabled. Other DOM errors must still be investigated from their own stack.
 
-The development and build scripts use Webpack. The default Turbopack build
-stalled during local validation; Webpack completed on the same checkout.
+The production build uses Webpack because a prior local Turbopack production
+build stalled. Turbopack development starts and serves the editor successfully.
 
 Run `npm run test:studio`, `npx tsc --noEmit`, `npm run lint`, and `npm run build`.
 The tests mock service boundaries; they do not validate hosted RLS or email.

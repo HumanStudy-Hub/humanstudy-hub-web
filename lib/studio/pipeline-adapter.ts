@@ -181,9 +181,31 @@ function fallbackModel(files: PackageFile[], document: StudioDocument): StudySch
     filename: clipped(document.sources[0]?.name ?? "", 300) };
   const evidence = sourceEvidence(document);
   const entities: Entity[] = [];
-  const add = (id: string, kind: Entity["kind"], label: string, description: string, fields: Entity["fields"]) => {
+  const subtitleFrom = (value: unknown): string => {
+    if (typeof value === "string") {
+      const clean = value.replace(/\s+/g, " ").trim();
+      if (/^[{[]/.test(clean)) { try { return subtitleFrom(JSON.parse(clean)); } catch { return ""; } }
+      return clipped(clean, 300);
+    }
+    if (Array.isArray(value)) {
+      const summaries = value.slice(0, 2).map(subtitleFrom).filter(Boolean);
+      return clipped(summaries.length ? `${summaries.join(" · ")}${value.length > 2 ? ` · ${value.length} total` : ""}` : `${value.length} items`, 300);
+    }
+    const item = record(value);
+    if (!Object.keys(item).length) return "";
+    const prose = first(item, "main_hypothesis", "research_question", "researchQuestion", "rationale", "background", "summary", "description", "reported_result", "observed_result", "result", "question", "title", "name", "measure");
+    const lead = prose === value ? "" : subtitleFrom(prose);
+    const type = text(item.type);
+    const factors = list(item.factors).length;
+    const sample = item.n === undefined ? "" : `n=${text(item.n)}`;
+    const population = subtitleFrom(item.population);
+    const stats = [item.estimate === undefined ? "" : `estimate ${text(item.estimate)}`,
+      item.p_value === undefined ? "" : `p=${text(item.p_value)}`].filter(Boolean);
+    return clipped([lead || type || sample || population, factors ? `${factors} factors` : "", ...stats].filter(Boolean).join(" · "), 300);
+  };
+  const add = (id: string, kind: Entity["kind"], label: string, description: string, fields: Entity["fields"], subtitle: string) => {
     const index = entities.length;
-    entities.push({ id, kind, title: label, subtitle: "Pipeline package", description: clipped(description, 12000), evidence,
+    entities.push({ id, kind, title: label, subtitle: clipped(subtitle, 300), description: clipped(description, 12000), evidence,
       fields: fields.slice(0, 100).map(field => ({ ...field, name: clipped(field.name, 200), value: clipped(field.value, 4000) })),
       x: 35 + index % 3 * 270, y: 35 + Math.floor(index / 3) * 160, w: 235, h: 115 });
   };
@@ -191,16 +213,45 @@ function fallbackModel(files: PackageFile[], document: StudioDocument): StudySch
     const rendered = readable(value);
     return { name, value: rendered, status: /\bNEED_INPUT\b/.test(rendered) ? "unresolved" as const : status };
   };
+  const present = (value: unknown) => value !== undefined && value !== null && value !== "" &&
+    (!Array.isArray(value) || value.length > 0) && (typeof value !== "object" || Array.isArray(value) || Object.keys(record(value)).length > 0);
+  const firstPresent = (...values: unknown[]) => values.find(present);
+  const sourceField = (name: string, value: unknown) => field(name, present(value) ? value : "NEED_INPUT: not specified in package", present(value) ? "implementation" : "unresolved");
+  const background = first(overview, "background", "rationale", "research_question", "researchQuestion", "description")
+    ?? first(specification, "background", "rationale", "research_question", "researchQuestion")
+    ?? first(metadata, "background", "rationale", "research_question", "researchQuestion", "description")
+    ?? index.description;
+  const researchQuestion = first(overview, "research_question", "researchQuestion")
+    ?? first(specification, "research_question", "researchQuestion")
+    ?? first(metadata, "research_question", "researchQuestion");
+  add("background", "background", "Background and research question", readable(background, 12000), [
+    sourceField("Background or rationale", background),
+    sourceField("Research question", researchQuestion),
+  ], subtitleFrom(researchQuestion) || subtitleFrom(background) || "Background not specified in package");
+  const explicitHypotheses = first(overview, "hypotheses", "main_hypothesis", "hypothesis")
+    ?? first(specification, "hypotheses", "main_hypothesis", "hypothesis")
+    ?? first(metadata, "hypotheses", "main_hypothesis", "hypothesis");
+  const findingHypotheses = list(metadata.findings).map(raw => record(raw)).filter(item => present(item.main_hypothesis))
+    .map(item => ({ finding_id: item.finding_id, main_hypothesis: item.main_hypothesis }));
+  const hypotheses = firstPresent(explicitHypotheses, findingHypotheses);
+  add("hypotheses", "hypothesis", "Hypotheses", readable(hypotheses, 12000), [
+    sourceField("Source hypothesis (verify against paper)", hypotheses),
+  ], subtitleFrom(hypotheses) || "Hypothesis not specified in package");
+  const design = first(overview, "design", "study_design", "experimental_design") ?? specification.design ?? task.design;
+  add("design", "design", "Study design and conditions", readable(design, 12000), [
+    sourceField("Design", design),
+    sourceField("Conditions", first(task, "conditions", "arms") ?? first(overview, "conditions", "arms") ?? record(design).conditions ?? record(design).factors),
+  ], subtitleFrom(design) || subtitleFrom(first(task, "conditions", "arms")) || "Design not specified in package");
   const participantFlow = first(overview, "participant_flow", "participants") ?? specification.participants;
   const conditions = first(task, "conditions", "arms") ?? first(overview, "conditions") ?? record(specification.design).conditions;
   add("participants", "participants", "Participants and assignment", readable(participantFlow, 12000), [
     field("Participant flow", participantFlow ?? "Needs source review", participantFlow ? "implementation" : "unresolved"),
     field("Agent structure", first(task, "participant_structure", "agents", "roles") ?? "Needs source review", first(task, "participant_structure", "agents", "roles") ? "implementation" : "unresolved"),
     field("Conditions", conditions ?? "Needs source review", conditions ? "implementation" : "unresolved"),
-  ]);
+  ], subtitleFrom(participantFlow) || "Participant flow needs source review");
   add("materials", "material", "Participant materials", readable(materials, 12000), [
     field("Material manifest", Object.keys(materials).length ? materials : "Needs source review", Object.keys(materials).length ? "implementation" : "unresolved"),
-  ]);
+  ], Object.keys(materials).length ? `${Object.keys(materials).length} material entries` : "Materials need source review");
   const steps = list(first(task, "procedure", "steps", "stages")).length ? list(first(task, "procedure", "steps", "stages")) :
     list(first(overview, "procedure", "steps", "stages")).length ? list(first(overview, "procedure", "steps", "stages")) : list(specification.procedure);
   const procedure: StudySchema["procedure"] = steps.slice(0, 200).map((raw, index) => {
@@ -212,10 +263,10 @@ function fallbackModel(files: PackageFile[], document: StudioDocument): StudySch
   add("procedure", "procedure", "Procedure", readable(first(task, "procedure", "steps", "stages") ?? first(overview, "procedure", "participant_flow") ?? specification.procedure, 12000), [
     field("Steps", steps.length ? `${steps.length} package step(s)` : "Needs source review", steps.length ? "implementation" : "unresolved"),
     field("Inputs", first(task, "inputs", "input") ?? "Needs source review", first(task, "inputs", "input") ? "implementation" : "unresolved"),
-  ]);
+  ], steps.length ? `${steps.length} steps${subtitleFrom(steps[0]) ? ` · ${subtitleFrom(steps[0])}` : ""}` : "Procedure needs source review");
   add("records", "record", "Session records", readable(first(task, "outputs", "output", "session_log"), 12000), [
     field("Outputs", first(task, "outputs", "output", "session_log") ?? "Needs source review", first(task, "outputs", "output", "session_log") ? "implementation" : "unresolved"),
-  ]);
+  ], subtitleFrom(first(task, "outputs", "output", "session_log")) || "Recorded output needs source review");
   const variableInputs = [...list(first(task, "inputs", "input_variables")), ...list(first(task, "outputs", "output_variables")), ...list(first(overview, "outcomes", "measures")),
     ...list(specification.independent_variables), ...list(specification.dependent_variables), ...list(specification.primary_outcomes), ...list(specification.secondary_outcomes)];
   const variables: Variable[] = variableInputs.slice(0, 500).map((raw, index) => {
@@ -227,19 +278,35 @@ function fallbackModel(files: PackageFile[], document: StudioDocument): StudySch
   });
   add("variables", "variable", "Variables and outcomes", readable(variableInputs, 12000), [
     field("Variables", variables.length ? `${variables.length} package variable(s)` : "Needs source review", variables.length ? "implementation" : "unresolved"),
-  ]);
-  const analysis = first(overview, "findings", "analysis", "outcomes") ?? first(oldMetadata, "statistical_methods_used", "findings");
+  ], variables.length ? `${variables.length} variables · ${variables.slice(0, 2).map(variable => variable.name).join(" · ")}` : "Variables need source review");
+  const analysis = first(overview, "analysis", "outcomes") ?? first(oldMetadata, "statistical_methods_used") ?? first(metadata, "statistical_methods_used");
   add("analysis", "analysis", "Analysis and evaluation", readable(analysis, 12000), [
     field("Evaluation file", getFile(files, "evaluation/evaluation.py")?.path ?? "Needs source review", getFile(files, "evaluation/evaluation.py") ? "implementation" : "unresolved"),
     field("Outcomes", first(overview, "outcomes", "findings") ?? specification.primary_outcomes ?? "Needs source review", first(overview, "outcomes", "findings") ?? specification.primary_outcomes ? "implementation" : "unresolved"),
-  ]);
+    sourceField("Package finding summaries", firstPresent(overview.findings, specification.findings, metadata.findings)),
+  ], subtitleFrom(analysis) || "Analysis rules need source review");
+  // Legacy findings often carry only a hypothesis and planned tests. They are
+  // not an observed result. Extract result-bearing fields only.
+  const findingResults = list(firstPresent(overview.findings, specification.findings, metadata.findings)).map(raw => record(raw)).map(item => {
+    const result = Object.fromEntries(["finding_id", "reported_result", "observed_result", "result", "results", "effect_size", "estimate", "statistic", "p_value"]
+      .filter(key => present(item[key])).map(key => [key, item[key]]));
+    return Object.keys(result).some(key => key !== "finding_id") ? result : undefined;
+  }).filter(Boolean);
+  const reportedResults = firstPresent(first(overview, "reported_results", "results"), first(specification, "reported_results", "results"),
+    first(metadata, "reported_results", "results"), findingResults);
+  add("results", "result", "Reported results", readable(reportedResults, 12000) || "Not reported in this package",
+    present(reportedResults) ? [field("Reported observations or statistics (verify against paper)", reportedResults)] : [],
+    subtitleFrom(reportedResults) || "Not reported in this package");
   if (checklist.length) add("review", "analysis", "Researcher review needed", "Questions and missing information from audit/missing_information.json.",
     checklist.slice(0, 100).map((raw, index) => {
       const item = record(raw);
       return field(text(first(item, "field", "name")) || `Review item ${index + 1}`, { reason: item.reason, impact: item.impact, suggested_action: item.suggested_action }, "unresolved");
-    }));
-  const relations = [{ from: "participants", to: "procedure", label: "takes part in" }, { from: "materials", to: "procedure", label: "provides input" },
-    { from: "procedure", to: "records", label: "produces" }, { from: "records", to: "variables", label: "contains" }, { from: "variables", to: "analysis", label: "is evaluated by" }];
+    }), `${checklist.length} review items`);
+  const relations = [{ from: "background", to: "hypotheses", label: "motivates" }, { from: "hypotheses", to: "design", label: "informs" },
+    { from: "design", to: "participants", label: "defines assignment for" }, { from: "design", to: "materials", label: "defines conditions for" },
+    { from: "participants", to: "procedure", label: "takes part in" }, { from: "materials", to: "procedure", label: "provides input" },
+    { from: "procedure", to: "records", label: "produces" }, { from: "records", to: "variables", label: "contains" },
+    { from: "variables", to: "analysis", label: "is evaluated by" }, { from: "analysis", to: "results", label: "interprets" }];
   const model: StudySchema = { id: safeId(text(first(overview, "study_id", "id")) || text(specification.study_id) || title.toLowerCase().replace(/\s+/g, "-"), "pipeline-study"), title,
     source, entities, relations, procedure, variables };
   return validateStudyModel(model, { sources: document.sources });

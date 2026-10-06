@@ -69,7 +69,7 @@ export function validateStudyModel(input: unknown, options: { allowedPages?: Rea
     const e = object(raw, `model.entities[${i}]`);
     return {
       id: id(e.id, `model.entities[${i}].id`),
-      kind: oneOf(e.kind, `model.entities[${i}].kind`, ["participants", "material", "procedure", "record", "variable", "analysis"] as const),
+      kind: oneOf(e.kind, `model.entities[${i}].kind`, ["background", "hypothesis", "design", "participants", "material", "procedure", "record", "variable", "analysis", "result"] as const),
       title: string(e.title, `model.entities[${i}].title`, 200, true), subtitle: string(e.subtitle, `model.entities[${i}].subtitle`, 500),
       description: string(e.description, `model.entities[${i}].description`, 12000), evidence: evidence(e.evidence, `model.entities[${i}].evidence`, options.allowedPages, options.sources),
       fields: array(e.fields, `model.entities[${i}].fields`, 100).map((rawField, j) => {
@@ -237,6 +237,24 @@ export function validateStudioDocument(input: unknown): StudioDocument {
   unique(conversations.map(conversation => conversation.id), "document.conversations");
   try { assertConversationTree(conversations); }
   catch (error) { fail(error instanceof Error ? error.message : "Invalid conversation links."); }
+  const programVersions: StudioDocument["programVersions"] = value.programVersions === undefined ? undefined : array(value.programVersions, "document.programVersions", 2000).map((raw, i) => {
+    const v = object(raw, `programVersions[${i}]`);
+    const fingerprint = string(v.fingerprint, "programVersion.fingerprint", 64, true);
+    if (!/^[a-f0-9]{64}$/.test(fingerprint)) fail("Invalid program version fingerprint.");
+    const proposalId = v.proposalId === undefined ? undefined : id(v.proposalId, "programVersion.proposalId");
+    const snapshot = v.model === undefined ? undefined : validateStudyModel(v.model);
+    if (Boolean(proposalId) === Boolean(snapshot)) fail("A program version needs exactly one baseline or accepted proposal snapshot.");
+    if (proposalId && !conversations.some(c => c.messages.some(m => m.proposal?.id === proposalId && m.proposal.status === "applied" && m.proposal.changesModel !== false))) fail("Program version refers to a missing accepted proposal.");
+    return { id: id(v.id, "programVersion.id"), createdAt: timestamp(v.createdAt, "programVersion.createdAt"), label: string(v.label, "programVersion.label", 200), fingerprint, ...(v.parentId === undefined ? {} : { parentId: id(v.parentId, "programVersion.parentId") }), ...(proposalId ? { proposalId } : {}), ...(snapshot ? { model: snapshot } : {}) };
+  });
+  if (programVersions) {
+    unique(programVersions.map(v => v.id), "document.programVersions");
+    const seen = new Set<string>();
+    for (const version of programVersions) {
+      if (version.parentId && !seen.has(version.parentId)) fail("Program version parent must precede its child.");
+      seen.add(version.id);
+    }
+  }
   const reviewResponses: StudioDocument["reviewResponses"] = {};
   const rawResponses = object(value.reviewResponses, "document.reviewResponses");
   for (const [key, raw] of Object.entries(rawResponses)) {
@@ -259,5 +277,5 @@ export function validateStudioDocument(input: unknown): StudioDocument {
   const pipeline=value.pipeline===undefined?undefined:validatePipeline(value.pipeline,"pipeline");
   const discussion=value.discussion===undefined?undefined:validatePipeline(value.discussion,"discussion");
   const acceptedPackage=value.acceptedPackage===undefined?undefined:(()=>{const p=object(value.acceptedPackage,"acceptedPackage");const fingerprint=string(p.modelFingerprint,"acceptedPackage.modelFingerprint",64,true);if(!/^[a-f0-9]{64}$/.test(fingerprint))fail("Invalid accepted package model fingerprint.");const jobId=string(p.jobId,"acceptedPackage.jobId",80,true);if(!/^studio-[0-9a-f-]{73}$/i.test(jobId))fail("Invalid accepted package job ID.");if(p.approvalPending!==undefined&&typeof p.approvalPending!=='boolean')fail("Invalid accepted package approval state.");return {jobId,modelFingerprint:fingerprint,acceptedAt:timestamp(p.acceptedAt,"acceptedPackage.acceptedAt"),...(p.approvalPending?{approvalPending:true}:{})};})();
-  return { ...(pipeline ? {pipeline} : {}),...(discussion?{discussion}:{}),...(acceptedPackage?{acceptedPackage}:{}), version: 1, title: string(value.title, "document.title", 300, true), model, sources, annotations, conversations, reviewResponses, ...(artifacts ? { artifacts } : {}), ...(activeConversationId ? { activeConversationId } : {}) };
+  return { ...(programVersions ? {programVersions} : {}), ...(pipeline ? {pipeline} : {}),...(discussion?{discussion}:{}),...(acceptedPackage?{acceptedPackage}:{}), version: 1, title: string(value.title, "document.title", 300, true), model, sources, annotations, conversations, reviewResponses, ...(artifacts ? { artifacts } : {}), ...(activeConversationId ? { activeConversationId } : {}) };
 }

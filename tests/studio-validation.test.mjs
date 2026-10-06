@@ -80,6 +80,19 @@ test("model validation rejects dangling relations and impossible source pages", 
   assert.throws(() => validation.validateStudyModel(model, { allowedPages: new Set([1]) }), /page does not exist/);
 });
 
+test("full program entity kinds retain statuses and evidence", () => {
+  const model = emptyModel();
+  for (const kind of ["background", "hypothesis", "design", "result"]) {
+    model.entities.push({ id: kind, kind, title: kind, subtitle: "", description: "", evidence: evidence(source.id, "Participants"),
+      fields: [{ name: "Claim", value: "Participants", status: kind === "hypothesis" ? "unresolved" : "reported" }],
+      x: 0, y: 0, w: 10, h: 10 });
+  }
+  const validated = validation.validateStudyModel(model, { sources: [source] });
+  assert.deepEqual(validated.entities.map(entity => entity.kind), ["background", "hypothesis", "design", "result"]);
+  assert.equal(validated.entities[1].fields[0].status, "unresolved");
+  assert.equal(validated.entities[3].evidence.quote, "Participants");
+});
+
 test("auxiliary materials enforce safe names, formats, bounds and live source IDs", () => {
   const material = { id: "analysis-draft", title: "Analysis draft", filename: "analysis.py", format: "python", kind: "analysis", content: "# Draft only\n", sourceIds: [source.id] };
   assert.deepEqual(validation.validateStudioArtifacts([material], [source]), [material]);

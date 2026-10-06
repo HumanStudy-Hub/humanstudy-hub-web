@@ -6,6 +6,7 @@ import { validateStudioDocument } from "@/lib/studio/validation";
 import { modelFingerprint } from "@/lib/studio/model-version";
 import { reconcilePackageApproval, startPackageSync } from "@/lib/studio/pipeline";
 import { readOwnedStudioJob } from "@/lib/github-jobs";
+import { acceptedProgramVersions } from "@/lib/studio/program-versions";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -32,6 +33,7 @@ export async function POST(request: Request, { params }: Context) {
     const status = body.decision === "apply" ? "applied" as const : "rejected" as const;
     const nextModel = status === "applied" && proposal.changesModel !== false ? proposal.model : document.model;
     const nextArtifacts = status === "applied" ? proposal.artifacts ?? document.artifacts : document.artifacts;
+    const programVersions=status==='applied'?acceptedProgramVersions(document,proposal.id,new Date().toISOString()):document.programVersions;
     const initialJobId=status==='applied'&&document.pipeline?.kind!=='sync'&&document.pipeline?.proposalId===proposal.id&&document.pipeline.jobId===(proposal.jobId||document.pipeline.jobId)?document.pipeline.jobId:undefined;
     let initialJobStatus:'review'|'complete'|undefined;
     if(initialJobId){
@@ -52,7 +54,7 @@ export async function POST(request: Request, { params }: Context) {
     // Live annotation links still block deletion. Historical message/proposal
     // snapshots keep their original references and need no rewrite.
     let updated;
-    try { updated = validateStudioDocument({ ...document, model: nextModel, ...(nextArtifacts !== undefined ? { artifacts: nextArtifacts } : {}), conversations,...(initialJobId?{acceptedPackage:{jobId:initialJobId,modelFingerprint:modelFingerprint(nextModel),acceptedAt:new Date().toISOString(),...(initialJobStatus==='review'?{approvalPending:true}:{})},pipeline:{...document.pipeline!,status:'complete',message:'Study package accepted',updatedAt:new Date().toISOString()}}:{}) }); }
+    try { updated = validateStudioDocument({ ...document, programVersions, model: nextModel, ...(nextArtifacts !== undefined ? { artifacts: nextArtifacts } : {}), conversations,...(initialJobId?{acceptedPackage:{jobId:initialJobId,modelFingerprint:modelFingerprint(nextModel),acceptedAt:new Date().toISOString(),...(initialJobStatus==='review'?{approvalPending:true}:{})},pipeline:{...document.pipeline!,status:'complete',message:'Study package accepted',updatedAt:new Date().toISOString()}}:{}) }); }
     catch { throw new StudioError(409, "proposal_breaks_references", "This model would break live annotation references. Reassign those annotations first."); }
     const saved = await saveWorkspace(ctx, id, updated, body.revision as number);
     if ("conflict" in saved) return NextResponse.json({ error: "revision_conflict", latest: saved.latest }, { status: 409 });

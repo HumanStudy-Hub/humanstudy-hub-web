@@ -51,12 +51,15 @@ test("maps pipeline contract into a bounded model and unresolved review checklis
 test("uses valid sidecar and removes unsupported evidence and rectangles", () => {
   const evidence = { sourceId: "paper", page: 2, rects: [{ x: 1, y: 1, w: 3, h: 3 }], quote: "Participants read the instructions" };
   const sidecar = { ...document.model, id: "sidecar", title: "Curated model", source: { title: "Paper", authors: "", filename: "paper.pdf" },
-    entities: [{ id: "step", kind: "procedure", title: "Read", subtitle: "", description: "Read", evidence, fields: [], x: 0, y: 0, w: 10, h: 10 }],
+    entities: [{ id: "step", kind: "procedure", title: "Read", subtitle: "", description: "Read", evidence, fields: [], x: 0, y: 0, w: 10, h: 10 },
+      { id: "reported-result", kind: "result", title: "Result", subtitle: "", description: "", evidence: { ...evidence, quote: "Unsupported result" }, fields: [], x: 20, y: 0, w: 10, h: 10 }],
     procedure: [{ id: "read", name: "Read", input: "instructions", actor: "participant", output: "answer", evidence }] };
   const result = adaptPipelinePackage([file("studio-model.json", sidecar)], document);
   assert.equal(result.model.title, "Curated model");
   assert.equal(result.model.entities[0].evidence.quote, evidence.quote);
   assert.deepEqual(result.model.entities[0].evidence.rects, []);
+  assert.equal(result.model.entities[1].evidence.quote, "");
+  assert.deepEqual(result.model.entities[1].evidence.rects, []);
   assert.match(result.summary, /sidecar used/);
   const changed = structuredClone(sidecar);
   changed.entities[0].evidence.quote = "Text absent from PDF";
@@ -92,6 +95,38 @@ test("maps legacy study package specification without inventing citations", () =
   assert.equal(result.model.procedure[0].name, "Recruit");
   assert.equal(result.model.entities.find(item => item.id === "materials").fields[0].status, "implementation");
   assert.equal(result.model.entities.every(item => item.evidence.quote === ""), true);
+});
+
+test("legacy findings preserve hypotheses without turning planned tests into reported results", () => {
+  const legacyBackground = "Evidence from four studies demonstrates that social observers tend to perceive a “false consensus” with respect to the relative commonness of their own responses.";
+  const legacyHypothesis = "Subjects who 'choose' a particular hypothetical response will rate that response as more probable for 'people in general' than will subjects who 'choose' the alternative response.";
+  const files = [
+    file("index.json", { title: "Legacy study", description: legacyBackground }),
+    file("source/metadata.json", { findings: [{ finding_id: "F1", main_hypothesis: legacyHypothesis, tests: [{ test_name: "ANOVA" }] }] }),
+    file("source/specification.json", { design: { type: "Between-Subjects", factors: [{ name: "Choice", levels: ["A", "B"] }] } }),
+  ];
+  const model = adaptPipelinePackage(files, document).model;
+  assert.equal(model.entities.find(entity => entity.kind === "background").subtitle, legacyBackground);
+  assert.equal(model.entities.find(entity => entity.kind === "hypothesis").subtitle, legacyHypothesis);
+  assert.match(model.entities.find(entity => entity.kind === "background").fields[0].value, /false consensus/);
+  assert.match(model.entities.find(entity => entity.kind === "hypothesis").fields[0].value, /particular hypothetical response/);
+  assert.match(model.entities.find(entity => entity.kind === "design").fields[0].value, /Between-Subjects/);
+  assert.match(model.entities.find(entity => entity.kind === "design").subtitle, /Between-Subjects/);
+  assert.deepEqual(model.entities.find(entity => entity.kind === "result").fields, []);
+  assert.equal(model.entities.find(entity => entity.kind === "result").subtitle, "Not reported in this package");
+  assert.equal(model.reviewIssues, undefined);
+  assert.equal(model.entities.every(entity => entity.evidence.quote === ""), true);
+});
+
+test("fallback preserves explicit reported results while marking absent hypotheses unresolved", () => {
+  const model = adaptPipelinePackage([file("study.json", {
+    title: "Outcome study", rationale: "Prior work", research_question: "Does the task change outcomes?",
+    conditions: ["control", "treatment"], results: [{ measure: "accuracy", estimate: 0.2, p_value: 0.03 }],
+  })], document).model;
+  assert.equal(model.entities.find(entity => entity.kind === "hypothesis").fields[0].status, "unresolved");
+  assert.match(model.entities.find(entity => entity.kind === "result").fields[0].value, /"estimate":0.2/);
+  assert.equal(model.entities.find(entity => entity.kind === "result").fields[0].status, "implementation");
+  assert.equal(model.relations.some(relation => relation.from === "analysis" && relation.to === "results"), true);
 });
 
 test('keeps live-run categorical variables with null units and list references', () => {

@@ -18,6 +18,8 @@ export async function POST(request: Request) {
     const body = await readJsonBody(request, 2_000_000);
     if (!body || typeof body !== "object" || !("document" in body)) throw new StudioError(400, "invalid_document");
     const document = validateStudioDocument((body as { document: unknown }).document);
+    // Version lineage is recorded only by server-side proposal acceptance.
+    delete document.programVersions;
     const workspace = await createWorkspace(ctx, document);
     return NextResponse.json({ workspace }, { status: 201 });
   } catch (error) { return routeError(error); }

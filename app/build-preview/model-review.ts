@@ -38,12 +38,17 @@ export const overview = {
   question: "How much do numerical anchors shift estimates?",
   summary: "Compare estimates made after low and high anchors, using a separate calibration sample as the reference.",
   stages: [
-    { id: "prepare", title: "Prepare the study", subtitle: "People + materials", nodes: ["people", "inputs", "manipulation"] },
-    { id: "run", title: "Run a participant session", subtitle: "Input → person → output", nodes: ["procedure"] },
-    { id: "record", title: "Keep the observations", subtitle: "One record per participant × item", nodes: ["responses"] },
-    { id: "analyze", title: "Turn observations into evidence", subtitle: "Derive → compare", nodes: ["outcome", "analysis"] },
+    { id: "rationale", title: "Background & hypotheses", subtitle: "", nodes: ["rationale", "confidence-prediction"] },
+    { id: "prepare", title: "Study design", subtitle: "", nodes: ["people", "inputs", "manipulation"] },
+    { id: "run", title: "Participant procedure", subtitle: "", nodes: ["procedure"] },
+    { id: "record", title: "Data & variables", subtitle: "", nodes: ["responses", "outcome"] },
+    { id: "analyze", title: "Analysis plan", subtitle: "", nodes: ["analysis"] },
+    { id: "results", title: "Reported results", subtitle: "", nodes: ["reported-results"] },
   ],
   cards: {
+    rationale: { title: "Why measure anchoring?", text: "Quantify how numerical anchors shift estimates.", foot: "" },
+    "confidence-prediction": { title: "Confidence and anchoring", text: "Lower confidence → stronger susceptibility to anchors.", foot: "" },
+    "reported-results": { title: "Anchoring effect reported", text: "t(102) = 7.99 · p < .01", foot: "" },
     people: { title: "Participants", text: "53 calibration · 103 experimental", foot: "Separate samples · Berkeley students" },
     inputs: { title: "Questionnaires", text: "15 quantities · 2 versions", foot: "Same item order across versions" },
     manipulation: { title: "Low / high anchor", text: "Varies by item within a version", foot: "Manipulation · participant × item" },
@@ -80,10 +85,10 @@ export function intersectsPolygon(points: Point[], box: { x: number; y: number; 
 
 export function modelOverview(model: typeof study) {
   if(model.id===study.id)return overview;
-  const stageKinds=[['participants','material'],['procedure'],['record'],['variable','analysis']];
+  const stageKinds=[['background','hypothesis'],['design','participants','material'],['procedure'],['record','variable'],['analysis'],['result']];
   return {
     question:model.title, summary:'',
-    stages:overview.stages.map((stage,i)=>({...stage,subtitle:["People + materials","Input → person → output","Recorded observations","Derive → compare"][i],nodes:model.entities.filter(e=>stageKinds[i].includes(e.kind)).map(e=>e.id)})).filter(stage=>stage.nodes.length),
+    stages:overview.stages.map((stage,i)=>({...stage,subtitle:"",nodes:model.entities.filter(e=>stageKinds[i].includes(e.kind)).map(e=>e.id)})).filter(stage=>stage.nodes.length),
     cards:Object.fromEntries(model.entities.map(e=>[e.id,{title:e.title,text:e.subtitle,foot:e.description}])) as typeof overview.cards,
   };
 }

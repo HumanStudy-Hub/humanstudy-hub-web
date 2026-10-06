@@ -32,6 +32,7 @@ export async function PATCH(request: Request, context: Context) {
     validated.pipeline=existing.document.pipeline;
     validated.discussion=existing.document.discussion;
     validated.acceptedPackage=existing.document.acceptedPackage;
+    validated.programVersions=existing.document.programVersions;
     const authoritative=new Map(existing.document.conversations.map(c=>[c.id,c] as const));
     validated.conversations=validated.conversations.map(c=>{
       const saved=authoritative.get(c.id);authoritative.delete(c.id);

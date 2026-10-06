@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { isStudioEditorRoute } from "@/lib/studio/editor-route";
 
 const links = [
   { name: "Datasets", href: "/dataset" },
@@ -13,6 +14,7 @@ const links = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  if (isStudioEditorRoute(pathname)) return null;
 
   return (
     <nav aria-label="Main navigation" data-site-navigation className="sticky top-0 z-50 border-b border-gray-200 bg-white/95 backdrop-blur">

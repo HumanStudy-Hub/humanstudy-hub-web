@@ -113,7 +113,7 @@ export default function StudioEditor({id}:{id:string}){
   onSelection:metadata=>telemetry.track("selection",metadata),onLayout:metadata=>telemetry.track("layout",metadata),
   onChange,onChat:async request=>{telemetry.track('chat',{action:'send'});return transact('chat',{...request,sourceId:paper?.id});},
   onProposal:async(proposalId,decision)=>{telemetry.track('review',{action:decision});return transact('proposals',{proposalId,decision});},
-  onExport:()=>void exportWorkspace(),onManage:flush,onNavigate:async href=>{await flush();window.location.assign(href);},
+  onSave:flush,onExport:()=>void exportWorkspace(),onManage:flush,onNavigate:async href=>{await flush();window.location.assign(href);},
   onLeave:async()=>{await flush();window.location.assign("/build");},onSource:setSourceId,
  };
  return <div className={s.editor}><Workspace studio={connected}/>{(error||telemetry.deliveryError)&&<div className={s.noticeBar} role="alert">{error||telemetry.deliveryError}<button onClick={downloadUnsaved}>Download local draft</button>{conflict?<><button onClick={()=>window.location.reload()}>Reload server version</button></>:error&&<button onClick={()=>{setError('');if(pending.current)void flush().catch(()=>{});}}>{pending.current?'Retry save':'Dismiss'}</button>}</div>}</div>;
