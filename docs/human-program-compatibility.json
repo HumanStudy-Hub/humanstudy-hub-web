@@ -1,0 +1,406 @@
+{
+  "commit": "50086798df2606ceb0c651b58e4d5ddef523b2b5",
+  "rows": [
+    {
+      "id": "study_001",
+      "title": "The “False Consensus Effect”: An Egocentric Bias in Social Perception and Attribution Processes",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 4,
+      "mappedSteps": 4,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 3,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 3,
+      "resultFields": 10,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_002",
+      "title": "Measures of Anchoring in Estimation Tasks",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 8,
+      "mappedSteps": 8,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 4,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 3,
+      "resultFields": 18,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_003",
+      "title": "The Framing of Decisions and the Psychology of Choice",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 3,
+      "mappedSteps": 3,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 11,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 5,
+      "resultFields": 10,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_004",
+      "title": "Subjective Probability: A Judgment of Representativeness",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 3,
+      "mappedSteps": 3,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 10,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 6,
+      "resultFields": 13,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_005",
+      "title": "Intentional Action and Side-Effects in Ordinary Language",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 4,
+      "mappedSteps": 4,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 2,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 2,
+      "resultFields": 8,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_006",
+      "title": "FORMING IMPRESSIONS OF PERSONALITY",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 4,
+      "mappedSteps": 4,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 11,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 11,
+      "resultFields": 48,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_007",
+      "title": "Social categorization and similarity in intergroup behaviour",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 3,
+      "mappedSteps": 3,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 1,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 1,
+      "resultFields": 8,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_008",
+      "title": "Pluralistic Ignorance and Alcohol Use on Campus: Some Consequences of Misperceiving the Social Norm",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 7,
+      "mappedSteps": 7,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 3,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 3,
+      "resultFields": 13,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_009",
+      "title": "Unraveling in Guessing Games: An Experimental Study",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 4,
+      "mappedSteps": 4,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 3,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 1,
+      "resultFields": 14,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_010",
+      "title": "Thinking through Uncertainty: Nonconsequential Reasoning and Choice",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 6,
+      "mappedSteps": 6,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 3,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 3,
+      "resultFields": 7,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_011",
+      "title": "Fairness in Simple Bargaining Experiments",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 6,
+      "mappedSteps": 6,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 6,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 6,
+      "resultFields": 23,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_012",
+      "title": "Trust, Reciprocity, and Social History",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 5,
+      "mappedSteps": 5,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 2,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 3,
+      "resultFields": 15,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies",
+        "overall_original_results"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_013",
+      "title": "Opportunity Evaluation under Risky Conditions: The Cognitive Processes of Entrepreneurs",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 5,
+      "mappedSteps": 5,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 1,
+      "hasSubstudies": true,
+      "resultsFromGroundTruth": 1,
+      "resultFields": 10,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_014",
+      "title": "Do Auctioneers Pick Optimal Reserve Prices?",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 8,
+      "mappedSteps": 8,
+      "emptySteps": 0,
+      "mappedVariables": 0,
+      "scenarios": 1,
+      "hasSubstudies": false,
+      "resultsFromGroundTruth": 1,
+      "resultFields": 2,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "studies"
+      ],
+      "before": {
+        "mappedSteps": 0,
+        "resultFields": 0
+      }
+    },
+    {
+      "id": "study_015",
+      "title": "Testing the decoy effect to improve online survey participation: Evidence from a field experiment",
+      "entities": 10,
+      "overviewEntities": 10,
+      "sourceSteps": 4,
+      "mappedSteps": 4,
+      "emptySteps": 0,
+      "mappedVariables": 10,
+      "scenarios": 0,
+      "hasSubstudies": false,
+      "resultsFromGroundTruth": 0,
+      "resultFields": 26,
+      "groundTruthKeys": [
+        "study_id",
+        "title",
+        "authors",
+        "year",
+        "preliminary_study_findings",
+        "main_study"
+      ],
+      "before": {
+        "mappedSteps": 4,
+        "resultFields": 0
+      }
+    }
+  ],
+  "method": {
+    "source": "GitHub main at pinned commit; all 152 study JSON files matched local bytes against Git blob SHA",
+    "exercise": "Pure package adaptation, model validation and overview membership; no agent run or generated study execution",
+    "baselineWebCommit": "21f37ee",
+    "cases": 15
+  },
+  "limitations": [
+    "Legacy source JSON has no mandatory template. This audit does not establish universal schema compatibility.",
+    "Multi-experiment procedure, participants and conditions still flatten into shared cards. Result fields retain experiment IDs but are not a scoped experiment visualization.",
+    "Fourteen legacy specifications have no explicit variable lists mapped by this adapter; variables in prose or scripts are not inferred.",
+    "Fallback mapping has no verified PDF quotes; package statistics remain unverified extractions.",
+    "Presentation fields are bounded to 4000 characters and 100 fields per entity; complete packages remain separate artifacts/ZIPs."
+  ]
+}

@@ -66,6 +66,7 @@ test("uses valid sidecar and removes unsupported evidence and rectangles", () =>
   changed.procedure[0].evidence.page = 9;
   const invalid = adaptPipelinePackage([file("studio-model.json", changed)], document);
   assert.notEqual(invalid.model.title, "Curated model", "invalid sidecar falls back to package mapping");
+  assert.match(invalid.summary, /studio-model.json did not pass validation/);
 });
 
 test("omits oversized or unsupported Studio artifacts and names them in summary", () => {
@@ -93,8 +94,60 @@ test("maps legacy study package specification without inventing citations", () =
   assert.equal(result.model.source.authors, "Researcher");
   assert.deepEqual(result.model.variables.map(item => item.name), ["Condition", "Completion"]);
   assert.equal(result.model.procedure[0].name, "Recruit");
+  assert.equal(result.model.procedure[0].output, "", "step instructions are not a participant's recorded output");
+  assert.match(result.model.entities.find(item => item.id === "procedure").fields[2].value, /Invite participants/);
   assert.equal(result.model.entities.find(item => item.id === "materials").fields[0].status, "implementation");
   assert.equal(result.model.entities.every(item => item.evidence.quote === ""), true);
+});
+
+const benchmarkFixtures = JSON.parse(fs.readFileSync(path.join(root, "tests/fixtures/benchmark-legacy-packages.json"), "utf8"));
+const benchmarkModel = id => adaptPipelinePackage(benchmarkFixtures.cases.find(item => item.id === id).files
+  .map(({ path, value }) => ({ path, content: JSON.stringify(value) })), document).model;
+
+test("real Knobe package renders four source steps and keeps experiment-specific observations", () => {
+  const model = benchmarkModel("study_005");
+  assert.equal(model.procedure.length, 4);
+  assert.equal(model.procedure.every(step => step.name !== `Step ${model.procedure.indexOf(step) + 1}`), true);
+  assert.equal(model.procedure.every(step => !step.input && !step.actor && !step.output), true,
+    "prose-only steps do not fabricate typed inputs, actors or outputs");
+  const fields = model.entities.find(entity => entity.kind === "result").fields;
+  const content = fields.map(field => field.value).join("\n");
+  assert.match(content, /chi2\(1, N=78\)=27.2, p=0.001/);
+  assert.match(content, /"percentage":82/);
+  assert.equal(fields.some(field => field.name.startsWith("Experiment 1 ·")), true);
+  assert.equal(fields.some(field => field.name.startsWith("Experiment 2 ·")), true);
+  assert.doesNotMatch(content, /expected_direction|main_hypothesis|statistical_hypothesis/);
+  assert.equal(model.entities.every(entity => !entity.evidence.quote), true);
+});
+
+test("real uncertainty package keeps all six procedure steps and all three result scopes", () => {
+  const model = benchmarkModel("study_010");
+  assert.equal(model.procedure.length, 6);
+  const fields = model.entities.find(entity => entity.kind === "result").fields;
+  assert.deepEqual([...new Set(fields.map(field => JSON.parse(field.value).study_id))], ["Experiment 1", "Experiment 2", "Experiment 3"]);
+  assert.match(fields.map(field => field.value).join("\n"), /25% \(113\/444\)/);
+  assert.match(fields.map(field => field.value).join("\n"), /Other Player Strategy Unknown/);
+});
+
+test("real decoy package preserves preliminary/main results and source discrepancies", () => {
+  const model = benchmarkModel("study_015");
+  assert.equal(model.procedure.length, 4);
+  assert.equal(model.procedure.every(step => !step.output), true);
+  const fields = model.entities.find(entity => entity.kind === "result").fields;
+  assert.equal(fields.some(field => field.name.startsWith("preliminary_study ·")), true);
+  assert.equal(fields.some(field => field.name.startsWith("main_field_experiment ·")), true);
+  const content = fields.map(field => field.value).join("\n");
+  assert.match(content, /OR = 2.610/);
+  assert.match(content, /Exact counts NOT PROVIDED/);
+  assert.match(content, /57\/102 = 55.9%/);
+  assert.match(content, /59.8%/);
+});
+
+test("ground-truth plans without observations do not become reported results", () => {
+  const model = adaptPipelinePackage([file("source/ground_truth.json", { studies: [{ study_id: "Experiment 1", findings: [{
+    finding_id: "F1", main_hypothesis: "A increases B", statistical_tests: [{ test_name: "ANOVA", expected_direction: "positive", significance_level: 0.05 }],
+  }] }] })], document).model;
+  assert.deepEqual(model.entities.find(entity => entity.kind === "result").fields, []);
 });
 
 test("legacy findings preserve hypotheses without turning planned tests into reported results", () => {

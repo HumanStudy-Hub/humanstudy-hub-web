@@ -27,6 +27,44 @@ const basePath = (path: string) => path.replace(/\\/g, "/").replace(/^\/+/, "");
 const suffix = (path: string, target: string) => path === target || path.endsWith(`/${target}`);
 const getFile = (files: PackageFile[], target: string) => files.find(file => suffix(basePath(file.path), target));
 
+function procedureSteps(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  const nested = record(value);
+  return [nested.steps, nested.stages, nested.procedure].map(list).find(steps => steps.length > 0) ?? [];
+}
+
+/** Read the observed portions of the benchmark's documented ground-truth
+ * convention. Hypotheses, test names and expected directions alone are plans,
+ * not results. Keep experiment/finding identity and extraction caveats. */
+function groundTruthObservations(groundTruth: JsonObject): JsonObject[] {
+  const groups = list(groundTruth.studies).map(record);
+  if (Array.isArray(groundTruth.preliminary_study_findings)) groups.push({
+    study_id: "preliminary_study", findings: groundTruth.preliminary_study_findings,
+  });
+  if (Object.keys(record(groundTruth.main_study)).length) groups.push(record(groundTruth.main_study));
+  if (Array.isArray(groundTruth.findings)) groups.push(groundTruth);
+  const observedKeys = ["reported_statistics", "reported_result", "observed_result", "result", "results",
+    "effect_size", "estimate", "statistic", "p_value", "confidence_interval", "raw_data"];
+  const hasValue = (value: unknown) => value !== undefined && value !== null && value !== "" &&
+    (!Array.isArray(value) || value.length > 0) && (typeof value !== "object" || Array.isArray(value) || Object.keys(record(value)).length > 0);
+  return groups.flatMap(group => list(group.findings).flatMap(raw => {
+    const finding = record(raw);
+    const identity = { source_file: "source/ground_truth.json", study_id: group.study_id, study_name: group.study_name, finding_id: finding.finding_id };
+    const observations: JsonObject[] = [];
+    for (const key of ["original_data_points", "raw_outcomes", ...observedKeys]) {
+      if (hasValue(finding[key])) observations.push({ ...identity, [key]: finding[key] });
+    }
+    for (const rawTest of list(finding.statistical_tests)) {
+      const test = record(rawTest);
+      if (!observedKeys.some(key => hasValue(test[key]))) continue;
+      const preserved = Object.fromEntries([...observedKeys, "test_id", "test_name", "variable", "model", "claim", "location", "note", "covariates"]
+        .filter(key => hasValue(test[key])).map(key => [key, test[key]]));
+      observations.push({ ...identity, ...preserved });
+    }
+    return observations;
+  }));
+}
+
 function sourceEvidence(document: StudioDocument): Evidence {
   const source = document.sources.find(item => item.pages?.length) ?? document.sources[0];
   return { ...(source ? { sourceId: source.id } : {}), page: source?.pages?.[0]?.page ?? 1, rects: [], quote: "" };
@@ -164,6 +202,7 @@ function isJson(content: string) { try { JSON.parse(content); return true; } cat
 function fallbackModel(files: PackageFile[], document: StudioDocument): StudySchema {
   const overview = parse(getFile(files, "study.json"));
   const specification = parse(getFile(files, "source/specification.json"));
+  const groundTruth = parse(getFile(files, "source/ground_truth.json"));
   const index = parse(getFile(files, "index.json"));
   const oldMetadata = parse(getFile(files, "source/metadata.json"));
   const metadata = Object.keys(parse(getFile(files, "source/paper_metadata.json"))).length ? parse(getFile(files, "source/paper_metadata.json")) : { ...index, ...oldMetadata };
@@ -252,17 +291,18 @@ function fallbackModel(files: PackageFile[], document: StudioDocument): StudySch
   add("materials", "material", "Participant materials", readable(materials, 12000), [
     field("Material manifest", Object.keys(materials).length ? materials : "Needs source review", Object.keys(materials).length ? "implementation" : "unresolved"),
   ], Object.keys(materials).length ? `${Object.keys(materials).length} material entries` : "Materials need source review");
-  const steps = list(first(task, "procedure", "steps", "stages")).length ? list(first(task, "procedure", "steps", "stages")) :
-    list(first(overview, "procedure", "steps", "stages")).length ? list(first(overview, "procedure", "steps", "stages")) : list(specification.procedure);
+  const steps = [task.procedure, task.steps, task.stages, overview.procedure, overview.steps, overview.stages, specification.procedure]
+    .map(procedureSteps).find(candidate => candidate.length > 0) ?? [];
   const procedure: StudySchema["procedure"] = steps.slice(0, 200).map((raw, index) => {
     const step = record(raw);
-    return { id: `step-${index + 1}`, name: clipped(text(first(step, "name", "title", "stage")) || `Step ${index + 1}`, 200),
+    return { id: `step-${index + 1}`, name: clipped((typeof raw === "string" ? raw : text(first(step, "name", "title", "stage"))) || `Step ${index + 1}`, 200),
       input: readable(first(step, "input", "inputs", "sees", "materials")), actor: clipped(readable(first(step, "actor", "role", "agent")), 1000),
-      output: readable(first(step, "output", "outputs", "response", "details")), evidence };
+      output: readable(first(step, "output", "outputs", "response")), evidence };
   });
   add("procedure", "procedure", "Procedure", readable(first(task, "procedure", "steps", "stages") ?? first(overview, "procedure", "participant_flow") ?? specification.procedure, 12000), [
     field("Steps", steps.length ? `${steps.length} package step(s)` : "Needs source review", steps.length ? "implementation" : "unresolved"),
     field("Inputs", first(task, "inputs", "input") ?? "Needs source review", first(task, "inputs", "input") ? "implementation" : "unresolved"),
+    ...steps.map((step, index) => field(`Step ${index + 1} source definition`, step)),
   ], steps.length ? `${steps.length} steps${subtitleFrom(steps[0]) ? ` · ${subtitleFrom(steps[0])}` : ""}` : "Procedure needs source review");
   add("records", "record", "Session records", readable(first(task, "outputs", "output", "session_log"), 12000), [
     field("Outputs", first(task, "outputs", "output", "session_log") ?? "Needs source review", first(task, "outputs", "output", "session_log") ? "implementation" : "unresolved"),
@@ -294,9 +334,15 @@ function fallbackModel(files: PackageFile[], document: StudioDocument): StudySch
   }).filter(Boolean);
   const reportedResults = firstPresent(first(overview, "reported_results", "results"), first(specification, "reported_results", "results"),
     first(metadata, "reported_results", "results"), findingResults);
-  add("results", "result", "Reported results", readable(reportedResults, 12000) || "Not reported in this package",
-    present(reportedResults) ? [field("Reported observations or statistics (verify against paper)", reportedResults)] : [],
-    subtitleFrom(reportedResults) || "Not reported in this package");
+  const groundTruthResults = groundTruthObservations(groundTruth);
+  const resultFields = [
+    ...(present(reportedResults) ? [field("Reported observations or statistics (verify against paper)", reportedResults)] : []),
+    ...groundTruthResults.map((result, index) => field(
+      `${text(result.study_id) || "Study"} · ${text(result.finding_id) || "Finding"} · observation ${index + 1}`, result)),
+  ];
+  const results = firstPresent(reportedResults, groundTruthResults);
+  add("results", "result", "Reported results", readable(results, 12000) || "Not reported in this package", resultFields,
+    subtitleFrom(reportedResults) || (groundTruthResults.length ? `${groundTruthResults.length} package observations · verify against paper` : "Not reported in this package"));
   if (checklist.length) add("review", "analysis", "Researcher review needed", "Questions and missing information from audit/missing_information.json.",
     checklist.slice(0, 100).map((raw, index) => {
       const item = record(raw);
@@ -319,6 +365,7 @@ export function adaptPipelinePackage(files: PackageFile[], document: StudioDocum
   const { artifacts, omitted } = packageArtifacts(files, document);
   const usedSidecar = !!validatedSidecar;
   let summary = `HumanStudy-Bench package: ${files.length} file(s); ${artifacts.length} available in Studio. ${usedSidecar ? "Validated studio-model.json sidecar used." : "Package mapped into a reviewable model; source evidence and missing choices require researcher review."}`;
+  if (!usedSidecar && getFile(files, "studio-model.json")) summary += " The supplied studio-model.json did not pass validation; fallback mapping was used. Review the original sidecar in the package.";
   if (omitted.length) summary += ` Studio omitted ${omitted.length} file(s) because of format, validity, count, or size limits: ${omitted.join(", ")}. The complete package ZIP remains available.`;
   return { model, artifacts, summary: clipped(summary, 4000) };
 }

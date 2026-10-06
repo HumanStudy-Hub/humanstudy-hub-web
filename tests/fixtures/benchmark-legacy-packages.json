@@ -1,0 +1,1135 @@
+{
+  "repository": "HumanStudy-Hub/HumanStudy-Bench",
+  "commit": "50086798df2606ceb0c651b58e4d5ddef523b2b5",
+  "cases": [
+    {
+      "id": "study_005",
+      "files": [
+        {
+          "path": "studies/study_005/source/specification.json",
+          "value": {
+            "study_id": "knobe",
+            "title": "Intentional Action and Side-Effects in Ordinary Language",
+            "participants": {
+              "n": 120,
+              "population": "People spending time in a Manhattan public park.",
+              "recruitment_source": "Manhattan public park",
+              "demographics": {},
+              "by_sub_study": {
+                "Experiment 1": {
+                  "n": 78,
+                  "population": "People spending time in a Manhattan public park."
+                },
+                "Experiment 2": {
+                  "n": 42,
+                  "population": "People spending time in a Manhattan public park."
+                }
+              }
+            },
+            "design": {
+              "type": "Between-Subjects",
+              "factors": [
+                {
+                  "name": "Side-effect condition",
+                  "levels": [
+                    "harm",
+                    "help"
+                  ],
+                  "type": "Between-Subjects"
+                },
+                {
+                  "name": "Vignette context",
+                  "levels": [
+                    "Corporate Chairman",
+                    "Military Lieutenant"
+                  ],
+                  "type": "Between-Subjects"
+                }
+              ]
+            },
+            "procedure": {
+              "steps": [
+                "Participants are randomly assigned to either a 'harm condition' or a 'help condition'.",
+                "Participants read a vignette (either about a corporate chairman or a military lieutenant) implementing a plan with a known side-effect that the agent claims not to care about.",
+                "Participants assess how much blame (in the harm condition) or praise (in the help condition) the agent deserves on a scale from 0 to 6.",
+                "Participants answer a categorical (Yes/No) question regarding whether the agent brought about the side-effect intentionally."
+              ]
+            }
+          }
+        },
+        {
+          "path": "studies/study_005/source/ground_truth.json",
+          "value": {
+            "study_id": "knobe",
+            "title": "Intentional Action and Side-Effects in Ordinary Language",
+            "authors": [
+              "Joshua Knobe"
+            ],
+            "year": null,
+            "studies": [
+              {
+                "study_id": "Experiment 1",
+                "study_name": "Corporate Chairman Vignette",
+                "findings": [
+                  {
+                    "finding_id": "Finding 1",
+                    "main_hypothesis": "A person’s intuitions as to whether or not a given side-effect was produced 'intentionally' can be influenced by that person’s attitude toward the specific side-effect in question (specifically whether it is good or bad).",
+                    "statistical_tests": [
+                      {
+                        "test_name": "Chi-square test",
+                        "statistical_hypothesis": "Intentionality judgments differ between harm and help conditions.",
+                        "reported_statistics": "chi2(1, N=78)=27.2, p=0.001",
+                        "significance_level": 0.05,
+                        "expected_direction": "positive"
+                      }
+                    ],
+                    "original_data_points": {
+                      "description": "Percentage of participants judging the side-effect as intentional.",
+                      "data": {
+                        "Harm condition": {
+                          "percentage": 82.0,
+                          "n": 39
+                        },
+                        "Help condition": {
+                          "percentage": 23.0,
+                          "n": 39
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "finding_id": "Finding 2",
+                    "main_hypothesis": "People are considerably more willing to blame the agent for bad side-effects than to praise the agent for good side-effects.",
+                    "statistical_tests": [
+                      {
+                        "test_name": "t-test (Combined with Exp 2)",
+                        "statistical_hypothesis": "Mean blame in harm condition > Mean praise in help condition.",
+                        "reported_statistics": "t(120)=8.4, p=0.001",
+                        "significance_level": 0.05,
+                        "expected_direction": "positive"
+                      }
+                    ],
+                    "original_data_points": {
+                      "description": "Mean praise/blame scores on a 0-6 scale.",
+                      "data": {
+                        "harm_condition_blame": {
+                          "mean": 4.8
+                        },
+                        "help_condition_praise": {
+                          "mean": 1.4
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "study_id": "Experiment 2",
+                "study_name": "Military Lieutenant Vignette",
+                "findings": [
+                  {
+                    "finding_id": "Finding 1",
+                    "main_hypothesis": "The effect observed in Experiment 1 is general and not specific to corporations or environmental damage.",
+                    "statistical_tests": [
+                      {
+                        "test_name": "Chi-square test",
+                        "statistical_hypothesis": "Intentionality judgments differ between harm and help conditions in a military context.",
+                        "reported_statistics": "chi2(1, N=42)=9.5, p=0.01",
+                        "significance_level": 0.05,
+                        "expected_direction": "positive"
+                      }
+                    ],
+                    "original_data_points": {
+                      "description": "Percentage of participants judging the side-effect as intentional.",
+                      "data": {
+                        "Harm condition": {
+                          "percentage": 77.0,
+                          "n": 21
+                        },
+                        "Help condition": {
+                          "percentage": 30.0,
+                          "n": 21
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "finding_id": "Finding 3",
+                    "main_hypothesis": "The asymmetry in praise and blame assignment may be at the root of the asymmetry in the application of the concept intentional.",
+                    "statistical_tests": [
+                      {
+                        "test_name": "Correlation (Combined with Exp 1)",
+                        "statistical_hypothesis": "Praise/blame scores are correlated with intentionality judgments.",
+                        "reported_statistics": "r(120)=0.53, p=0.001",
+                        "significance_level": 0.05,
+                        "expected_direction": "positive"
+                      }
+                    ],
+                    "original_data_points": {
+                      "description": "Correlation between moral judgment and intentionality judgment across both experiments.",
+                      "data": {
+                        "total_sample": {
+                          "n": 120,
+                          "r": 0.53
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ],
+            "overall_original_results": {
+              "description": "Summary of intentionality judgments and moral evaluations across two experiments.",
+              "data_tables": [
+                {
+                  "table_name": "Intentionality Judgments",
+                  "headers": [
+                    "Experiment",
+                    "Condition",
+                    "Percentage Intentional",
+                    "N (Approx)"
+                  ],
+                  "rows": [
+                    [
+                      "Exp 1",
+                      "Harm",
+                      "82%",
+                      "39"
+                    ],
+                    [
+                      "Exp 1",
+                      "Help",
+                      "23%",
+                      "39"
+                    ],
+                    [
+                      "Exp 2",
+                      "Harm",
+                      "77%",
+                      "21"
+                    ],
+                    [
+                      "Exp 2",
+                      "Help",
+                      "30%",
+                      "21"
+                    ]
+                  ]
+                },
+                {
+                  "table_name": "Moral Responsibility (Combined)",
+                  "headers": [
+                    "Condition",
+                    "Mean Score (0-6)"
+                  ],
+                  "rows": [
+                    [
+                      "Harm (Blame)",
+                      "4.8"
+                    ],
+                    [
+                      "Help (Praise)",
+                      "1.4"
+                    ]
+                  ]
+                }
+              ],
+              "all_raw_data": {
+                "exp1_chi2": 27.2,
+                "exp1_p": 0.001,
+                "exp2_chi2": 9.5,
+                "exp2_p": 0.01,
+                "combined_t": 8.4,
+                "combined_r": 0.53
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "study_010",
+      "files": [
+        {
+          "path": "studies/study_010/source/specification.json",
+          "value": {
+            "study_id": "prisoner",
+            "title": "Thinking through Uncertainty: Nonconsequential Reasoning and Choice",
+            "participants": {
+              "n": 80,
+              "population": "Princeton undergraduates",
+              "recruitment_source": null,
+              "demographics": {},
+              "by_sub_study": {
+                "Experiment 1": {
+                  "n": 80,
+                  "population": "Princeton undergraduates"
+                },
+                "Experiment 2": {
+                  "n": 40,
+                  "population": "Princeton undergraduates"
+                },
+                "Experiment 3": {
+                  "n": 0,
+                  "population": "Princeton undergraduates"
+                }
+              }
+            },
+            "design": {
+              "type": "Mixed",
+              "factors": [
+                {
+                  "name": "Opponent Strategy",
+                  "levels": [
+                    "Unknown",
+                    "Known to have competed",
+                    "Known to have cooperated"
+                  ],
+                  "type": "Within-Subjects"
+                }
+              ]
+            },
+            "procedure": {
+              "steps": [
+                "Subjects played a series of 40 one-shot games, including Prisoner's Dilemma (PD) games against different opponents.",
+                "PD games were presented in triads consisting of three versions: opponent strategy unknown, opponent known to have competed, and opponent known to have cooperated.",
+                "PD games were interspersed with other two-person games to prevent the development of standard strategies.",
+                "Subjects participated in a version of Newcomb's problem involving two boxes (A and B) and a computer program that predicted their choice with 92% success.",
+                "Subjects chose between taking both Box A and Box B or taking only Box B.",
+                "A separate group of subjects played PD games and were offered the opportunity to pay a small fee to learn the opponent's decision before making their own choice."
+              ]
+            }
+          }
+        },
+        {
+          "path": "studies/study_010/source/ground_truth.json",
+          "value": {
+            "study_id": "prisoner",
+            "title": "Thinking through Uncertainty: Nonconsequential Reasoning and Choice",
+            "authors": [
+              "Eldar Shafir",
+              "Amos Tversky"
+            ],
+            "year": 1992,
+            "studies": [
+              {
+                "study_id": "Experiment 1",
+                "study_name": "One-shot Prisoner's Dilemma Triads",
+                "findings": [
+                  {
+                    "finding_id": "F1",
+                    "main_hypothesis": "People exhibit a greater rate of cooperation in the disjunctive condition (when the other player's strategy is not known) than when the other player's strategy is known to be either 'compete' or 'cooperate'.",
+                    "statistical_tests": [
+                      {
+                        "test_name": "Chi-square or proportion test (implied)",
+                        "statistical_hypothesis": "Cooperation Rate (Unknown) ≠ Cooperation Rate (Known Cooperate) ≠ Cooperation Rate (Known Compete)",
+                        "reported_statistics": "p < .001",
+                        "significance_level": 0.05,
+                        "expected_direction": "positive"
+                      },
+                      {
+                        "test_name": "Descriptive frequency analysis",
+                        "statistical_hypothesis": "Frequency of Disjunction Pattern (Compete if Known, Cooperate if Unknown) > 0",
+                        "reported_statistics": "25% (113/444)",
+                        "significance_level": null,
+                        "expected_direction": "positive"
+                      }
+                    ],
+                    "original_data_points": {
+                      "description": "Cooperation rates across 444 triads of Prisoner's Dilemma games played by 80 subjects.",
+                      "data": {
+                        "Other Player Competes": {
+                          "percentage": 3.0,
+                          "count": 14,
+                          "n": 444
+                        },
+                        "Other Player Cooperates": {
+                          "percentage": 16.0,
+                          "count": 73,
+                          "n": 444
+                        },
+                        "Other Player Strategy Unknown": {
+                          "percentage": 37.0,
+                          "count": 164,
+                          "n": 444
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "study_id": "Experiment 2",
+                "study_name": "Newcomb's Problem (Computer Program Version)",
+                "findings": [
+                  {
+                    "finding_id": "F2",
+                    "main_hypothesis": "A majority of subjects will choose a single box (Box B) in a version of Newcomb's problem that lacks supernatural elements, despite the dominance of taking both boxes.",
+                    "statistical_tests": [
+                      {
+                        "test_name": "Descriptive percentage",
+                        "statistical_hypothesis": "Percentage choosing Box B only > 50%",
+                        "reported_statistics": "65%",
+                        "significance_level": null,
+                        "expected_direction": "positive"
+                      }
+                    ],
+                    "original_data_points": {
+                      "description": "Choices in a computer-simulated Newcomb's Problem.",
+                      "data": {
+                        "Both boxes": {
+                          "percentage": 35.0,
+                          "count": 14,
+                          "n": 40
+                        },
+                        "Box B only": {
+                          "percentage": 65.0,
+                          "count": 26,
+                          "n": 40
+                        }
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "study_id": "Experiment 3",
+                "study_name": "Prisoner's Dilemma with Information Seeking",
+                "findings": [
+                  {
+                    "finding_id": "F3",
+                    "main_hypothesis": "People will pay to obtain information that they do not use to change their decision, seeking it to clarify reasons rather than to inform choice.",
+                    "statistical_tests": [
+                      {
+                        "test_name": "Descriptive percentage",
+                        "statistical_hypothesis": "Percentage of subjects paying for information > 0%",
+                        "reported_statistics": "81%",
+                        "significance_level": null,
+                        "expected_direction": "positive"
+                      }
+                    ],
+                    "original_data_points": {
+                      "description": "Information seeking behavior and subsequent choice in PD games.",
+                      "data": {
+                        "Chose to pay for information": {
+                          "percentage": 81.0
+                        },
+                        "Choice after seeing information": {
+                          "observation": "Great majority chose to compete regardless of opponent's decision"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ],
+            "overall_original_results": {
+              "description": "A comprehensive repository of numerical findings from the PD triads, Newcomb's problem, and information-seeking tasks.",
+              "data_tables": [
+                {
+                  "table_name": "Experiment 1: Cooperation Rates in PD Triads",
+                  "headers": [
+                    "Condition",
+                    "Cooperation Rate (%)",
+                    "Count (n/444)"
+                  ],
+                  "rows": [
+                    [
+                      "Other Player Competes",
+                      "3%",
+                      "14/444"
+                    ],
+                    [
+                      "Other Player Cooperates",
+                      "16%",
+                      "73/444"
+                    ],
+                    [
+                      "Other Player Strategy Unknown",
+                      "37%",
+                      "164/444"
+                    ]
+                  ]
+                },
+                {
+                  "table_name": "Experiment 2: Choices in Newcomb's Problem",
+                  "headers": [
+                    "Choice",
+                    "Percentage",
+                    "Count (n/40)"
+                  ],
+                  "rows": [
+                    [
+                      "Both boxes",
+                      "35%",
+                      "14/40"
+                    ],
+                    [
+                      "Box B only",
+                      "65%",
+                      "26/40"
+                    ]
+                  ]
+                },
+                {
+                  "table_name": "Experiment 3: Information Seeking",
+                  "headers": [
+                    "Behavior",
+                    "Result"
+                  ],
+                  "rows": [
+                    [
+                      "Paid for information",
+                      "81%"
+                    ],
+                    [
+                      "Decision after info",
+                      "Majority competed regardless of info"
+                    ]
+                  ]
+                }
+              ],
+              "all_raw_data": {
+                "exp_1_triad_patterns": {
+                  "disjunction_effect_pattern": "25% (113/444)"
+                },
+                "exp_1_sample_size": {
+                  "total_subjects": 80,
+                  "total_triads": 444
+                },
+                "exp_2_sample_size": {
+                  "total_subjects": 40
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "study_015",
+      "files": [
+        {
+          "path": "studies/study_015/source/specification.json",
+          "value": {
+            "study_id": "stoffel_2023_decoy_effect_survey_participation",
+            "title": "Testing the decoy effect to improve online survey participation: Evidence from a field experiment",
+            "participants": {
+              "preliminary_questionnaire": {
+                "n": 210,
+                "details": "241 individuals clicked the survey link and started the preliminary questionnaire; 216 completed the questionnaire; 210 provided an email address to be invited to the experiment. Recruited in August 2022 from students registered at a UK-based university through Facebook, WhatsApp, and WeChat.",
+                "demographics_reported": {
+                  "age_20_24": 56,
+                  "age_25_29": 107,
+                  "age_30_35": 47,
+                  "male": 110,
+                  "female": 100,
+                  "white": 120,
+                  "asian": 50,
+                  "black": 36,
+                  "other_ethnicity": 4,
+                  "christian": 151,
+                  "other_religion": 41,
+                  "no_religion": 18,
+                  "bachelors_degree": 109,
+                  "graduate_degree": 101
+                }
+              },
+              "main_experiment": {
+                "n": 203,
+                "details": "210 invitation emails sent; 7 emails bounced (4 from control, 3 from decoy), leaving 203 who received the experimental invitation. Randomized in Microsoft Excel. Sample characteristics among the 203 valid-email participants: age 20-24: 55 (27.1%), 25-29: 102 (50.2%), 30-35: 46 (22.7%); male: 106 (52.2%), female: 97 (47.8%); White: 117 (57.6%), Asian: 48 (23.7%), Black: 34 (16.7%), Other: 4 (2.0%); Christian: 146 (71.9%), Other religion: 18 (8.9%), No religion: 39 (19.2%); Bachelor's degree: 105 (51.7%), Graduate/professional degree: 98 (48.3%).",
+                "control_group": {
+                  "n": 101,
+                  "description": "Received email invitation with only the target survey option"
+                },
+                "decoy_group": {
+                  "n": 102,
+                  "description": "Received email invitation with both target and decoy survey options",
+                  "decoy_target_first": {
+                    "n": 52,
+                    "description": "Decoy group randomized to see target survey first in the comparison table"
+                  },
+                  "decoy_decoy_first": {
+                    "n": 50,
+                    "description": "Decoy group randomized to see decoy survey first in the comparison table"
+                  }
+                }
+              }
+            },
+            "design": {
+              "type": "between-subjects field experiment with nested randomization of option order within the decoy condition",
+              "primary_factor": "Invitation condition (control vs decoy)",
+              "secondary_factor": "Presentation order within decoy condition (target first vs decoy first)",
+              "randomization": "Microsoft Excel random function",
+              "conditions": [
+                {
+                  "condition_id": "control",
+                  "name": "Control",
+                  "description": "Email invitation offers only the target survey (Fear of Coronavirus Questionnaire with 8 closed-ended questions; £2 Amazon voucher after 1 week)"
+                },
+                {
+                  "condition_id": "decoy_target_first",
+                  "name": "Decoy - Target First",
+                  "description": "Email invitation offers both target (closed-ended, £2 after 1 week) and decoy (open-ended, £2 after 4 weeks) surveys in table format with target shown first"
+                },
+                {
+                  "condition_id": "decoy_decoy_first",
+                  "name": "Decoy - Decoy First",
+                  "description": "Email invitation offers both target (closed-ended, £2 after 1 week) and decoy (open-ended, £2 after 4 weeks) surveys in table format with decoy shown first"
+                }
+              ]
+            },
+            "procedure": [
+              {
+                "stage": 1,
+                "name": "Preliminary questionnaire recruitment",
+                "duration": "August 2022",
+                "details": "Students at a UK-based university were contacted via social media (Facebook, WhatsApp, WeChat) with a survey on fear of coronavirus. Participants completed a preliminary questionnaire assessing attitudes toward question type (close-ended vs open-ended) and payment delay (1 week vs 4 weeks) and provided demographics. At the end, participants could provide their email address for an Amazon voucher of £2 to participate in the main survey."
+              },
+              {
+                "stage": 2,
+                "name": "Main field experiment",
+                "duration": "One week after preliminary questionnaire",
+                "details": "Individuals who had provided email addresses were sent an email invitation to the main questionnaire. Participants were randomized in Microsoft Excel into control or decoy conditions. Within the decoy condition, participants were further randomized with equal probability to one of two presentation orders: target first or decoy first. No reminder emails were sent."
+              },
+              {
+                "stage": 3,
+                "name": "Target survey completion (if selected)",
+                "details": "Target survey consisted of: (1) Demographics (4 items); (2) Fear of Coronavirus Questionnaire (8 items, 1-5 Likert scale); (3) Debrief questions (2-3 items depending on condition). Reward: £2 Amazon voucher after 1 week."
+              },
+              {
+                "stage": 4,
+                "name": "Decoy survey completion (if selected in decoy condition)",
+                "details": "Decoy survey consisted of: (1) Demographics (4 items); (2) Two open-ended questions requiring minimum 100 words each on coronavirus attitudes and precautions; (3) Debrief questions (4-5 items). Reward: £2 Amazon voucher after 4 weeks (stated reason: responses need to be coded)."
+              }
+            ],
+            "primary_outcomes": [
+              {
+                "outcome_id": "target_completion",
+                "name": "Completion of target questionnaire",
+                "measurement": "Binary (yes/no)",
+                "unit_of_analysis": "Per participant"
+              }
+            ],
+            "secondary_outcomes": [
+              {
+                "outcome_id": "fcq_score",
+                "name": "Fear of Coronavirus Questionnaire total score",
+                "measurement": "Summed Likert scale (8-40)",
+                "unit_of_analysis": "Per participant (among target completers)"
+              },
+              {
+                "outcome_id": "perceived_influence",
+                "name": "Perceived influence of decoy on decision",
+                "measurement": "Binary/categorical response to debrief question",
+                "unit_of_analysis": "Per target completer in decoy condition"
+              },
+              {
+                "outcome_id": "decoy_completion",
+                "name": "Completion of decoy questionnaire",
+                "measurement": "Binary (yes/no)",
+                "unit_of_analysis": "Per participant (in decoy condition)"
+              }
+            ],
+            "independent_variables": [
+              {
+                "name": "Invitation condition",
+                "levels": [
+                  "Control (target only)",
+                  "Decoy (both options)"
+                ]
+              },
+              {
+                "name": "Presentation order (within decoy condition)",
+                "levels": [
+                  "Target first",
+                  "Decoy first"
+                ]
+              }
+            ],
+            "dependent_variables": [
+              "Completion of target survey (primary)",
+              "Fear of Coronavirus Questionnaire responses (secondary)",
+              "Demographic composition of completers vs non-completers (secondary)",
+              "Self-reported influence of decoy on participation decision (secondary)"
+            ]
+          }
+        },
+        {
+          "path": "studies/study_015/source/ground_truth.json",
+          "value": {
+            "study_id": "stoffel_2023_decoy_effect_survey_participation",
+            "title": "Testing the decoy effect to improve online survey participation: Evidence from a field experiment",
+            "authors": [
+              "Sandro T. Stoffel",
+              "Yining Sun",
+              "Yasemin Hirst",
+              "Christian von Wagner",
+              "Ivo Vlaev"
+            ],
+            "year": 2023,
+            "preliminary_study_findings": [
+              {
+                "finding_id": "F1_prelim",
+                "description": "Respondents generally preferred close-ended questions over open-ended questions.",
+                "hypothesis": "Open-ended questions would be perceived as less attractive than close-ended questions and therefore could function as an inferior decoy attribute.",
+                "statistical_tests": [],
+                "raw_outcomes": "Among N=210 preliminary questionnaire respondents: close-ended questions 61.4% (n~129), open-ended questions 7.9% (n~17), indifferent 30.7% (n~64). Exact counts NOT PROVIDED in paper."
+              },
+              {
+                "finding_id": "F2_prelim",
+                "description": "Most respondents indicated they would not participate if remuneration were received only after four weeks.",
+                "hypothesis": "Delayed remuneration would be perceived as less attractive than sooner remuneration and therefore could function as an inferior decoy attribute.",
+                "statistical_tests": [],
+                "raw_outcomes": "Among N=210 preliminary questionnaire respondents: Definitely not 1.0% (n~2), Probably not 85.1% (n~179), Probably yes 1.5% (n~3), Definitely yes 12.4% (n~26). Overall 86.1% would not respond if remuneration in four weeks."
+              }
+            ],
+            "main_study": {
+              "study_id": "main_field_experiment",
+              "study_name": "Field experiment on the decoy effect in survey participation",
+              "period": "One week after preliminary questionnaire (August 2022)",
+              "n_randomized": 210,
+              "n_with_valid_email": 203,
+              "findings": [
+                {
+                  "finding_id": "F1",
+                  "description": "Randomization produced similar groups on most sociodemographic variables, except ethnicity.",
+                  "hypothesis": "No explicit hypothesis; balance checks were used to compare control and decoy groups.",
+                  "statistical_tests": [
+                    {
+                      "test_name": "Chi-square test of independence",
+                      "test_id": "balance_age",
+                      "variable": "Age",
+                      "statistic": "χ² (reported as p-value)",
+                      "p_value": "p = 0.165",
+                      "raw_data": {
+                        "control_n": 101,
+                        "control_age_20_24": 33,
+                        "control_age_25_29": 45,
+                        "control_age_30_35": 23,
+                        "decoy_n": 102,
+                        "decoy_age_20_24": 22,
+                        "decoy_age_25_29": 57,
+                        "decoy_age_30_35": 23
+                      },
+                      "claim": "No age difference between control and decoy groups.",
+                      "location": "Main paper Table 1"
+                    },
+                    {
+                      "test_name": "Chi-square test of independence",
+                      "test_id": "balance_gender",
+                      "variable": "Gender",
+                      "statistic": "χ² (reported as p-value)",
+                      "p_value": "p = 0.441",
+                      "raw_data": {
+                        "control_male": 50,
+                        "control_female": 51,
+                        "decoy_male": 56,
+                        "decoy_female": 46
+                      },
+                      "claim": "No gender difference between control and decoy groups.",
+                      "location": "Main paper Table 1"
+                    },
+                    {
+                      "test_name": "Fisher's exact test",
+                      "test_id": "balance_ethnicity",
+                      "variable": "Ethnicity",
+                      "statistic": "Fisher exact p-value",
+                      "p_value": "p = 0.004",
+                      "raw_data": {
+                        "control_white": 48,
+                        "control_asian": 25,
+                        "control_black": 25,
+                        "control_other": 3,
+                        "decoy_white": 69,
+                        "decoy_asian": 23,
+                        "decoy_black": 9,
+                        "decoy_other": 1
+                      },
+                      "claim": "Ethnicity differed between conditions; the decoy condition contained more White participants (67.7% vs 47.5%).",
+                      "location": "Main paper Table 1"
+                    },
+                    {
+                      "test_name": "Chi-square test of independence",
+                      "test_id": "balance_religion",
+                      "variable": "Religion",
+                      "statistic": "χ² (reported as p-value)",
+                      "p_value": "p = 0.063",
+                      "raw_data": {
+                        "control_christian": 67,
+                        "control_other_religion": 8,
+                        "control_no_religion": 26,
+                        "decoy_christian": 79,
+                        "decoy_other_religion": 10,
+                        "decoy_no_religion": 13
+                      },
+                      "claim": "No religion difference between control and decoy groups at conventional significance levels.",
+                      "location": "Main paper Table 1"
+                    },
+                    {
+                      "test_name": "Chi-square test of independence",
+                      "test_id": "balance_education",
+                      "variable": "Education",
+                      "statistic": "χ² (reported as p-value)",
+                      "p_value": "p = 0.233",
+                      "raw_data": {
+                        "control_bachelors": 48,
+                        "control_graduate": 53,
+                        "decoy_bachelors": 57,
+                        "decoy_graduate": 45
+                      },
+                      "claim": "No education difference between control and decoy groups.",
+                      "location": "Main paper Table 1"
+                    }
+                  ]
+                },
+                {
+                  "finding_id": "F2",
+                  "description": "The presence of the decoy option increased completion of the target survey.",
+                  "hypothesis": "Among those likely to take part in a survey, the presence of a decoy version of the same survey on the invitation will increase the chances of completing the target version.",
+                  "statistical_tests": [
+                    {
+                      "test_name": "Chi-square test of independence",
+                      "test_id": "primary_outcome_unadjusted",
+                      "variable": "Target survey completion",
+                      "statistic": "χ²(1, N = 203) = 11.08",
+                      "p_value": "p < 0.001",
+                      "raw_data": {
+                        "total_n": 203,
+                        "control_completed": 33,
+                        "control_n": 101,
+                        "control_completion_rate": 0.327,
+                        "decoy_completed": 57,
+                        "decoy_n": 102,
+                        "decoy_completion_rate": 0.559,
+                        "note": "Table 2 / Table S3 reports decoy as 59.8%, but text, flow diagram, and participant-level data imply 57/102 = 55.9%"
+                      },
+                      "claim": "Target-survey completion was significantly higher in the decoy condition (55.9%) than in the control condition (32.7%).",
+                      "location": "Main paper Results section 3.2.2 and Fig. 3"
+                    },
+                    {
+                      "test_name": "Binary logistic regression",
+                      "test_id": "primary_unadjusted_OR",
+                      "model": "Model 1 - unadjusted",
+                      "variable": "Decoy condition (vs control)",
+                      "statistic": "OR = 2.610",
+                      "confidence_interval": "95% CI 1.475-4.618",
+                      "p_value": "p < 0.01",
+                      "raw_data": {
+                        "overall_completion": 0.443,
+                        "control_reference": 0.327,
+                        "decoy_row_reported": 0.598,
+                        "note": "As reported in Table 2, Model 1; Supplementary Table S3"
+                      },
+                      "claim": "In the unadjusted model, the decoy condition significantly increased the odds of completing the target survey relative to control.",
+                      "location": "Main paper Table 2, Model 1; Supplementary Table S3"
+                    },
+                    {
+                      "test_name": "Binary logistic regression",
+                      "test_id": "primary_adjusted_aOR",
+                      "model": "Model 1 - adjusted",
+                      "variable": "Decoy condition (vs control)",
+                      "statistic": "aOR = 2.584",
+                      "confidence_interval": "95% CI 1.415-4.718",
+                      "p_value": "p < 0.01",
+                      "covariates": [
+                        "Age",
+                        "Gender",
+                        "Ethnicity",
+                        "Religion",
+                        "Education"
+                      ],
+                      "claim": "The decoy effect on target-survey completion remained statistically significant after adjustment for sociodemographic variables.",
+                      "location": "Main paper Table 2, Model 1; Supplementary Table S3"
+                    }
+                  ]
+                },
+                {
+                  "finding_id": "F3",
+                  "description": "A strong order effect was observed within the decoy condition: the decoy increased participation only when the target survey was presented first.",
+                  "hypothesis": "Presentation order may influence the decoy effect because responses can favor options appearing earlier in a list.",
+                  "statistical_tests": [
+                    {
+                      "test_name": "Binary logistic regression",
+                      "test_id": "order_target_first_unadjusted",
+                      "model": "Model 2 - unadjusted, target first vs control",
+                      "variable": "Decoy-target-first condition (vs control)",
+                      "statistic": "OR = 9.845",
+                      "confidence_interval": "95% CI 4.293-22.580",
+                      "p_value": "p < 0.01",
+                      "raw_data": {
+                        "control_completed": 33,
+                        "control_n": 101,
+                        "control_completion_rate": 0.327,
+                        "decoy_target_first_completed": 43,
+                        "decoy_target_first_n": 52,
+                        "decoy_target_first_completion_rate": 0.827
+                      },
+                      "claim": "Showing the target first greatly increased target-survey completion (82.7%) relative to control (32.7%).",
+                      "location": "Main paper Table 2, Model 2; Supplementary Table S4"
+                    },
+                    {
+                      "test_name": "Binary logistic regression",
+                      "test_id": "order_target_first_adjusted",
+                      "model": "Model 2 - adjusted, target first vs control",
+                      "variable": "Decoy-target-first condition (vs control)",
+                      "statistic": "aOR = 11.177",
+                      "confidence_interval": "95% CI 4.571-27.330",
+                      "p_value": "p < 0.01",
+                      "covariates": [
+                        "Age",
+                        "Gender",
+                        "Ethnicity",
+                        "Religion",
+                        "Education"
+                      ],
+                      "claim": "The target-first order effect remained large and significant after adjustment for sociodemographics.",
+                      "location": "Main paper Table 2, Model 2; Supplementary Table S4"
+                    },
+                    {
+                      "test_name": "Binary logistic regression",
+                      "test_id": "order_decoy_first_unadjusted",
+                      "model": "Model 2 - unadjusted, decoy first vs control",
+                      "variable": "Decoy-decoy-first condition (vs control)",
+                      "statistic": "OR = 0.801",
+                      "confidence_interval": "95% CI 0.381-1.687",
+                      "p_value": "NOT PROVIDED",
+                      "raw_data": {
+                        "control_completed": 33,
+                        "control_n": 101,
+                        "control_completion_rate": 0.327,
+                        "decoy_decoy_first_completed": 14,
+                        "decoy_decoy_first_n": 50,
+                        "decoy_decoy_first_completion_rate": 0.28
+                      },
+                      "claim": "There was no evidence that showing the decoy first increased target-survey completion (28.0%) relative to control (32.7%).",
+                      "location": "Main paper Table 2, Model 2; Supplementary Table S4"
+                    },
+                    {
+                      "test_name": "Binary logistic regression",
+                      "test_id": "order_decoy_first_adjusted",
+                      "model": "Model 2 - adjusted, decoy first vs control",
+                      "variable": "Decoy-decoy-first condition (vs control)",
+                      "statistic": "aOR = 0.746",
+                      "confidence_interval": "95% CI 0.341-1.631",
+                      "p_value": "NOT PROVIDED",
+                      "covariates": [
+                        "Age",
+                        "Gender",
+                        "Ethnicity",
+                        "Religion",
+                        "Education"
+                      ],
+                      "claim": "There was no decoy effect when the decoy was shown before the target, even after adjustment.",
+                      "location": "Main paper Results section 3.2.2 and Table 2; Supplementary Table S4"
+                    }
+                  ]
+                },
+                {
+                  "finding_id": "F4",
+                  "description": "Most target-survey completers in the decoy condition reported that the decoy had at least somewhat influenced their decision to participate.",
+                  "hypothesis": "The decoy option should be perceived as influencing participation decisions.",
+                  "statistical_tests": [],
+                  "raw_outcomes": "Among the 57 individuals in the decoy condition who completed the target survey, 33/57 (57.9%) at least somewhat agreed that the decoy survey had influenced their decision to participate."
+                },
+                {
+                  "finding_id": "F5",
+                  "description": "There was little evidence for adverse question-response behavior or non-response bias, except for ethnicity differences.",
+                  "hypothesis": "The decoy should increase participation without negatively influencing question response behavior or inducing substantial non-response bias.",
+                  "statistical_tests": [
+                    {
+                      "test_name": "Fisher's exact test",
+                      "test_id": "completers_ethnicity",
+                      "variable": "Ethnicity among target completers",
+                      "statistic": "Fisher exact p-value",
+                      "p_value": "p = 0.006",
+                      "raw_data": {
+                        "control_completers": 33,
+                        "control_white": 12,
+                        "control_asian": 14,
+                        "control_black": 7,
+                        "control_other": 0,
+                        "decoy_completers": 57,
+                        "decoy_white": 40,
+                        "decoy_asian": 10,
+                        "decoy_black": 6,
+                        "decoy_other": 1
+                      },
+                      "claim": "Among target-survey completers, ethnicity differed between conditions: more White participants in the decoy condition (70.2% vs 36.4%).",
+                      "location": "Main paper section 3.2.3; Supplementary Table S5"
+                    },
+                    {
+                      "test_name": "Chi-square test",
+                      "test_id": "completers_age",
+                      "variable": "Age among target completers",
+                      "statistic": "χ²",
+                      "p_value": "p = 0.122",
+                      "raw_data": {
+                        "control_completers": 33,
+                        "control_age_20_24": 13,
+                        "control_age_25_29": 13,
+                        "control_age_30_35": 7,
+                        "decoy_completers": 57,
+                        "decoy_age_20_24": 12,
+                        "decoy_age_25_29": 34,
+                        "decoy_age_30_35": 11
+                      },
+                      "claim": "No age difference among target completers across conditions.",
+                      "location": "Supplementary Table S5"
+                    },
+                    {
+                      "test_name": "Chi-square test",
+                      "test_id": "completers_gender",
+                      "variable": "Gender among target completers",
+                      "statistic": "χ²",
+                      "p_value": "p = 0.589",
+                      "raw_data": {
+                        "control_male": 16,
+                        "control_female": 17,
+                        "decoy_male": 31,
+                        "decoy_female": 26
+                      },
+                      "claim": "No gender difference among target completers across conditions.",
+                      "location": "Supplementary Table S5"
+                    },
+                    {
+                      "test_name": "Chi-square test",
+                      "test_id": "completers_religion",
+                      "variable": "Religion among target completers",
+                      "statistic": "χ²",
+                      "p_value": "p = 0.329",
+                      "raw_data": {
+                        "control_christian": 20,
+                        "control_non_christian": 5,
+                        "control_no_religion": 8,
+                        "decoy_christian": 43,
+                        "decoy_non_christian": 5,
+                        "decoy_no_religion": 9
+                      },
+                      "claim": "No religion difference among target completers across conditions.",
+                      "location": "Supplementary Table S5"
+                    },
+                    {
+                      "test_name": "Chi-square test",
+                      "test_id": "completers_education",
+                      "variable": "Education among target completers",
+                      "statistic": "χ²",
+                      "p_value": "p = 0.310",
+                      "raw_data": {
+                        "control_bachelors": 21,
+                        "control_graduate": 12,
+                        "decoy_bachelors": 30,
+                        "decoy_graduate": 27
+                      },
+                      "claim": "No education difference among target completers across conditions.",
+                      "location": "Supplementary Table S5"
+                    },
+                    {
+                      "test_name": "Wilcoxon-Mann-Whitney test",
+                      "test_id": "fcq_score_distribution",
+                      "variable": "FCQ total score (8-40) among target completers",
+                      "statistic": "z = 0.488",
+                      "p_value": "p = 0.629",
+                      "raw_data": {
+                        "control_completers": 33,
+                        "decoy_completers": 57,
+                        "note": "Exact group means and SDs NOT PROVIDED"
+                      },
+                      "claim": "There was no statistically significant difference in FCQ score distributions across the two experimental conditions.",
+                      "location": "Main paper section 3.2.3; Supplementary Fig. S4"
+                    },
+                    {
+                      "test_name": "Chi-square test",
+                      "test_id": "nonresponse_bias_age",
+                      "variable": "Age comparing completers vs non-completers",
+                      "statistic": "χ²",
+                      "p_value": "p = 0.719",
+                      "raw_data": {
+                        "completers_20_24": 25,
+                        "completers_25_29": 47,
+                        "completers_30_35": 18,
+                        "total_completers": 90,
+                        "non_completers_20_24": 30,
+                        "non_completers_25_29": 55,
+                        "non_completers_30_35": 28,
+                        "total_non_completers": 113
+                      },
+                      "claim": "No age difference between completers and non-completers.",
+                      "location": "Supplementary Table S6"
+                    },
+                    {
+                      "test_name": "Chi-square test",
+                      "test_id": "nonresponse_bias_gender",
+                      "variable": "Gender comparing completers vs non-completers",
+                      "statistic": "χ²",
+                      "p_value": "p = 0.999",
+                      "raw_data": {
+                        "completers_male": 47,
+                        "completers_female": 43,
+                        "non_completers_male": 59,
+                        "non_completers_female": 54
+                      },
+                      "claim": "No gender difference between completers and non-completers.",
+                      "location": "Supplementary Table S6"
+                    },
+                    {
+                      "test_name": "Fisher's exact test",
+                      "test_id": "nonresponse_bias_ethnicity",
+                      "variable": "Ethnicity comparing completers vs non-completers",
+                      "statistic": "Fisher exact p-value",
+                      "p_value": "p = 0.661",
+                      "raw_data": {
+                        "completers_white": 52,
+                        "completers_asian": 24,
+                        "completers_black": 13,
+                        "completers_other": 1,
+                        "non_completers_white": 65,
+                        "non_completers_asian": 24,
+                        "non_completers_black": 21,
+                        "non_completers_other": 3
+                      },
+                      "claim": "No overall ethnicity difference between completers and non-completers.",
+                      "location": "Supplementary Table S6"
+                    },
+                    {
+                      "test_name": "Chi-square test",
+                      "test_id": "nonresponse_bias_religion",
+                      "variable": "Religion comparing completers vs non-completers",
+                      "statistic": "χ²",
+                      "p_value": "p = 0.603",
+                      "raw_data": {
+                        "completers_christian": 63,
+                        "completers_non_christian": 10,
+                        "completers_no_religion": 17,
+                        "non_completers_christian": 83,
+                        "non_completers_non_christian": 8,
+                        "non_completers_no_religion": 22
+                      },
+                      "claim": "No religion difference between completers and non-completers.",
+                      "location": "Supplementary Table S6"
+                    },
+                    {
+                      "test_name": "Chi-square test",
+                      "test_id": "nonresponse_bias_education",
+                      "variable": "Education comparing completers vs non-completers",
+                      "statistic": "χ²",
+                      "p_value": "p = 0.209",
+                      "raw_data": {
+                        "completers_bachelors": 51,
+                        "completers_graduate": 39,
+                        "non_completers_bachelors": 54,
+                        "non_completers_graduate": 59
+                      },
+                      "claim": "No education difference between completers and non-completers.",
+                      "location": "Supplementary Table S6"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
