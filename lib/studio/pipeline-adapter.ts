@@ -41,6 +41,18 @@ function cleanEvidence(input: Evidence, document: StudioDocument): Evidence {
     rects: [], quote: quote && page?.text.includes(quote) ? quote : "" };
 }
 
+/** Keep the proposed layout while stripping source claims that cannot be verified
+ * against the attached, extracted page text. Rectangles have no text-to-region
+ * proof in the current source format, so they cannot be certified here. */
+export function groundStudioModelEvidence(model: StudySchema, document: StudioDocument): StudySchema {
+  const grounded = { ...model,
+    entities: model.entities.map(entity => ({ ...entity, evidence: cleanEvidence(entity.evidence, document) })),
+    procedure: model.procedure.map(step => ({ ...step, evidence: cleanEvidence(step.evidence, document) })),
+    reviewIssues: model.reviewIssues?.map(issue => ({ ...issue, ...(issue.evidence ? { evidence: cleanEvidence(issue.evidence, document) } : {}) })),
+  };
+  return validateStudyModel(grounded, { sources: document.sources });
+}
+
 function sidecarModel(files: PackageFile[], document: StudioDocument): StudySchema | undefined {
   const file = getFile(files, "studio-model.json");
   if (!file) return undefined;
@@ -54,12 +66,7 @@ function sidecarModel(files: PackageFile[], document: StudioDocument): StudySche
       return {...variable,unit:variable.unit===null?"":variable.unit,producedBy:references(variable.producedBy),usedBy:references(variable.usedBy)};
     });
     const model = validateStudyModel(raw, { sources: document.sources });
-    const grounded = { ...model,
-      entities: model.entities.map(entity => ({ ...entity, evidence: cleanEvidence(entity.evidence, document) })),
-      procedure: model.procedure.map(step => ({ ...step, evidence: cleanEvidence(step.evidence, document) })),
-      reviewIssues: model.reviewIssues?.map(issue => ({ ...issue, ...(issue.evidence ? { evidence: cleanEvidence(issue.evidence, document) } : {}) })),
-    };
-    return validateStudyModel(grounded, { sources: document.sources });
+    return groundStudioModelEvidence(model, document);
   } catch { return undefined; }
 }
 

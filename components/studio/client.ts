@@ -1,4 +1,9 @@
 const messages:Record<string,string>={
+ discussion_busy:'The agent is answering your previous message. Your draft is saved.',
+ discussion_not_found:'Could not retrieve this response. Retry the message after the failed launch.',
+ proposal_stale_model:'The study changed after this proposal was made. Continue discussing it to get an updated proposal, or set it aside.',
+ proposal_version_missing:'This older proposal needs to be refreshed. Continue discussing it with the agent.',
+
  pipeline_setup_required:'The original Build Study pipeline is not connected on this deployment. Configure GitHub access and its workflow branch.',
  pipeline_busy:'The study-building agent is running. Keep your feedback here and send it when the build finishes.',
  paper_required:'Upload a PDF before starting the study-building agent.',

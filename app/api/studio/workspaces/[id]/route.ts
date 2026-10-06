@@ -27,8 +27,23 @@ export async function PATCH(request: Request, context: Context) {
     const validated = validateStudioDocument(document);
     const existing = await getWorkspace(ctx,id);
     if(!existing)throw new StudioError(404,"not_found");
-    // Autosave cannot replace the server's in-flight task pointer.
+    // Autosave cannot replace server-owned jobs, accepted package, or proposal
+    // decisions. Model edits remain allowed and will stale pending proposals.
     validated.pipeline=existing.document.pipeline;
+    validated.discussion=existing.document.discussion;
+    validated.acceptedPackage=existing.document.acceptedPackage;
+    const authoritative=new Map(existing.document.conversations.map(c=>[c.id,c] as const));
+    validated.conversations=validated.conversations.map(c=>{
+      const saved=authoritative.get(c.id);authoritative.delete(c.id);
+      if(!saved)return {...c,messages:c.messages.map(m=>({...m,proposal:undefined}))};
+      const messages=new Map(saved.messages.map(m=>[m.id,m] as const));
+      const incoming=c.messages.map(m=>{
+        const original=messages.get(m.id);messages.delete(m.id);
+        return original?.proposal?{...m,proposal:original.proposal}:{...m,proposal:undefined};
+      });
+      return {...c,messages:[...incoming,...messages.values()]};
+    });
+    validated.conversations.push(...authoritative.values());
     const result = await saveWorkspace(ctx, id, validated, expectedRevision as number);
     if ("conflict" in result) {
       if (!result.latest) throw new StudioError(404, "not_found");

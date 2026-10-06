@@ -759,6 +759,42 @@
 .legend {
   padding-bottom: 14px;
 }
+.cardTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+}
+.cardTitle strong { min-width: 0; }
+.changeBadge {
+  flex-shrink: 0;
+  border-radius: 4px;
+  padding: 2px 5px;
+  font-size: var(--text-xs, 0.75rem);
+  font-style: normal;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+.previewCard { border-color: var(--accent); }
+.previewSummary {
+  color: var(--accent);
+  margin: 5px 0 10px;
+  font-size: var(--text-xs, 0.75rem);
+  line-height: 1.5;
+}
+.previewSummary strong { font-weight: 600; }
+.previewSummary small { display: block; color: var(--muted); }
+.changeLegend i { background: var(--accent); }
+.changeDetail {
+  background: var(--accent-bg);
+  color: var(--text);
+  border-left: 2px solid var(--accent);
+  padding: 9px 12px;
+  font-size: var(--text-sm, 0.875rem);
+}
+.changeDetail strong { font-weight: 600; }
+.changeDetail ul { margin: 4px 0 0 17px; list-style: disc; }
 .attachedHint {
   color: var(--accent);
 }

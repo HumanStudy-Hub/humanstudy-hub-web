@@ -5,12 +5,15 @@ export type SourceSelection = { sourceId?: string; page: number; rects: { x:numb
 export type StudioAnnotation = SourceSelection & { id:string; comment:string; entity:string; createdAt:string };
 export type StudioArtifact = { id:string; title:string; filename:string; format:'markdown'|'csv'|'json'|'text'|'python'|'r'; kind:'instructions'|'instrument'|'analysis'|'other'; content:string; sourceIds:string[] };
 export type StudioMessageRef = { conversationId:string; messageId:string };
-export type StudioMessage = { id:string; role:"user"|"agent"; text:string; createdAt:string; entityId?:string; context?:string; modelAnchor?:ModelAnchor; sourceSelection?:SourceSelection; replyTo?:StudioMessageRef; mergedFrom?:StudioMessageRef; evidence?:StudySchema["entities"][number]["evidence"][]; proposal?:{ id:string; model:StudySchema; changesModel?:boolean; artifacts?:StudioArtifact[]; summary:string; status:"pending"|"applied"|"rejected" } };
+export type StudioMessage = { id:string; role:"user"|"agent"; text:string; createdAt:string; entityId?:string; context?:string; modelAnchor?:ModelAnchor; sourceSelection?:SourceSelection; replyTo?:StudioMessageRef; mergedFrom?:StudioMessageRef; evidence?:StudySchema["entities"][number]["evidence"][]; proposal?:{ id:string; model:StudySchema; changesModel?:boolean; artifacts?:StudioArtifact[]; summary:string; status:"pending"|"applied"|"rejected"; baseModelFingerprint?:string; jobId?:string } };
 export type StudioConversation = { id:string; title:string; updatedAt:string; messages:StudioMessage[]; parent?:StudioMessageRef; draft:string; modelAnchor:ModelAnchor|null; sourceSelection:SourceSelection|null; selected:string };
 export type StudioSource = { id:string; name:string; path:string; mimeType:string; size:number; kind?:"paper"|"resource"; includeInBuild?:boolean; text?:string; pages?:{page:number; text:string}[] };
-export type StudioPipeline = { jobId:string; requestId:string; conversationId:string; sourceId:string; status:"preparing"|"queued"|"running"|"review"|"complete"|"failed"; message:string; updatedAt:string; proposalId?:string };
+export type StudioPipeline = { jobId:string; requestId:string; conversationId:string; sourceId:string; status:"preparing"|"queued"|"running"|"review"|"complete"|"failed"; message:string; updatedAt:string; proposalId?:string; resultMessageId?:string; kind?:"initial"|"sync"; baseModelFingerprint?:string; targetModelFingerprint?:string };
+export type StudioAcceptedPackage = { jobId:string; modelFingerprint:string; acceptedAt:string; approvalPending?:boolean };
 export type StudioDocument = {
  pipeline?:StudioPipeline;
+ discussion?:StudioPipeline;
+ acceptedPackage?:StudioAcceptedPackage;
  version:1; title:string; model:StudySchema; sources:StudioSource[];
  annotations:StudioAnnotation[]; conversations:StudioConversation[];
  artifacts?:StudioArtifact[];

@@ -21,6 +21,7 @@ class StudioError extends Error { constructor(status, code) { super(code); this.
 const conversationTree = load("lib/studio/conversation-tree.ts");
 const resources = load("lib/studio/resources.ts");
 const validation = load("lib/studio/validation.ts", { "./conversation-tree": conversationTree, "./resources": resources });
+const modelVersion = load("lib/studio/model-version.ts");
 const ids = {
   owner: "11111111-1111-4111-8111-111111111111",
   workspace: "22222222-2222-4222-8222-222222222222",
@@ -39,7 +40,7 @@ const document = (sources = [source()]) => ({ version: 1, title: "Study", model:
 const nextServer = { NextResponse: { json: (data, options = {}) => Response.json(data, { status: options.status || 200, headers: options.headers }) } };
 const jobId = `studio-${ids.workspace}-${ids.request}`;
 const request = (suffix, body) => new Request(`https://studio.test/api/studio/workspaces/${ids.workspace}/${suffix}`, { method: "POST", headers: { origin: "https://studio.test", "content-type": "application/json" }, body: JSON.stringify(body) });
-const input = (revision = 1, requestId = ids.request) => ({ conversationId: ids.conversation, requestId, text: "Build this study", revision });
+const input = (revision = 1, requestId = ids.request) => ({ conversationId: ids.conversation, requestId, text: "Build this study", revision, intent: "build" });
 const routeContext = { params: Promise.resolve({ id: ids.workspace }) };
 
 function harness(initial = document()) {
@@ -48,11 +49,13 @@ function harness(initial = document()) {
   let casConflict = false, reads = 0, lists = 0;
   const calls = [];
   const job = { id: jobId, status: "queued", message: "Waiting", updatedAt: now, progress: 0, packageReady: false };
+  let turn = { requestId: ids.request, reply: "The paper does not report a sample size." };
   const github = {
     studioPipelineConfigured: () => configured,
     async createStudioPipelineJob(arg) { calls.push(["create", arg]); return { ...job, id: arg.id, message: "Waiting", studio: arg.identity }; },
     async dispatchStudioPipelineJob(arg) { calls.push(["dispatch", arg]); if (dispatchError) throw dispatchError; },
-    async readOwnedStudioJob(id, identity) { reads++; calls.push(["read", id, identity]); return { ...job, id }; },
+    async readOwnedStudioJob(id, identity) { reads++; calls.push(["read", id, identity]); return { ...job, id, packageReady:job.status==='review'?true:job.packageReady }; },
+    async readOwnedStudioTurn(id, identity) { calls.push(["turn", id, identity]); return turn; },
     async listPackageFiles(id, identity) { lists++; calls.push(["list", id, identity]); return [{ path: "paper/study.json", content: Buffer.from(JSON.stringify({ title: "Pipeline study", participant_flow: "Read then answer" })) }, { path: "paper/studio-reply.md", content: Buffer.from("Generated package is ready.") }]; },
     async approveStage(id, decision, identity) { calls.push(["approve", id, decision, identity]); return job; },
     async retryStudioPipelineJob(id, identity, paperUrl, materialsUrl) { calls.push(["retry", id, identity, paperUrl, materialsUrl]); return { ...job, id, status: "queued", message: "Waiting for retry", updatedAt: new Date().toISOString() }; },
@@ -84,14 +87,127 @@ function harness(initial = document()) {
       return sourceIds.length ? { path: `${ids.owner}/${ids.workspace}/${ids.next}.zip`, url: "https://storage.test/materials.zip", sourceIds } : null;
     },
   };
-  const pipeline = load("lib/studio/pipeline.ts", { "@/lib/github-jobs": github, "./http": http, "./store": store, "./pipeline-adapter": adapter, "./validation": validation, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": resourceServer });
+  const pipeline = load("lib/studio/pipeline.ts", { "@/lib/github-jobs": github, "./http": http, "./store": store, "./pipeline-adapter": adapter, "./validation": validation, "./model-version": modelVersion, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": resourceServer });
   const auth = { async requireStudioUser() { return ctx; } };
-  const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/pipeline": pipeline, "@/lib/github-jobs": github };
+  const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/model-version": modelVersion, "@/lib/studio/pipeline": pipeline, "@/lib/github-jobs": github };
   const chat = load("app/api/studio/workspaces/[id]/chat/route.ts", deps);
   const sync = load("app/api/studio/workspaces/[id]/pipeline/route.ts", deps);
   const proposals = load("app/api/studio/workspaces/[id]/proposals/route.ts", deps);
-  return { chat, sync, proposals, pipeline, github, job, calls, get workspace() { return workspace; }, set workspace(value) { workspace = value; }, get reads() { return reads; }, get lists() { return lists; }, set configured(value) { configured = value; }, set signing(value) { signing = value; }, set materialsSigning(value) { materialsSigning = value; }, set dispatchError(value) { dispatchError = value; }, set casConflict(value) { casConflict = value; } };
+  const workspaceRoute = load("app/api/studio/workspaces/[id]/route.ts", deps);
+  return { chat, sync, proposals, workspaceRoute, pipeline, github, job, calls, get workspace() { return workspace; }, set workspace(value) { workspace = value; }, get turn() {return turn;},set turn(value){turn=value;}, get reads() { return reads; }, get lists() { return lists; }, set configured(value) { configured = value; }, set signing(value) { signing = value; }, set materialsSigning(value) { materialsSigning = value; }, set dispatchError(value) { dispatchError = value; }, set casConflict(value) { casConflict = value; } };
 }
+
+test("discussion is the default and completes beside an in-flight package sync", async () => {
+  const initial=document();
+  initial.pipeline={jobId,requestId:ids.request,conversationId:ids.conversation,sourceId:ids.source,status:"running",message:"Building",updatedAt:now,kind:"sync",targetModelFingerprint:modelVersion.modelFingerprint(initial.model)};
+  const h=harness(initial);
+  const response=await h.chat.POST(request("chat",{...input(1,ids.next),intent:"discuss",text:"What sample size was reported?"}),routeContext);
+  assert.equal(response.status,202);
+  assert.equal(h.workspace.document.pipeline.status,"running");
+  assert.equal(h.workspace.document.discussion.status,"queued");
+  assert.equal(h.calls.find(call=>call[0]==="create")[1].request.mode,"discuss");
+  h.job.status="complete";h.job.packageReady=false;h.turn={requestId:ids.next,reply:"The paper does not report a sample size."};
+  h.github.readOwnedStudioJob=async id=>id===jobId?{...h.job,status:"running",packageReady:false}:{...h.job,id};
+  const synced=await h.sync.POST(request("pipeline",{revision:h.workspace.revision}),routeContext);
+  assert.equal(synced.status,200);
+  assert.equal(h.workspace.document.conversations[0].messages.at(-1).text,h.turn.reply);
+  assert.equal(h.workspace.document.pipeline.status,"running");
+  const count=h.workspace.document.conversations[0].messages.length;
+  await h.sync.POST(request("pipeline",{revision:h.workspace.revision}),routeContext);
+  assert.equal(h.workspace.document.conversations[0].messages.length,count,"completion is idempotent");
+});
+
+test("a model-changing discussion proposal records its base model fingerprint", async () => {
+  const h=harness();
+  await h.chat.POST(request("chat",{...input(),intent:"discuss"}),routeContext);
+  h.job.status="complete";h.job.packageReady=false;
+  h.turn={requestId:ids.request,reply:"I suggest a more specific title.",model:model("Revised")};
+  await h.sync.POST(request("pipeline",{revision:h.workspace.revision}),routeContext);
+  const proposal=h.workspace.document.conversations[0].messages.at(-1).proposal;
+  assert.equal(proposal.baseModelFingerprint,modelVersion.modelFingerprint(model()));
+  assert.equal(proposal.jobId,jobId);
+  assert.equal(proposal.changesModel,true);
+  assert.equal(h.workspace.document.model.title,"Draft");
+});
+
+test("discussion proposals strip forged source quotes and rectangles while preserving layout", async () => {
+  const h=harness();
+  await h.chat.POST(request("chat",{...input(),intent:"discuss"}),routeContext);
+  h.job.status="complete";h.job.packageReady=false;
+  const forged=model("Proposed protocol");
+  forged.entities=[{id:"participants",kind:"participants",title:"Participants",subtitle:"",description:"Discuss recruitment",evidence:{sourceId:ids.source,page:1,rects:[{x:10,y:10,w:20,h:10}],quote:"The paper verified 10,000 participants."},fields:[],x:345,y:210,w:180,h:90}];
+  h.turn={requestId:ids.request,reply:"This is a tentative interpretation.",model:forged};
+  const response=await h.sync.POST(request("pipeline",{revision:h.workspace.revision}),routeContext);
+  assert.equal(response.status,200);
+  const entity=h.workspace.document.conversations[0].messages.at(-1).proposal.model.entities[0];
+  assert.equal(entity.evidence.quote,"");
+  assert.deepEqual(entity.evidence.rects,[]);
+  assert.equal(entity.evidence.sourceId,ids.source);
+  assert.equal(entity.x,345);
+  assert.equal(entity.y,210);
+});
+
+test("concurrent model edits stale a discussion proposal, but rejection stays available", async () => {
+  const h=harness();
+  await h.chat.POST(request("chat",{...input(),intent:"discuss"}),routeContext);
+  h.workspace={...h.workspace,revision:h.workspace.revision+1,document:{...h.workspace.document,model:model("Researcher edit")}};
+  h.job.status="complete";h.job.packageReady=false;
+  h.turn={requestId:ids.request,reply:"Use a revised title.",model:model("Agent suggestion")};
+  await h.sync.POST(request("pipeline",{revision:h.workspace.revision}),routeContext);
+  const proposal=h.workspace.document.conversations[0].messages.at(-1).proposal;
+  assert.equal(proposal.baseModelFingerprint,modelVersion.modelFingerprint(model()));
+  const apply=await h.proposals.POST(request("proposals",{revision:h.workspace.revision,proposalId:proposal.id,decision:"apply"}),routeContext);
+  assert.equal(apply.status,409);
+  assert.equal((await apply.json()).error,"proposal_stale_model");
+  const reject=await h.proposals.POST(request("proposals",{revision:h.workspace.revision,proposalId:proposal.id,decision:"reject"}),routeContext);
+  assert.equal(reject.status,200);
+  assert.equal(h.workspace.document.model.title,"Researcher edit");
+});
+
+test("a completed package sync tracks the accepted model without replacing it", async () => {
+  const initial=document();
+  const fingerprint=modelVersion.modelFingerprint(initial.model);
+  initial.pipeline={jobId,requestId:ids.request,conversationId:ids.conversation,sourceId:ids.source,status:"running",message:"Building",updatedAt:now,kind:"sync",targetModelFingerprint:fingerprint};
+  const h=harness(initial);
+  h.job.status="review";
+  const response=await h.sync.POST(request("pipeline",{revision:h.workspace.revision}),routeContext);
+  assert.equal(response.status,200);
+  assert.equal(h.workspace.document.model.title,"Draft");
+  assert.equal(h.workspace.document.acceptedPackage.modelFingerprint,fingerprint);
+  assert.equal(h.workspace.document.pipeline.status,"complete");
+  assert.equal(h.calls.filter(call=>call[0]==="list").length,0,"sync output is not adapted into a model proposal");
+  await h.sync.POST(request("pipeline",{revision:h.workspace.revision}),routeContext);
+  assert.equal(h.workspace.document.pipeline.status,"complete","remote review does not regress accepted status");
+});
+
+test("autosave cannot erase a server discussion or proposal decision", async () => {
+  const h=harness();
+  await h.chat.POST(request("chat",{...input(),intent:"discuss"}),routeContext);
+  h.job.status="complete";h.job.packageReady=false;h.turn={requestId:ids.request,reply:"Revise the title.",model:model("Agent suggestion")};
+  await h.sync.POST(request("pipeline",{revision:h.workspace.revision}),routeContext);
+  const original=h.workspace.document;
+  const tampered={...original,discussion:undefined,conversations:original.conversations.map(c=>({...c,messages:c.messages.filter(m=>!m.proposal)}))};
+  const patch=new Request(`https://studio.test/api/studio/workspaces/${ids.workspace}`,{method:"PATCH",headers:{origin:"https://studio.test","content-type":"application/json"},body:JSON.stringify({document:tampered,expectedRevision:h.workspace.revision})});
+  const response=await h.workspaceRoute.PATCH(patch,routeContext);
+  assert.equal(response.status,200);
+  assert.equal(h.workspace.document.discussion.jobId,original.discussion.jobId);
+  assert.equal(h.workspace.document.conversations[0].messages.at(-1).proposal.status,"pending");
+});
+
+test("an outdated package sync coalesces to the latest applied model", async () => {
+  const initial=document();
+  const oldFingerprint=modelVersion.modelFingerprint(initial.model);
+  initial.model=model("Latest accepted model");
+  initial.pipeline={jobId,requestId:ids.request,conversationId:ids.conversation,sourceId:ids.source,status:"running",message:"Building older package",updatedAt:now,kind:"sync",targetModelFingerprint:oldFingerprint};
+  initial.conversations=[{id:ids.conversation,title:"Latest decision",draft:"",updatedAt:now,modelAnchor:null,sourceSelection:null,selected:"",messages:[{id:ids.next,role:"agent",text:"Use the revised model",createdAt:now,proposal:{id:ids.next,model:initial.model,summary:"Revised model",status:"applied",changesModel:true}}]}];
+  const h=harness(initial);
+  h.job.status="review";
+  const response=await h.sync.POST(request("pipeline",{revision:h.workspace.revision}),routeContext);
+  assert.equal(response.status,200);
+  assert.equal(h.workspace.document.pipeline.status,"queued");
+  assert.equal(h.workspace.document.pipeline.targetModelFingerprint,modelVersion.modelFingerprint(initial.model));
+  assert.equal(h.calls.filter(call=>call[0]==="create").length,1);
+});
 
 test("chat requires a PDF and setup before signing or dispatch", async () => {
   const missing = harness(document([]));
@@ -283,7 +399,7 @@ test("retry refreshes the owner-bound resource bundle URL", async () => {
   assert.match(retry[4], new RegExp(`${ids.next}\\.zip\\?token=fresh$`));
 });
 
-test("a rejected proposal still reuses the completed package for the same PDF", async () => {
+test("a rejected proposal never seeds a later package", async () => {
   const initial = document();
   initial.pipeline = { jobId, requestId: ids.request, conversationId: ids.conversation, sourceId: ids.source, status: "review", message: "Ready", updatedAt: now, proposalId: ids.next };
   initial.conversations = [{ id: ids.conversation, title: "First request", draft: "", updatedAt: now, modelAnchor: null, sourceSelection: null, selected: "", messages: [
@@ -294,7 +410,7 @@ test("a rejected proposal still reuses the completed package for the same PDF", 
   const response = await h.chat.POST(request("chat", { ...input(1, ids.next), sourceId: ids.source }), routeContext);
   assert.equal(response.status, 202);
   const created = h.calls.find(call => call[0] === "create")[1];
-  assert.equal(created.previousJobId, jobId);
+  assert.equal(created.previousJobId, undefined);
   assert.equal(h.workspace.document.conversations[0].messages.at(-1).role, "user");
 });
 

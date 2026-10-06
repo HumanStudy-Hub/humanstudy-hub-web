@@ -574,6 +574,14 @@ export async function readOwnedStudioJob(id:string, identity:Pick<StudioJobIdent
   if (!job.studio || job.studio.ownerId!==identity.ownerId || job.studio.workspaceId!==identity.workspaceId) throw new Error('Study job not found.');
   return job;
 }
+export async function readOwnedStudioTurn(id:string, identity:Pick<StudioJobIdentity,'ownerId'|'workspaceId'>) {
+  const job=await readOwnedStudioJob(id,identity);
+  if(job.status!=='complete'||job.packageReady!==false)throw new Error('Discussion turn is not complete.');
+  const branch=`jobs/${safe(id)}`;
+  const bytes=await getFile(branch,jobPath(id,'studio-turn.json'));
+  if(bytes.length>1_000_000)throw new Error('Discussion turn exceeds the size limit.');
+  return JSON.parse(bytes.toString('utf8')) as unknown;
+}
 export async function createStudioPipelineJob(input:{id:string;identity:StudioJobIdentity;paperName:string;paperUrl:string;openMaterialsUrl?:string;openMaterialsPathname?:string;openMaterialsSourceIds?:string[];request:unknown;previousJobId?:string}) {
   if (!studioPipelineConfigured()) throw new Error('Studio pipeline GitHub token and branch are required.');
   const ref=process.env.STUDIO_PIPELINE_REF || process.env.GITHUB_PIPELINE_REF!;

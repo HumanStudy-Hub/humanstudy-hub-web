@@ -3,6 +3,11 @@ import { createContext, useContext } from "react";
 export type Language = "en" | "zh";
 export const LanguageContext = createContext<Language>("en");
 const zh: Record<string,string> = {
+ "Experiment overview":"实验总览", "Proposed changes · preview":"修改提案 · 预览", "Added":"新增", "Changed":"修改", "Proposed change":"提议改动", "Study part":"研究组成", "Question":"待确认", "question":"项待确认", "questions":"项待确认", "questions for":"项问题对应", "open questions":"项待确认", "All questions →":"全部待确认 →", "Answer in conversation ↗":"在左侧讨论 ↗", "Study title or source changed":"研究名称或来源发生变化", "Procedure sequence changed":"实验流程顺序发生变化",
+
+ "Add a paper":"添加论文", "Retry response":"重试回答", "Sync study package":"同步研究包", "study":"研究整体",
+ "Next decision":"下一项决定", "Answers saved · awaiting changes":"回答已保存 · 待落实", "Answered · not yet applied":"已回答 · 待落实", "Why this needs a decision":"查看影响与依据", "View source":"查看原文", "Give a decision":"提供决定", "Discuss":"讨论", "Later":"稍后", "All decisions":"全部待确认事项", "You can return to these decisions whenever you are ready.":"这些事项已暂放，随时可以继续。", "Your answers are saved. Review the agent’s proposed changes before they become part of the study.":"回答已保存。确认助手的修改提案后，才会落实到研究中。", "Help me decide:":"帮我讨论这个决定：", "Your decision":"你的研究决定", "Proposed changes":"修改提案", "Changes accepted":"修改已接受", "Changes set aside":"修改已暂放", "Removed":"移除", "Return to current study":"回到当前研究", "Preview changes":"预览改动", "What changes":"查看具体变化", "Accept changes":"接受修改", "Continue discussing":"继续讨论", "Set aside":"暂不采用", "Let’s discuss these proposed changes.":"我们继续讨论这个修改提案。", "Reply / side talk":"回复 / 单独讨论", "Export study ↗":"导出研究包 ↗", "Agent is reviewing your request…":"助手正在处理你的请求…", "Thinking…":"思考中…", "Preparing study package…":"正在同步研究包…", "Study package ready":"研究包已就绪", "Review changes to continue":"有修改待确认", "Study package needs updating":"研究包需要同步", "Study package could not sync":"研究包同步失败", "Preparing the first study…":"正在提取初始研究…", "entities":"研究对象", "relations":"对象关系", "procedure":"实验流程", "variables":"统计变量", "reviewIssues":"待确认事项", "title":"研究名称",
+
  "Study source":"研究资源",
  "No source yet":"尚未添加资源",
  "Paper":"论文",

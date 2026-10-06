@@ -452,3 +452,7 @@
   display: inline-flex;
   align-items: center;
 }
+
+.agentRecovery { padding:8px 16px; font-size:var(--text-xs,.75rem); color:var(--muted,#82949d); }
+.agentRecovery p { margin-bottom:6px; line-height:1.6; }
+.agentRecovery button { color:var(--accent,#217f94); margin-right:12px; }

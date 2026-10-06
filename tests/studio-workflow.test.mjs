@@ -20,6 +20,7 @@ class StudioError extends Error { constructor(status, code) { super(code); this.
 const conversationTree = load("lib/studio/conversation-tree.ts");
 const resources = load("lib/studio/resources.ts");
 const validation = load("lib/studio/validation.ts", { "./conversation-tree": conversationTree, "./resources": resources });
+const modelVersion = load("lib/studio/model-version.ts");
 const owner = "11111111-1111-4111-8111-111111111111";
 const workspaceId = "22222222-2222-4222-8222-222222222222";
 const sourceId = "33333333-3333-4333-8333-333333333333";
@@ -70,17 +71,20 @@ test("completed pipeline proposal requires apply, preserves edits, and exports a
     async readOwnedStudioJob(id, identity) {
       assert.equal(id, workspace.document.pipeline.jobId);
       assert.deepEqual(identity, { ownerId: owner, workspaceId });
-      return { id, status: "review", message: "Package ready" };
+      return { id, status: "review", message: "Package ready", packageReady: true };
     },
+    async listPackageFiles(){return [{path:"paper/protocol.md",content:Buffer.from("# Accepted package")}]},
     async approveStage(id, decision, identity) {
+      assert.equal(workspace.document.model.title,"Pipeline proposal","remote approval follows model CAS");
+      assert.equal(workspace.revision,5);
       assert.equal(id, workspace.document.pipeline.jobId);
       assert.deepEqual(decision, { decision: "approved" });
       assert.deepEqual(identity, { ownerId: owner, workspaceId });
       approvals++;
     },
   };
-  const pipeline = load("lib/studio/pipeline.ts", { "@/lib/github-jobs": github, "./http": http, "./store": store, "./validation": validation, "./pipeline-adapter": {}, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": {} });
-  const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/pipeline": pipeline, "@/lib/studio/resources": resources, "@/lib/github-jobs": github, jszip: JSZip };
+  const pipeline = load("lib/studio/pipeline.ts", { "@/lib/github-jobs": github, "./http": http, "./store": store, "./validation": validation, "./model-version": modelVersion, "./pipeline-adapter": {}, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": {} });
+  const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/model-version": modelVersion, "@/lib/studio/pipeline": pipeline, "@/lib/studio/resources": resources, "@/lib/github-jobs": github, jszip: JSZip };
   const proposals = load("app/api/studio/workspaces/[id]/proposals/route.ts", deps);
   const exportRoute = load("app/api/studio/workspaces/[id]/export/route.ts", deps);
   const context = { params: Promise.resolve({ id: workspaceId }) };
@@ -105,11 +109,11 @@ test("completed pipeline proposal requires apply, preserves edits, and exports a
 
   const applied = await proposals.POST(decision(4), context);
   assert.equal(applied.status, 200);
-  assert.equal(workspace.revision, 5);
+  assert.equal(workspace.revision, 6);
   assert.equal(workspace.document.model.title, "Pipeline proposal");
   assert.equal(workspace.document.artifacts[0].content, instructions.content);
   assert.equal(workspace.document.conversations[0].messages[1].proposal.status, "applied");
-  assert.equal(approvals, 1);
+  assert.equal(approvals, 1, "remote approval follows the authoritative model save");
   assert.equal((await proposals.POST(decision(5), context)).status, 409);
   assert.equal(approvals, 1);
 
@@ -120,10 +124,18 @@ test("completed pipeline proposal requires apply, preserves edits, and exports a
   const saved = JSON.parse(await zip.file("document.json").async("string"));
   const manifest = JSON.parse(await zip.file("manifest.json").async("string"));
   assert.equal(saved.model.title, "Pipeline proposal");
-  assert.equal(manifest.revision, 5);
+  assert.equal(manifest.revision, 6);
+  assert.equal(manifest.buildPackage.modelFingerprint,modelVersion.modelFingerprint(saved.model));
+  assert.equal(await zip.file("build-package/paper/protocol.md").async("string"),"# Accepted package");
   assert.equal(manifest.pendingProposals.length, 0);
   assert.equal(await zip.file("materials/participant-instructions/instructions.md").async("string"), instructions.content);
   assert.equal(await zip.file(`source-files/${sourceId}.pdf`).async("string"), "%PDF-1.4\nmock");
   const allText = await Promise.all(Object.values(zip.files).filter(file => !file.dir && !file.name.endsWith(".pdf")).map(file => file.async("string")));
   assert.ok(allText.every(text => !text.includes(ctx.accessToken)), "export must not reveal server access token");
+
+  workspace={...workspace,revision:workspace.revision+1,document:{...workspace.document,model:model("Edited after package acceptance")}};
+  const staleZip=await JSZip.loadAsync(await (await exportRoute.GET(new Request(`${url}/export`),context)).arrayBuffer());
+  const staleManifest=JSON.parse(await staleZip.file("manifest.json").async("string"));
+  assert.match(staleManifest.buildPackage.reason,/older model revision/);
+  assert.equal(staleZip.file("build-package/paper/protocol.md"),null,"an older package is never exported as current");
 });

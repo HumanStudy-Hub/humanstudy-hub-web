@@ -1,5 +1,5 @@
-import { ownedPipeline } from "@/lib/studio/pipeline";
-import { listPackageFiles } from "@/lib/github-jobs";
+import { listPackageFiles, readOwnedStudioJob } from "@/lib/github-jobs";
+import { modelFingerprint } from "@/lib/studio/model-version";
 import JSZip from "jszip";
 import { requireStudioUser } from "@/lib/studio/auth";
 import { routeError, studioFetch, StudioError } from "@/lib/studio/http";
@@ -83,12 +83,16 @@ export async function GET(_request: Request, { params }: Context) {
       }
       fileManifest.push(item);
     }
-    let buildPackage: {jobId:string;status?:string;files?:string[];reason?:string}|undefined;
-    if(document.pipeline){
-      buildPackage={jobId:document.pipeline.jobId};
+    let buildPackage: {jobId?:string;status?:string;files?:string[];reason?:string;modelFingerprint?:string;currentModelFingerprint:string}|undefined;
+    const currentModelFingerprint=modelFingerprint(document.model);
+    if(document.pipeline||document.acceptedPackage){
+      buildPackage={jobId:document.acceptedPackage?.jobId,status:document.pipeline?.status,currentModelFingerprint,modelFingerprint:document.acceptedPackage?.modelFingerprint};
+      if(!document.acceptedPackage)buildPackage.reason='No package has been accepted for this model.';
+      else if(document.acceptedPackage.modelFingerprint!==currentModelFingerprint)buildPackage.reason='The accepted package is for an older model revision. Sync the package before using it.';
+      else {
       try{
-        const job=await ownedPipeline(ctx,workspace);buildPackage.status=job.status;
-        if(job.status==='review'||job.status==='complete'){
+        const job=await readOwnedStudioJob(document.acceptedPackage.jobId,{ownerId:ctx.user.id,workspaceId:id});buildPackage.status=job.status;
+        if((job.status==='review'||job.status==='complete')&&job.packageReady===true){
           const files=await listPackageFiles(job.id,{ownerId:ctx.user.id,workspaceId:id});
           if(files.reduce((n,file)=>n+file.content.length,0)>40*1024*1024)throw new Error('Package exceeds export limit');
           for(const file of files){
@@ -96,8 +100,9 @@ export async function GET(_request: Request, { params }: Context) {
           }
           buildPackage.files=files.map(file=>`build-package/${file.path}`);
           files.forEach(file=>zip.file(`build-package/${file.path}`,file.content));
-        }else buildPackage.reason='The agent has not finished a package yet.';
-      }catch{buildPackage.reason='The original package could not be retrieved; workspace data remains included.';}
+        }else buildPackage.reason='The accepted package is not ready yet.';
+      }catch{buildPackage.reason='The accepted package could not be retrieved; workspace data remains included.';}
+      }
     }
     const unresolved = [
       ...document.model.entities.flatMap(entity => entity.fields.filter(field => field.status === "unresolved").map(field => `${entity.title}: ${field.name} — ${field.value}`)),

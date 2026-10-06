@@ -2,7 +2,7 @@
 
 `/build` is the site-styled introduction with account access and saved studies.
 `/build/example` opens the example in the same three-pane workspace used by
-`/build/[id]`. The example is stored locally and uses the demo agent; saved
+`/build/[id]`. The example is stored locally with the agent offline; saved
 studies use authenticated storage and the configured live agent. The old
 `/build-preview` address redirects to `/build/example`. Studies / Account also
 remains available inside the workspace. Existing `/pipeline` jobs are unchanged.
@@ -203,3 +203,13 @@ The test job remains in the private jobs repository and is not a user study.
 This verifies real workflow dispatch, runner execution, package validation and
 presentation mapping. It does not verify a full browser signup/upload session;
 email delivery and the Vercel team's Preview environment still need configuration.
+
+## Discussion and package synchronization (2026-10-06)
+
+`POST /api/studio/workspaces/[id]/chat` defaults to a discussion turn. `intent: "build"` starts the initial package build. Both dispatch the original Claude Code Action with `studio_request.json.mode`; no separate web-hosted model is introduced. Discussion writes a validated job-root `studio-turn.json` with reply and optional proposal, marks the job complete with `packageReady: false`, and never requires the eight-file package. It still waits for GitHub runner startup.
+
+`document.discussion` and `document.pipeline` are independent durable lanes. `GET /pipeline` reports both; `POST /pipeline` imports results through CAS. Incoming proposals use the model fingerprint captured when their request started. Autosave preserves server-owned jobs, proposals and accepted package pointers. Discussion quotes are grounded against attached page text using the same evidence sanitizer as initial build results.
+
+Accepting the initial build records its package without rebuilding it. Accepting a discussion proposal saves the model before queueing an accepted-model sync. Changes accepted during an existing sync are coalesced into a later sync. `POST /pipeline` supports `action: "retry"` with `lane`, `action: "sync-package"` with an applied `proposalId`, and `action: "reconcile-approval"` for remote approval after the durable save. Exports contain a package only when its accepted fingerprint matches the current model.
+
+Current local checks: 88 web tests and 36 focused Bench tests, TypeScript, lint and production build. These modes still need a real Actions run and browser acceptance testing. Automatic approval review rejected reusing the existing benchmark PDF for a new external-processing test; no new job was dispatched.

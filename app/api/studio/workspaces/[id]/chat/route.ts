@@ -21,6 +21,7 @@ export async function POST(request: Request, { params }: Context) {
     if (!isUuid(conversationId) || !isUuid(requestId)) throw new StudioError(400, "invalid_request_id");
     if (!Number.isSafeInteger(revision) || (revision as number) < 1) throw new StudioError(400, "invalid_revision");
     if (typeof body.text !== "string" || !body.text.trim() || body.text.length > 12000) throw new StudioError(400, "invalid_message");
+    if(body.intent!==undefined&&!['build','discuss'].includes(body.intent as string))throw new StudioError(400,'invalid_intent');
     const workspace = await getWorkspace(ctx, id);
     if (!workspace) throw new StudioError(404, "not_found");
     const document = validateStudioDocument(workspace.document);
@@ -42,7 +43,7 @@ export async function POST(request: Request, { params }: Context) {
     }
     for (const ref of [replyTo, mergedFrom]) if (ref && !document.conversations.some(conversation => conversation.id === ref.conversationId && conversation.messages.some(message => message.id === ref.messageId))) throw new StudioError(400, "invalid_message_reference");
     if(body.sourceId!==undefined&&(!isUuid(body.sourceId)||!document.sources.some(source=>source.id===body.sourceId)))throw new StudioError(400,"invalid_source");
-    const saved = await startPipeline(ctx, workspace, {sourceId:body.sourceId as string|undefined,conversationId,requestId,text:body.text.trim(),modelAnchor,sourceSelection,parent,replyTo,mergedFrom});
+    const saved = await startPipeline(ctx, workspace, {sourceId:body.sourceId as string|undefined,conversationId,requestId,text:body.text.trim(),modelAnchor,sourceSelection,parent,replyTo,mergedFrom,intent:body.intent as 'build'|'discuss'|undefined});
     return NextResponse.json({workspace:saved}, {status:202});
   } catch (error) { return routeError(error); }
 }
