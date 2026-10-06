@@ -7,6 +7,7 @@ export type ModelAnchor = {
   entityIds: string[];
   points?: Point[]; // Percent coordinates in the overview, independent of display size.
   issueId?: string;
+  fieldId?:string;
 };
 export type ReviewResponse = { text: string; savedAt: string };
 export type ReviewIssue = StudyReviewIssue & { type?: "Interpretation" | "Missing information"; question?: string; suggestion?: string };
@@ -83,17 +84,18 @@ export function intersectsPolygon(points: Point[], box: { x: number; y: number; 
   return false;
 }
 
-export function modelOverview(model: typeof study) {
-  if(model.id===study.id)return overview;
+export function modelOverview(model: typeof study, studyId?:string) {
+  if(model.id===study.id&&!model.program)return overview;
   const stageKinds=[['background','hypothesis'],['design','participants','material'],['procedure'],['record','variable'],['analysis'],['result']];
   return {
     question:model.title, summary:'',
-    stages:overview.stages.map((stage,i)=>({...stage,subtitle:"",nodes:model.entities.filter(e=>stageKinds[i].includes(e.kind)).map(e=>e.id)})).filter(stage=>stage.nodes.length),
+    stages:overview.stages.map((stage,i)=>({...stage,subtitle:"",nodes:model.entities.filter(e=>stageKinds[i].includes(e.kind)&&(!studyId||!e.studyIds?.length||e.studyIds.includes(studyId))).map(e=>e.id)})).filter(stage=>stage.nodes.length),
     cards:Object.fromEntries(model.entities.map(e=>[e.id,{title:e.title,text:e.subtitle,foot:e.description}])) as typeof overview.cards,
   };
 }
 export function modelIssues(model: typeof study): ReviewIssue[] {
-  if(model.id===study.id)return reviewIssues;
+  if(model.id===study.id&&!model.program)return reviewIssues;
+  if(model.program)return model.reviewIssues??[];
   const explicit=model.reviewIssues??[];
   const generic=model.entities.flatMap(entity=>entity.fields.flatMap((field,i)=>{
     if(field.status!=='unresolved')return [];

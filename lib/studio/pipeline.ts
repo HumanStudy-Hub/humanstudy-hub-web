@@ -47,6 +47,8 @@ function failureMessage(error:unknown){
  return undefined;
 }
 type StartInput={sourceId?:string;conversationId:string;requestId:string;text:string;modelAnchor:ModelAnchor|null;sourceSelection:SourceSelection|null;parent?:StudioMessageRef;replyTo?:StudioMessageRef;mergedFrom?:StudioMessageRef;intent?:'discuss'|'build'};
+const promptDocument=(document:StudioDocument)=>{const {programVersions,...current}=document;void programVersions;return current;};
+const promptConversations=(items:StudioDocument['conversations'])=>items.map(c=>({...c,messages:c.messages.map(({proposal,...message})=>{void proposal;return message;})}));
 export async function startPipeline(ctx:StudioContext,w:StudioWorkspace,input:StartInput) {
  if(!studioPipelineConfigured())throw new StudioError(503,'pipeline_setup_required','Configure the original GitHub pipeline token and STUDIO_PIPELINE_REF.');
  const document=validateStudioDocument(w.document),mode=input.intent==='build'?'build':'discuss';
@@ -76,7 +78,7 @@ export async function startPipeline(ctx:StudioContext,w:StudioWorkspace,input:St
   // package bytes must never acquire authority by being copied into a later run.
   const prior=document.acceptedPackage;
   const reusable=mode==='build'&&prior&&document.pipeline?.sourceId===source.id?prior.jobId:undefined;
-  const job=await createStudioPipelineJob({id:jobId,identity:{...identity(ctx,w),requestId:input.requestId,conversationId:input.conversationId},paperName:source.name,paperUrl,openMaterialsUrl:materials?.url,openMaterialsPathname:materials?.path,openMaterialsSourceIds:materials?.sourceIds||[],previousJobId:reusable,request:{version:1,mode,...identity(ctx,w),conversationId:input.conversationId,requestId:input.requestId,primarySourceId:source.id,message:input.text,document:{...document,sources:document.sources.filter(s=>s.includeInBuild!==false),conversations:scopedConversations},modelAnchor:input.modelAnchor,sourceSelection:input.sourceSelection,parent:input.parent,replyTo:input.replyTo,mergedFrom:input.mergedFrom,referencedMessages}});
+  const job=await createStudioPipelineJob({id:jobId,identity:{...identity(ctx,w),requestId:input.requestId,conversationId:input.conversationId},paperName:source.name,paperUrl,openMaterialsUrl:materials?.url,openMaterialsPathname:materials?.path,openMaterialsSourceIds:materials?.sourceIds||[],previousJobId:reusable,request:{version:1,mode,...identity(ctx,w),conversationId:input.conversationId,requestId:input.requestId,primarySourceId:source.id,message:input.text,document:{...promptDocument(document),sources:document.sources.filter(s=>s.includeInBuild!==false),conversations:promptConversations(scopedConversations)},modelAnchor:input.modelAnchor,sourceSelection:input.sourceSelection,parent:input.parent,replyTo:input.replyTo,mergedFrom:input.mergedFrom,referencedMessages}});
   await dispatchStudioPipelineJob(job);
   current=await save(ctx,current,{...current.document,[lane]:{...state,status:'queued',message:job.message,updatedAt:new Date().toISOString()}});
  }catch(error){
@@ -102,7 +104,7 @@ export async function startPackageSync(ctx:StudioContext,w:StudioWorkspace,propo
   const paperUrl=await signedPaper(ctx,current,source.id);
   const materials=await prepareStudioResourceArchive(ctx,current,source.id);
   const prior=document.acceptedPackage;
-  const job=await createStudioPipelineJob({id:jobId,identity:{...identity(ctx,w),requestId,conversationId},paperName:source.name,paperUrl,openMaterialsUrl:materials?.url,openMaterialsPathname:materials?.path,openMaterialsSourceIds:materials?.sourceIds||[],previousJobId:prior&&document.pipeline?.sourceId===source.id?prior.jobId:undefined,request:{version:1,mode:'build',purpose:'accepted-model-sync',...identity(ctx,w),conversationId,requestId,primarySourceId:source.id,message:'Build the complete study package for the authoritative accepted model. Preserve its model semantics and identifiers.',document:{...document,sources:document.sources.filter(s=>s.includeInBuild!==false)},targetModelFingerprint:fingerprint}});
+  const job=await createStudioPipelineJob({id:jobId,identity:{...identity(ctx,w),requestId,conversationId},paperName:source.name,paperUrl,openMaterialsUrl:materials?.url,openMaterialsPathname:materials?.path,openMaterialsSourceIds:materials?.sourceIds||[],previousJobId:prior&&document.pipeline?.sourceId===source.id?prior.jobId:undefined,request:{version:1,mode:'build',purpose:'accepted-model-sync',...identity(ctx,w),conversationId,requestId,primarySourceId:source.id,message:'Build the complete study package for the authoritative accepted model. Preserve its model semantics and identifiers.',document:{...promptDocument(document),sources:document.sources.filter(s=>s.includeInBuild!==false),conversations:promptConversations(scopeConversationsForPrompt(document.conversations,conversationId))},targetModelFingerprint:fingerprint}});
   await dispatchStudioPipelineJob(job);
   current=await save(ctx,current,{...current.document,pipeline:{...state,status:'queued',message:job.message,updatedAt:new Date().toISOString()}});
  }catch(error){

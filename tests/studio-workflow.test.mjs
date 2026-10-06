@@ -13,7 +13,7 @@ function load(file, dependencies = {}) {
   const source = fs.readFileSync(path.join(root, file), "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const loadedModule = { exports: {} };
-  new Function("require", "module", "exports", compiled)(id => dependencies[id] ?? requireLocal(id), loadedModule, loadedModule.exports);
+  new Function("require", "module", "exports", compiled)(id => dependencies[id] ?? ((id === "./human-program" || id === "@/lib/studio/human-program") ? load("lib/studio/human-program.ts") : id === "./human-program.schema.json" ? JSON.parse(fs.readFileSync(path.join(root,"lib/studio/human-program.schema.json"),"utf8")) : requireLocal(id)), loadedModule, loadedModule.exports);
   return loadedModule.exports;
 }
 class StudioError extends Error { constructor(status, code) { super(code); this.status = status; this.code = code; } }
@@ -36,15 +36,17 @@ const model = title => ({ id: "study", title, source: { title: "", authors: "", 
 const instructions = { id: "participant-instructions", title: "Participant instructions", filename: "instructions.md", format: "markdown", kind: "instructions", content: "# Instructions\nRead before responding.", sourceIds: [sourceId] };
 const nextServer = { NextResponse: { json: (data, options = {}) => Response.json(data, { status: options.status || 200 }) } };
 
-test("completed pipeline proposal requires apply, preserves edits, and exports an authenticated handoff", async () => {
+for(const format of ['legacy','v2','v2-removed-field'])test(`${format}: completed proposal requires apply, preserves edits, and exports an authenticated handoff`, async () => {
+ const fixture=JSON.parse(fs.readFileSync(path.join(root,'tests/fixtures/human-program-v2.json'),'utf8')).cases.find(c=>c.id==='exploratory-extension').program;
+ const makeModel=title=>{if(format==='legacy')return model(title);const p={...structuredClone(fixture),title};if(format==='v2-removed-field'&&title==='Pipeline proposal')p.nodes[0].fields=[];return validation.validateStudyModel(p);};
   let authenticated = true, saveCount = 0, approvals = 0;
   let workspace = { id: workspaceId, title: "Study", revision: 4, created_at: now, updated_at: now, document: {
-    version: 1, title: "Study", model: model("Researcher revision"), sources: [source], annotations: [], reviewResponses: {}, artifacts: [],
+    version: 1, title: "Study", model: makeModel("Researcher revision"), sources: [source], annotations: [], reviewResponses: {}, artifacts: [],
     pipeline: { jobId: `studio-${workspaceId}-${requestId}`, requestId, conversationId, sourceId, status: "review", message: "Package ready", updatedAt: now, proposalId },
     activeConversationId: conversationId,
-    conversations: [{ id: conversationId, title: "Build this study", draft: "", updatedAt: now, modelAnchor: null, sourceSelection: null, selected: "", messages: [
+    conversations: [{ id: conversationId, title: "Build this study", draft: "", updatedAt: now, modelAnchor: format==='v2-removed-field'?{kind:'objects',entityIds:['coding'],fieldId:'categories'}:null, sourceSelection: null, selected: "", messages: [
       { id: requestId, role: "user", text: "Build this study", createdAt: now },
-      { id: messageId, role: "agent", text: "The package is ready for review.", createdAt: now, proposal: { id: proposalId, model: model("Pipeline proposal"), changesModel: true, artifacts: [instructions], summary: "Generated package", status: "pending" } },
+      { id: messageId, role: "agent", text: "The package is ready for review.", createdAt: now, proposal: { id: proposalId, model: makeModel("Pipeline proposal"), changesModel: true, artifacts: [instructions], summary: "Generated package", status: "pending" } },
     ] }],
   } };
   const auth = { async requireStudioUser() { if (!authenticated) throw new StudioError(401, "unauthorized"); return ctx; } };
@@ -111,6 +113,7 @@ test("completed pipeline proposal requires apply, preserves edits, and exports a
   assert.equal(applied.status, 200);
   assert.equal(workspace.revision, 6);
   assert.equal(workspace.document.model.title, "Pipeline proposal");
+  if(format==='v2-removed-field')assert.equal(workspace.document.conversations[0].modelAnchor,null);
   assert.equal(workspace.document.artifacts[0].content, instructions.content);
   assert.equal(workspace.document.conversations[0].messages[1].proposal.status, "applied");
   assert.equal(approvals, 1, "remote approval follows the authoritative model save");
@@ -124,6 +127,9 @@ test("completed pipeline proposal requires apply, preserves edits, and exports a
   const saved = JSON.parse(await zip.file("document.json").async("string"));
   const manifest = JSON.parse(await zip.file("manifest.json").async("string"));
   assert.equal(saved.model.title, "Pipeline proposal");
+  const canonical=JSON.parse(await zip.file("human-program.json").async("string"));
+  assert.equal(canonical.schemaVersion,2);
+  if(format!=="legacy")assert.deepEqual(canonical,saved.model.program);
   assert.equal(manifest.revision, 6);
   assert.equal(manifest.buildPackage.modelFingerprint,modelVersion.modelFingerprint(saved.model));
   assert.equal(await zip.file("build-package/paper/protocol.md").async("string"),"# Accepted package");
@@ -133,7 +139,7 @@ test("completed pipeline proposal requires apply, preserves edits, and exports a
   const allText = await Promise.all(Object.values(zip.files).filter(file => !file.dir && !file.name.endsWith(".pdf")).map(file => file.async("string")));
   assert.ok(allText.every(text => !text.includes(ctx.accessToken)), "export must not reveal server access token");
 
-  workspace={...workspace,revision:workspace.revision+1,document:{...workspace.document,model:model("Edited after package acceptance")}};
+  workspace={...workspace,revision:workspace.revision+1,document:{...workspace.document,model:makeModel("Edited after package acceptance")}};
   const staleZip=await JSZip.loadAsync(await (await exportRoute.GET(new Request(`${url}/export`),context)).arrayBuffer());
   const staleManifest=JSON.parse(await staleZip.file("manifest.json").async("string"));
   assert.match(staleManifest.buildPackage.reason,/older model revision/);

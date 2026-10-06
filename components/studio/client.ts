@@ -1,3 +1,5 @@
+import type { StudioDocument } from "@/lib/studio/types";
+
 const messages:Record<string,string>={
  discussion_busy:'The agent is answering your previous message. Your draft is saved.',
  discussion_not_found:'Could not retrieve this response. Retry the message after the failed launch.',
@@ -40,4 +42,11 @@ export async function studioApi<T>(path:string,init?:RequestInit):Promise<T>{
  const body=await response.json().catch(()=>({error:'Invalid server response'}));
  if(!response.ok)throw new StudioApiError(response.status,body);
  return body as T;
+}
+
+// These snapshots are owned by the server and restored by PATCH. Sending them
+// again on every keystroke makes a long study history consume the save budget.
+export function studioAutosaveDocument(document:StudioDocument):StudioDocument {
+ const {programVersions,...editable}=document;void programVersions;
+ return {...editable,conversations:editable.conversations.map(c=>({...c,messages:c.messages.map(({proposal,...message})=>{void proposal;return message;})}))};
 }

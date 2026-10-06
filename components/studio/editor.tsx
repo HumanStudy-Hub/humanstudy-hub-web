@@ -5,7 +5,7 @@ import Workspace,{type ConnectedStudio,type Page} from '@/app/build-preview/work
 import type { StudioDocument,StudioSource,StudioWorkspace } from '@/lib/studio/types';
 import { useStudioTelemetry } from '@/lib/studio/use-telemetry';
 import { loadPdfPages } from '@/lib/studio/pdf-client';
-import { studioApi,StudioApiError } from './client';
+import { studioApi,StudioApiError,studioAutosaveDocument } from './client';
 import { mergeStudioUpdate } from '@/lib/studio/merge-update';
 import { isPaper, MAX_PAPER_BYTES, MAX_RESOURCE_BYTES, sourceSpec } from '@/lib/studio/resources';
 import { downloadStudioResource, PrimaryPaperHint, ResourceControls, ResourceViewer } from './resources';
@@ -22,7 +22,7 @@ export default function StudioEditor({id}:{id:string}){
  const flush=useCallback(async()=>{
   while(saving.current)await saving.current;
   if(blocked.current)throw new Error('Reload the latest revision before saving more changes.');
-  const run=async()=>{while(pending.current&&server.current){const snapshot=pending.current;pending.current=null;setStatus('Saving…');try{const result=await studioApi<{workspace:StudioWorkspace}>(`/api/studio/workspaces/${id}`,{method:'PATCH',body:JSON.stringify({document:snapshot,expectedRevision:server.current.revision})});server.current=result.workspace;setWorkspace(result.workspace);setStatus(pending.current?'Unsaved changes':'Saved');}catch(e){pending.current=pending.current||snapshot;if(e instanceof StudioApiError&&e.status===409){blocked.current=true;setConflict(true);}setStatus('Not saved');setError(e instanceof Error?e.message:'Save failed.');throw e;}}};
+  const run=async()=>{while(pending.current&&server.current){const snapshot=pending.current;pending.current=null;setStatus('Saving…');try{const result=await studioApi<{workspace:StudioWorkspace}>(`/api/studio/workspaces/${id}`,{method:'PATCH',body:JSON.stringify({document:studioAutosaveDocument(snapshot),expectedRevision:server.current.revision})});server.current=result.workspace;setWorkspace(result.workspace);setStatus(pending.current?'Unsaved changes':'Saved');}catch(e){pending.current=pending.current||snapshot;if(e instanceof StudioApiError&&e.status===409){blocked.current=true;setConflict(true);}setStatus('Not saved');setError(e instanceof Error?e.message:'Save failed.');throw e;}}};
   const promise=run();saving.current=promise;try{await promise;}finally{if(saving.current===promise)saving.current=null;}
  },[id]);
  const onChange=useCallback((doc:StudioDocument)=>{setCurrent(doc);pending.current=doc;setStatus('Unsaved changes');if(timer.current)clearTimeout(timer.current);timer.current=setTimeout(()=>{if(!operation.current)void flush().catch(()=>{});},900);},[flush,setCurrent]);

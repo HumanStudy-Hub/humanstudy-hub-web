@@ -20,7 +20,7 @@ function load(file){
    const target=['.ts','.tsx'].map(extension=>base+extension).find(candidate=>fs.existsSync(path.join(root,candidate)));
    return load(target);
   }
-  return requireLocal(id);
+  return ((id === "./human-program" || id === "@/lib/studio/human-program") ? load("lib/studio/human-program.ts") : id === "./human-program.schema.json" ? JSON.parse(fs.readFileSync(path.join(root,"lib/studio/human-program.schema.json"),"utf8")) : requireLocal(id));
  },loadedModule,loadedModule.exports);
  cache.set(file,loadedModule.exports);return loadedModule.exports;
 }

@@ -1,0 +1,15 @@
+.details {font:inherit;color:inherit;min-width:0;}
+.field {padding:10px 0;border-bottom:1px solid var(--line);}
+.field dt {display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600;}
+.field dt button {opacity:0;font:inherit;font-size:12px;border:0;background:transparent;color:var(--accent,#126780);cursor:pointer;}
+.field:hover dt button,.field:focus-within dt button {opacity:1;}
+.field dd {margin:6px 0 0;overflow-wrap:anywhere;}
+.field p {margin:0;white-space:pre-wrap;}
+.field small,.details small {display:block;opacity:.6;font-size:11px;margin-top:5px;}
+.selected {background:color-mix(in srgb,var(--accent) 10%,var(--surface));border-radius:5px;padding:10px;}
+.details pre {white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:12px;margin:8px 0;}
+.details details {margin:8px 0;}
+.details summary {cursor:pointer;}
+.connections {display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+.connections button {border:0;background:transparent;text-align:left;font:inherit;color:var(--accent,#126780);cursor:pointer;}
+@media (hover:none) {.field dt button {opacity:1;}}

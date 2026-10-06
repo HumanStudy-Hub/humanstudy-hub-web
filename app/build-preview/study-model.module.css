@@ -969,3 +969,13 @@
 @media (max-width: 800px) {
   .cards { grid-template-columns: 1fr; }
 }
+
+.studyPicker {padding:8px 18px;border-bottom:1px solid var(--line);}
+.studyPicker select {font:inherit;color:inherit;background:transparent;border:0;max-width:100%;cursor:pointer;}
+.fieldComment {opacity:0;border:0;background:transparent;color:var(--accent,#126780);font:inherit;font-size:12px;cursor:pointer;}
+.inspector dl>div:hover .fieldComment,.fieldComment:focus-visible {opacity:1;}
+@media (hover:none) {.fieldComment {opacity:1;}}
+
+.programExtensions {margin:18px 24px;font-size:13px;}
+.programExtensions summary {cursor:pointer;}
+.programExtensions pre {white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;}

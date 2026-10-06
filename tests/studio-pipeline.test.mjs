@@ -14,7 +14,7 @@ function load(file, dependencies = {}) {
   const source = fs.readFileSync(path.join(root, file), "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const loadedModule = { exports: {} };
-  new Function("require", "module", "exports", compiled)(id => dependencies[id] ?? requireLocal(id), loadedModule, loadedModule.exports);
+  new Function("require", "module", "exports", compiled)(id => dependencies[id] ?? ((id === "./human-program" || id === "@/lib/studio/human-program") ? load("lib/studio/human-program.ts") : id === "./human-program.schema.json" ? JSON.parse(fs.readFileSync(path.join(root,"lib/studio/human-program.schema.json"),"utf8")) : requireLocal(id)), loadedModule, loadedModule.exports);
   return loadedModule.exports;
 }
 class StudioError extends Error { constructor(status, code) { super(code); this.status = status; this.code = code; } }
@@ -267,6 +267,7 @@ test("chat persists a branch parent and message references in the pipeline reque
   const siblingConversationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   const siblingMessageId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
   const initial = document();
+  initial.programVersions=[{id:"version-1",createdAt:now,label:"Saved",fingerprint:modelVersion.modelFingerprint(initial.model),model:structuredClone(initial.model)}];
   initial.conversations.push({ id: ids.conversation, title: "Main", updatedAt: now, draft: "", modelAnchor: null, sourceSelection: null, selected: "",
     messages: [{ id: parentMessageId, role: "agent", text: "Fork here", createdAt: now }, { id: ids.next, role: "agent", text: "Later parent turn", createdAt: now }] });
   initial.conversations.push({ id: siblingConversationId, title: "Sibling", updatedAt: now, draft: "", modelAnchor: null, sourceSelection: null, selected: "", parent: { conversationId: ids.conversation, messageId: parentMessageId },
@@ -283,6 +284,8 @@ test("chat persists a branch parent and message references in the pipeline reque
   const sent = h.calls.find(call => call[0] === "create")[1].request;
   assert.deepEqual(sent.document.conversations.find(item => item.id === sideConversationId).parent, parent);
   assert.deepEqual(sent.document.conversations.map(item => [item.id, item.messages.map(message => message.id)]), [[ids.conversation, [parentMessageId]], [sideConversationId, [ids.request]]]);
+  assert.equal(sent.document.programVersions,undefined);
+  assert.deepEqual(h.workspace.document.programVersions,initial.programVersions);
   assert.deepEqual(sent.replyTo, parent);
   assert.deepEqual(sent.referencedMessages.map(item => [item.relation, item.message.text]), [["replyTo", "Fork here"], ["mergedFrom", "Selected side-talk insight"]]);
   assert.equal(sent.referencedMessages[1].message.sourceSelection.text, "Participants followed the instructions.");
@@ -514,4 +517,16 @@ test("acceptance stops adding program versions and autosave preserves existing m
  const patch=new Request(`https://studio.test/api/studio/workspaces/${ids.workspace}`,{method:'PATCH',headers:{origin:'https://studio.test','content-type':'application/json'},body:JSON.stringify({document:tampered,expectedRevision:h.workspace.revision})});
  const saved=await h.workspaceRoute.PATCH(patch,routeContext);
  assert.equal(saved.status,200);assert.deepEqual(h.workspace.document.programVersions,log);
+});
+
+test('autosave omits repeated server snapshots while PATCH retains proposal decisions and saved versions',async()=>{
+ const h=harness();await h.chat.POST(request('chat',{...input(),intent:'discuss'}),routeContext);
+ h.job.status='complete';h.job.packageReady=false;h.turn={requestId:ids.request,reply:'Revise the title.',model:model('New title')};
+ await h.sync.POST(request('pipeline',{revision:h.workspace.revision}),routeContext);
+ const doc=h.workspace.document;doc.programVersions=[{id:'saved-1',createdAt:now,label:'Saved',fingerprint:modelVersion.modelFingerprint(doc.model),model:structuredClone(doc.model)}];
+ const client=load('components/studio/client.ts');const editable=client.studioAutosaveDocument(doc);
+ assert.equal(editable.programVersions,undefined);assert.equal(editable.conversations[0].messages.at(-1).proposal,undefined);assert(doc.conversations[0].messages.at(-1).proposal);
+ const patch=new Request(`https://studio.test/api/studio/workspaces/${ids.workspace}`,{method:'PATCH',headers:{origin:'https://studio.test','content-type':'application/json'},body:JSON.stringify({document:editable,expectedRevision:h.workspace.revision})});
+ const result=await h.workspaceRoute.PATCH(patch,routeContext);assert.equal(result.status,200);
+ assert.deepEqual(h.workspace.document.programVersions,doc.programVersions);assert.deepEqual(h.workspace.document.conversations[0].messages.at(-1).proposal,doc.conversations[0].messages.at(-1).proposal);
 });

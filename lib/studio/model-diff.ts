@@ -1,6 +1,6 @@
 import type { StudySchema } from "@/app/build-preview/study-schema";
 
-export type ModelSection = "study" | "entities" | "relations" | "procedure" | "variables" | "reviewIssues";
+export type ModelSection = "study" | "entities" | "relations" | "procedure" | "variables" | "reviewIssues" | "program";
 export type EntityChange = { id: string; kind: "added" | "removed" | "changed"; title: string; details: string[] };
 export type ModelChanges = {
   hasChanges: boolean;
@@ -27,6 +27,8 @@ export function modelChanges(before: StudySchema, after: StudySchema): ModelChan
   const changed = new Map<string, EntityChange>();
   const sections = new Set<ModelSection>();
   const details: string[] = [];
+  // Typed values and extension data are scientific content even when their card summaries match.
+  if(JSON.stringify(before.program)!==JSON.stringify(after.program)){sections.add("program");details.push("Human Program data changed");}
   const oldEntities = byId(before.entities), newEntities = byId(after.entities);
   const mark = (id: string, detail: string) => {
     const entity = newEntities.get(id) ?? oldEntities.get(id);
@@ -35,6 +37,12 @@ export function modelChanges(before: StudySchema, after: StudySchema): ModelChan
     if (existing) { if (!existing.details.includes(detail)) existing.details.push(detail); return; }
     changed.set(id, { id, kind: oldEntities.has(id) ? newEntities.has(id) ? "changed" : "removed" : "added", title: entity.title, details: [detail] });
   };
+  if(before.program||after.program){
+    const oldNodes=byId(before.program?.nodes??[]),newNodes=byId(after.program?.nodes??[]);
+    for(const id of new Set([...oldNodes.keys(),...newNodes.keys()]))if(JSON.stringify(oldNodes.get(id))!==JSON.stringify(newNodes.get(id)))mark(id,"Typed research data changed");
+    const oldFlow=byId(before.program?.steps??[]),newFlow=byId(after.program?.steps??[]);
+    for(const id of new Set([...oldFlow.keys(),...newFlow.keys()]))if(JSON.stringify(oldFlow.get(id))!==JSON.stringify(newFlow.get(id)))mark(`flow:${id}`,"Procedure rule or references changed");
+  }
   if (!same({ title: before.title, source: before.source }, { title: after.title, source: after.source })) {
     sections.add("study"); details.push("Study title or source changed");
   }

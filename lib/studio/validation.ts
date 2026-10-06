@@ -1,3 +1,4 @@
+import { validateHumanProgram, projectHumanProgram } from "./human-program";
 import type { ModelAnchor } from "@/app/build-preview/model-review";
 import type { Evidence, StudyReviewIssue, StudySchema } from "@/app/build-preview/study-schema";
 import type { SourceSelection, StudioArtifact, StudioDocument, StudioSource } from "./types";
@@ -14,7 +15,7 @@ const fail = (message: string): never => { throw new StudioValidationError(messa
 const object = (value: unknown, name: string): ObjectValue => value && typeof value === "object" && !Array.isArray(value) ? value as ObjectValue : fail(`${name} must be an object.`);
 const array = (value: unknown, name: string, max: number): unknown[] => Array.isArray(value) && value.length <= max ? value : fail(`${name} must be an array with at most ${max} items.`);
 const string = (value: unknown, name: string, max: number, required = false): string => {
-  if (typeof value !== "string" || value.length > max || (required && !value.trim())) fail(`${name} must be ${required ? "a nonempty" : "a"} string of at most ${max} characters.`);
+  if (typeof value !== "string" || [...value].length > max || (required && !value.trim())) fail(`${name} must be ${required ? "a nonempty" : "a"} string of at most ${max} characters.`);
   return value as string;
 };
 const id = (value: unknown, name: string): string => {
@@ -63,9 +64,19 @@ function evidence(value: unknown, name: string, allowedPages?: ReadonlySet<numbe
 
 /** Structural and referential validation; source pages may be supplied for provenance checks. */
 export function validateStudyModel(input: unknown, options: { allowedPages?: ReadonlySet<number>; sources?: StudioSource[] } = {}): StudySchema {
-  const value = object(input, "model");
+  let value = object(input, "model");
+  let program;
+  if(value.schemaVersion!==undefined||value.program!==undefined){
+    try{program=validateHumanProgram(value.program??value);
+      if(options.sources)program={...program,evidence:program.evidence.map(e=>{
+        const source=options.sources!.find(s=>s.id===e.sourceId);
+        const extracted=e.locator.page?source?.pages?.find(p=>p.page===e.locator.page)?.text:source?.text;
+        return {...e,verification:e.quote&&extracted?.includes(e.quote)?"verified" as const:"unverified" as const};
+      })};
+      value=projectHumanProgram(program) as unknown as ObjectValue;}catch(error){fail(error instanceof Error?error.message:"Invalid Human Program");}
+  }
   const source = object(value.source, "model.source");
-  const entities = array(value.entities, "model.entities", 200).map((raw, i) => {
+  const entities = array(value.entities, "model.entities", 600).map((raw, i) => {
     const e = object(raw, `model.entities[${i}]`);
     return {
       id: id(e.id, `model.entities[${i}].id`),
@@ -74,14 +85,15 @@ export function validateStudyModel(input: unknown, options: { allowedPages?: Rea
       description: string(e.description, `model.entities[${i}].description`, 12000), evidence: evidence(e.evidence, `model.entities[${i}].evidence`, options.allowedPages, options.sources),
       fields: array(e.fields, `model.entities[${i}].fields`, 100).map((rawField, j) => {
         const field = object(rawField, `model.entities[${i}].fields[${j}]`);
-        return { name: string(field.name, "field.name", 200, true), value: string(field.value, "field.value", 4000), ...(field.status === undefined ? {} : { status: oneOf(field.status, "field.status", ["reported", "implementation", "unresolved"] as const) }) };
+        return { ...(field.id===undefined?{}:{id:id(field.id,"field.id")}), name: string(field.name, "field.name", 200, true), value: string(field.value, "field.value", 4000), ...(field.status === undefined ? {} : { status: oneOf(field.status, "field.status", ["reported", "implementation", "unresolved"] as const) }) };
       }),
+      ...(e.studyIds===undefined?{}:{studyIds:array(e.studyIds,"entity.studyIds",500).map(v=>id(v,"study ID"))}),
       x: number(e.x, "entity.x", 0, 10000), y: number(e.y, "entity.y", 0, 10000), w: number(e.w, "entity.w", 0, 10000), h: number(e.h, "entity.h", 0, 10000),
     };
   });
   unique(entities.map(e => e.id), "model.entities");
   const entityIds = new Set(entities.map(e => e.id));
-  const relations = array(value.relations, "model.relations", 500).map((raw, i) => {
+  const relations = array(value.relations, "model.relations", 1200).map((raw, i) => {
     const relation = object(raw, `model.relations[${i}]`);
     const from = id(relation.from, "relation.from"), to = id(relation.to, "relation.to");
     if (!entityIds.has(from) || !entityIds.has(to)) fail(`model.relations[${i}] refers to a missing entity.`);
@@ -89,7 +101,7 @@ export function validateStudyModel(input: unknown, options: { allowedPages?: Rea
   });
   const procedure = array(value.procedure, "model.procedure", 200).map((raw, i) => {
     const step = object(raw, `model.procedure[${i}]`);
-    return { id: id(step.id, "procedure.id"), name: string(step.name, "procedure.name", 200, true), input: string(step.input, "procedure.input", 4000), actor: string(step.actor, "procedure.actor", 1000), output: string(step.output, "procedure.output", 4000), evidence: evidence(step.evidence, `model.procedure[${i}].evidence`, options.allowedPages, options.sources) };
+    return { id: id(step.id, "procedure.id"), ...(step.entity===undefined?{}:{entity:id(step.entity,"procedure.entity")}), name: string(step.name, "procedure.name", 200, true), input: string(step.input, "procedure.input", 4000), actor: string(step.actor, "procedure.actor", 1000), output: string(step.output, "procedure.output", 4000), evidence: evidence(step.evidence, `model.procedure[${i}].evidence`, options.allowedPages, options.sources) };
   });
   unique(procedure.map(step => step.id), "model.procedure");
   const variables = array(value.variables, "model.variables", 500).map((raw, i) => {
@@ -115,7 +127,7 @@ export function validateStudyModel(input: unknown, options: { allowedPages?: Rea
     };
   });
   if (reviewIssues) unique(reviewIssues.map(issue => issue.id), "model.reviewIssues");
-  return { id: id(value.id, "model.id"), title: string(value.title, "model.title", 300, true), source: { title: string(source.title, "model.source.title", 300), authors: string(source.authors, "model.source.authors", 500), filename: string(source.filename, "model.source.filename", 300) }, entities, relations, procedure, variables, ...(reviewIssues ? { reviewIssues } : {}) };
+  return { ...(program?{program}:{}), id: id(value.id, "model.id"), title: string(value.title, "model.title", 300, true), source: { title: string(source.title, "model.source.title", 300), authors: string(source.authors, "model.source.authors", 500), filename: string(source.filename, "model.source.filename", 300) }, entities, relations, procedure, variables, ...(reviewIssues ? { reviewIssues } : {}) };
 }
 
 export function validateModelAnchor(input: unknown, model: StudySchema, options: { historical?: boolean } = {}): ModelAnchor | null {
@@ -126,9 +138,16 @@ export function validateModelAnchor(input: unknown, model: StudySchema, options:
   const entityIds = array(value.entityIds, "modelAnchor.entityIds", 100).map((entry, i) => id(entry, `modelAnchor.entityIds[${i}]`));
   unique(entityIds, "modelAnchor.entityIds");
   if (!options.historical && entityIds.some(entityId => !known.has(entityId))) fail("modelAnchor refers to a missing entity.");
+  const fieldId=value.fieldId===undefined?undefined:id(value.fieldId,"modelAnchor.fieldId");
+  if(fieldId&&!options.historical){
+    if(entityIds.length!==1)fail("Field context requires one object");
+    const node=model.entities.find(e=>e.id===entityIds[0]);
+    const canonicalFields=model.program?(model.program.nodes.find(n=>n.id===entityIds[0])?.fields.map(f=>f.id)??model.program.steps.filter(s=>`flow:${s.id}`===entityIds[0]).flatMap(s=>s.rule?[s.rule.id]:[])):undefined;
+    if(canonicalFields?!canonicalFields.includes(fieldId):!node?.fields.some((f,i)=>(f.id??`field-${i+1}`)===fieldId))fail("modelAnchor refers to a missing field");
+  }
   const points = value.points === undefined ? undefined : array(value.points, "modelAnchor.points", 512).map((entry, i) => { const point = object(entry, `modelAnchor.points[${i}]`); return { x: number(point.x, "point.x", 0, 100), y: number(point.y, "point.y", 0, 100) }; });
   const issueId = value.issueId === undefined ? undefined : id(value.issueId, "modelAnchor.issueId");
-  return { kind, entityIds, ...(points ? { points } : {}), ...(issueId ? { issueId } : {}) };
+  return { kind, entityIds, ...(fieldId?{fieldId}:{}), ...(points ? { points } : {}), ...(issueId ? { issueId } : {}) };
 }
 
 export function validateSourceSelection(input: unknown, sources: StudioSource[], options: { historical?: boolean } = {}): SourceSelection | null {

@@ -7,7 +7,7 @@ function load(file,dependencies={}){
  const source=fs.readFileSync(new URL(`../${file}`,import.meta.url),'utf8');
  const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
  const loadedModule={exports:{}};
- new Function('require','module','exports',js)(id=>dependencies[id]||require(id),loadedModule,loadedModule.exports);
+ new Function('require','module','exports',js)(id=>dependencies[id]||((id === "./human-program" || id === "@/lib/studio/human-program") ? load("lib/studio/human-program.ts") : id === "./human-program.schema.json" ? JSON.parse(fs.readFileSync(new URL("../lib/studio/human-program.schema.json",import.meta.url),"utf8")) : require(id)),loadedModule,loadedModule.exports);
  return loadedModule.exports;
 }
 const {quoteRects,sourceRect}=load('lib/studio/source-anchor.ts');

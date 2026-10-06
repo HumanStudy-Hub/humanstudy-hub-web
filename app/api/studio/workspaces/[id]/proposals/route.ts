@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireStudioUser } from "@/lib/studio/auth";
 import { assertSameOrigin, isUuid, readJsonBody, routeError, StudioError } from "@/lib/studio/http";
 import { getWorkspace, saveWorkspace } from "@/lib/studio/store";
-import { validateStudioDocument } from "@/lib/studio/validation";
+import { validateStudioDocument, validateModelAnchor } from "@/lib/studio/validation";
 import { modelFingerprint } from "@/lib/studio/model-version";
 import { reconcilePackageApproval, startPackageSync } from "@/lib/studio/pipeline";
 import { readOwnedStudioJob } from "@/lib/github-jobs";
@@ -41,10 +41,11 @@ export async function POST(request: Request, { params }: Context) {
     }
     const firstEntity = nextModel.entities[0]?.id || "";
     const liveIds = new Set(nextModel.entities.map(entity => entity.id));
+    const liveAnchor=(anchor:typeof document.conversations[number]["modelAnchor"])=>{try{return validateModelAnchor(anchor,nextModel);}catch{return null;}};
     const conversations = document.conversations.map(conversation => ({
       ...conversation,
       selected: status === "applied" && !liveIds.has(conversation.selected) ? firstEntity : conversation.selected,
-      modelAnchor: status === "applied" && conversation.modelAnchor && !conversation.modelAnchor.entityIds.every(entityId => liveIds.has(entityId)) ? null : conversation.modelAnchor,
+      modelAnchor: status === "applied" ? liveAnchor(conversation.modelAnchor) : conversation.modelAnchor,
       messages: conversation.messages.map(message => message.proposal?.id === body.proposalId
         ? { ...message, proposal: { ...message.proposal, status } }
         : message),

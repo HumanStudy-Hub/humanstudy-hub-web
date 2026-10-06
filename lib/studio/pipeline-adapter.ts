@@ -1,3 +1,4 @@
+import { validateHumanProgram, projectHumanProgram, programJson } from "./human-program";
 import type { Evidence, StudySchema, StudyReviewIssue, Entity, Variable } from "@/app/build-preview/study-schema";
 import type { StudioArtifact, StudioDocument } from "./types";
 import { validateStudyModel, validateStudioArtifacts } from "./validation";
@@ -83,6 +84,14 @@ function cleanEvidence(input: Evidence, document: StudioDocument): Evidence {
  * against the attached, extracted page text. Rectangles have no text-to-region
  * proof in the current source format, so they cannot be certified here. */
 export function groundStudioModelEvidence(model: StudySchema, document: StudioDocument): StudySchema {
+  if(model.program){
+    const program=validateHumanProgram({...model.program,evidence:model.program.evidence.map(e=>{
+      const source=document.sources.find(s=>s.id===e.sourceId);
+      const page=source?.pages?.find(p=>p.page===e.locator.page);
+      return {...e,verification:e.quote&&page?.text.includes(e.quote)?"verified":"unverified"};
+    })});
+    return validateStudyModel(projectHumanProgram(program),{sources:document.sources});
+  }
   const grounded = { ...model,
     entities: model.entities.map(entity => ({ ...entity, evidence: cleanEvidence(entity.evidence, document) })),
     procedure: model.procedure.map(step => ({ ...step, evidence: cleanEvidence(step.evidence, document) })),
@@ -360,11 +369,20 @@ function fallbackModel(files: PackageFile[], document: StudioDocument): StudySch
 
 /** Pure, bounded presentation of a complete HumanStudy-Bench package. */
 export function adaptPipelinePackage(files: PackageFile[], document: StudioDocument): { model: StudySchema; artifacts: StudioArtifact[]; summary: string } {
-  const validatedSidecar = sidecarModel(files, document);
+  const core=parse(getFile(files,"study.json"));
+  let canonical:StudySchema|undefined;
+  const rawSidecar=parse(getFile(files,"studio-model.json"));
+  if((rawSidecar.schemaVersion!==undefined||rawSidecar.program!==undefined)&&core.program===undefined)throw new Error("v2 requires canonical study.json.program");
+  if(core.program!==undefined){
+    canonical=groundStudioModelEvidence(validateStudyModel(core.program,{sources:document.sources}),document);
+    const sidecar=getFile(files,"studio-model.json");
+    if(sidecar){const raw=JSON.parse(sidecar.content);const side=validateHumanProgram(raw.program??raw);const original=validateHumanProgram(core.program);if(programJson(side)!==programJson(original))throw new Error("study.json.program and studio-model.json disagree");}
+  }
+  const validatedSidecar = canonical??sidecarModel(files, document);
   const model = validateStudyModel(withAuditIssues(validatedSidecar ?? fallbackModel(files, document), files, document), { sources: document.sources });
   const { artifacts, omitted } = packageArtifacts(files, document);
   const usedSidecar = !!validatedSidecar;
-  let summary = `HumanStudy-Bench package: ${files.length} file(s); ${artifacts.length} available in Studio. ${usedSidecar ? "Validated studio-model.json sidecar used." : "Package mapped into a reviewable model; source evidence and missing choices require researcher review."}`;
+  let summary = `HumanStudy-Bench package: ${files.length} file(s); ${artifacts.length} available in Studio. ${usedSidecar ? canonical?"Canonical study.json.program used; views derived from its schema.":"Validated studio-model.json sidecar used." : "Package mapped into a reviewable model; source evidence and missing choices require researcher review."}`;
   if (!usedSidecar && getFile(files, "studio-model.json")) summary += " The supplied studio-model.json did not pass validation; fallback mapping was used. Review the original sidecar in the package.";
   if (omitted.length) summary += ` Studio omitted ${omitted.length} file(s) because of format, validity, count, or size limits: ${omitted.join(", ")}. The complete package ZIP remains available.`;
   return { model, artifacts, summary: clipped(summary, 4000) };

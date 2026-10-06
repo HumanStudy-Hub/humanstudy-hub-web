@@ -1,10 +1,11 @@
 /** A reviewable study representation. Source claims and implementation choices stay separate. */
+import type { HumanProgram } from "@/lib/studio/human-program";
 export type Rect = { x: number; y: number; w: number; h: number };
 export type Evidence = { sourceId?: string; page: number; rects: Rect[]; quote: string };
 export type EntityKind = "background" | "hypothesis" | "design" | "participants" | "material" | "procedure" | "record" | "variable" | "analysis" | "result";
 export type Entity = {
   id: string; kind: EntityKind; title: string; subtitle: string;
-  description: string; evidence: Evidence; fields: { name: string; value: string; status?: "reported" | "implementation" | "unresolved" }[];
+  description: string; evidence: Evidence; studyIds?:string[]; fields: { id?:string; name: string; value: string; status?: "reported" | "implementation" | "unresolved" }[];
   x: number; y: number; w: number; h: number;
 };
 export type Variable = { id: string; name: string; role: string; type: string; unit: string; producedBy: string; usedBy: string; definition: string; status: "reported" | "implementation" | "unresolved"; entity: string };
@@ -14,9 +15,10 @@ export type StudyReviewIssue = {
   entity?: string; study?: string; field?: string; sourcePointer?: string; evidence?: Evidence;
 };
 export type StudySchema = {
+  program?:HumanProgram;
   id: string; title: string; source: { title: string; authors: string; filename: string };
   entities: Entity[]; relations: { from: string; to: string; label: string }[];
-  procedure: { id: string; name: string; input: string; actor: string; output: string; evidence: Evidence }[];
+  procedure: { id: string; entity?:string; name: string; input: string; actor: string; output: string; evidence: Evidence }[];
   variables: Variable[];
   reviewIssues?: StudyReviewIssue[];
 };

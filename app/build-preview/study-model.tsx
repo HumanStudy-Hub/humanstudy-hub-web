@@ -5,6 +5,8 @@ import { study as exampleStudy, type StudySchema, type Evidence } from "./study-
 import { intersectsPolygon, modelOverview, modelIssues, prioritizeReviewIssues, type ModelAnchor, type Point, type ReviewResponse } from "./model-review";
 import s from "./study-model.module.css";
 import { UiIcon, useT } from "./ui";
+import { programText } from "@/lib/studio/human-program";
+import ProgramDetails from "@/components/studio/program-details";
 import Materials from "@/components/studio/materials";
 import type { StudioArtifact } from "@/lib/studio/types";
 import { modelChanges } from "@/lib/studio/model-diff";
@@ -33,7 +35,10 @@ export default function StudyModel({ workspaceActions, model, previewModel, arti
   const pageNumber=(n:number)=>study.id===exampleStudy.id?1160+n:n;
   // A revised example study keeps its ID, but its displayed content must come from the revision.
   const displayModel=study.id===exampleStudy.id&&modelChanges(exampleStudy,study).hasChanges?{...study,id:`${study.id}:revision`}:study;
-  const overview=modelOverview(displayModel), reviewIssues=prioritizeReviewIssues(modelIssues(displayModel),responses);
+  const [activeStudy,setActiveStudy]=useState("");
+  const selectedScope=study.entities.find(e=>e.id===anchor?.entityIds[0])?.studyIds;
+  const studyScope=activeStudy&&selectedScope?.length===1&&!selectedScope.includes(activeStudy)?selectedScope[0]:activeStudy;
+  const overview=modelOverview(displayModel,studyScope), reviewIssues=prioritizeReviewIssues(modelIssues(displayModel),responses);
   const [materialsOpen,setMaterialsOpen]=useState(false);
   const [tool, setTool] = useState<"select" | "circle">("select");
   const [ink, setInk] = useState<Point[]>([]);
@@ -53,7 +58,7 @@ export default function StudyModel({ workspaceActions, model, previewModel, arti
     if(!anchor?.entityIds[0])return;
     const frame=requestAnimationFrame(()=>canvas.current?.querySelector<HTMLElement>(`[data-model-id="${anchor.entityIds[0]}"]`)?.scrollIntoView({block:"nearest",behavior:"smooth"}));
     return()=>cancelAnimationFrame(frame);
-  },[anchor]);
+  },[anchor,study.entities]);
 
   function pick(id: string, extend = false) {
     if (tool === "circle" || suppressClick.current) return;
@@ -109,6 +114,7 @@ export default function StudyModel({ workspaceActions, model, previewModel, arti
     <header className={s.heading}><div><strong>{t("Human Program")}</strong></div><div className={s.headerActions}>{onDiscussArtifact&&<button aria-pressed={materialsOpen} onClick={()=>setMaterialsOpen(!materialsOpen)}>{t("Materials")} <span>{artifacts.length}</span></button>}<button className={s.needsInput} aria-expanded={reviewOpen} onClick={() => {setMaterialsOpen(false);setReviewOpen(!reviewOpen);}}><span>{needsInput.length}</span> {t("Questions")}</button>{workspaceActions}</div></header>
     {materialsOpen&&onDiscussArtifact?<Materials artifacts={artifacts} onDiscuss={onDiscussArtifact}/>:<>
     <div className={s.toolbar}><div><button aria-label={t("Select objects")} title={t("Select objects")} aria-pressed={tool === "select"} className={tool === "select" ? s.activeTool : ""} onClick={() => setTool("select")}><UiIcon name="selection"/>{t("Select")}</button><button aria-label={t("Circle selection")} title={t("Circle selection")} aria-pressed={tool === "circle"} className={tool === "circle" ? s.activeTool : ""} onClick={() => { setTool("circle"); setInspect(false); }}><UiIcon name="circle"/>{t("Circle")}</button></div><button title={t("Return to full study overview")} aria-label={t("Return to full study overview")} onClick={() => { onSelect(null); setReviewOpen(false); setTool("select"); scroll.current?.scrollTo({ top: 0, behavior: "smooth" }); }}>{t("Overview")}</button></div>
+    {study.program&&study.program.studies.length>1&&<div className={s.studyPicker}><select aria-label="Study scope" value={studyScope} onChange={event=>{setActiveStudy(event.target.value);setInspect(false);onSelect(null);}}><option value="">All studies</option>{study.program.studies.map(scope=><option key={scope.id} value={scope.id}>{scope.title}</option>)}</select></div>}
     {reviewOpen && <div className={s.reviewList} aria-label="All study questions"><div><strong>{t("All study questions")}</strong><button aria-label={t("Close questions")} onClick={() => setReviewOpen(false)}>×</button></div>{reviewIssues.map(i => <button key={i.id} onClick={() => openIssue(i.id)}><span className={responses[i.id] ? s.responded : s.issueDot}>{responses[i.id] ? "✓" : "!"}</span><span><strong>{t(i.title)}</strong><small><b className={`${s.severity} ${i.severity === "blocking" ? s.blocking : ""}`}>{t(i.severity === "blocking" ? "Blocking" : i.severity === "decision" ? "Decision" : "Check")}</b> · {responses[i.id] ? t("Response saved · pending application") : i.entity ? t(overview.cards[i.entity]?.title||i.entity) : [i.study,i.field].filter(Boolean).join(" · ")}</small></span><span>↗</span></button>)}</div>}
     <div className={s.scroll} ref={scroll}>
       <div className={s.overviewHeading}><h1>{t(overview.question)}</h1>{preview&&preview.hasChanges&&<div className={s.previewSummary}><strong>{t("Proposed changes")}</strong>{preview.changedEntityIds.length>0&&<span> · {preview.changedEntityIds.length} {t("affected parts")}</span>}{preview.sections.filter(section=>section!=="entities").length>0&&<span> · {preview.sections.filter(section=>section!=="entities").map(section=>t(section==="study"?"Study details":section==="reviewIssues"?"Review questions":section[0].toUpperCase()+section.slice(1))).join(", ")}</span>}{preview.removedEntityIds.length>0&&<small>{t("Removed")}: {preview.entities.filter(item=>item.kind==="removed").map(item=>t(item.title)).join(", ")}</small>}</div>}</div>
@@ -127,6 +133,7 @@ export default function StudyModel({ workspaceActions, model, previewModel, arti
         </section>)}
         <svg className={s.ink} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">{path.length > 1 && <polygon points={path.map(p => `${p.x},${p.y}`).join(" ")} vectorEffect="non-scaling-stroke"/>}</svg>
       </div>
+      {study.program?.extensions&&<details className={s.programExtensions}><summary>Additional study data</summary><pre>{programText(study.program.extensions)}</pre></details>}
     </div>
     {anchor && anchor.kind!=="issue" && <div className={`${s.dock} ${!inspect?s.compactDock:""}`} aria-label="Human Program selection">
       <div className={s.dockHeader}><span>{`${t(anchor.kind === "lasso" ? "Circled region" : "Model selection")} · ${selectedIds.length} ${t("objects")}`}</span><button aria-label={t("Clear model selection")} onClick={() => onSelect(null)}>×</button></div>
@@ -136,8 +143,10 @@ export default function StudyModel({ workspaceActions, model, previewModel, arti
           {selectedIds.length > 1 && <p>{t("Details")} · {t(overview.cards[focused.id].title)}</p>}
           <h3>{t(overview.cards[focused.id].title)}</h3><p>{t(focused.description)}</p>
           {preview?.entities.find(item=>item.id===focused.id)&&<div className={s.changeDetail}><strong>{t("Proposed change")}</strong><ul>{preview.entities.find(item=>item.id===focused.id)!.details.map(detail=><li key={detail}>{t(detail)}</li>)}</ul></div>}
-          <dl>{focused.fields.map(f => <div key={t(f.name)}><dt>{t(f.name)}</dt><dd>{f.value}<small>{f.status === "reported" ? t("Reported in source") : f.status === "implementation" ? t("Implementation proposal") : t("Needs review")}</small></dd></div>)}</dl>
-          {focused.kind === "procedure" && <div className={s.stepDetails}><h4>{t("Steps")}</h4>{study.procedure.map((step,i) => <div key={step.id}><button disabled={!step.evidence.quote.trim()&&!step.evidence.rects.length} onClick={() => onSource(focused.id, step.evidence)}>{i+1}. {t(step.name)} ↗</button><dl><dt>{t("Input")}</dt><dd>{t(step.input)}</dd><dt>{t("Person")}</dt><dd>{t(step.actor)}</dd><dt>{t("Output")}</dt><dd>{t(step.output)}</dd></dl></div>)}</div>}
+          {study.program?<ProgramDetails program={study.program} id={focused.id} fieldId={anchor?.fieldId} onDiscuss={onDiscuss} onInspect={id=>pick(id)} onSource={onSource}/>:<>
+          <dl>{focused.fields.map((f,i) => <div key={f.id||i}><dt>{t(f.name)} <button className={s.fieldComment} aria-label={`Comment on ${f.name}`} onClick={()=>onDiscuss({kind:"objects",entityIds:[focused.id],fieldId:f.id??`field-${i+1}`})}>{t("Comment")}</button></dt><dd>{f.value}<small>{f.status === "reported" ? t("Reported in source") : f.status === "implementation" ? t("Implementation proposal") : t("Needs review")}</small></dd></div>)}</dl>
+          {focused.kind === "procedure" && <div className={s.stepDetails}><h4>{t("Steps")}</h4>{study.procedure.filter(step=>!step.entity||step.entity===focused.id).map((step,i) => <div key={step.id}><button disabled={!step.evidence.quote.trim()&&!step.evidence.rects.length} onClick={() => onSource(focused.id, step.evidence)}>{i+1}. {t(step.name)} ↗</button><dl><dt>{t("Input")}</dt><dd>{t(step.input)}</dd><dt>{t("Person")}</dt><dd>{t(step.actor)}</dd><dt>{t("Output")}</dt><dd>{t(step.output)}</dd></dl></div>)}</div>}
+          </>}
           <details><summary>{t("Variables used here")} ({study.variables.filter(v => v.entity === focused.id).length})</summary>{study.variables.filter(v => v.entity === focused.id).map(v => <div className={s.variable} key={v.id}><code>{v.name}</code><p>{v.role} · {v.type} · {v.unit}</p><small>{v.producedBy} → {v.usedBy}</small><p>{v.definition}</p></div>)}</details>
           <blockquote>{focused.evidence.quote||t("Source not located")}</blockquote><button className={s.sourceLink} disabled={!focused.evidence.quote.trim()&&!focused.evidence.rects.length} onClick={() => onSource(focused.id, focused.evidence)}>{t("Source")} · p. {pageNumber(focused.evidence.page)} ↗</button>
         </div>}

@@ -1,3 +1,4 @@
+import { importLegacyModel, humanProgramContract } from "@/lib/studio/human-program";
 import { listPackageFiles, readOwnedStudioJob } from "@/lib/github-jobs";
 import { modelFingerprint } from "@/lib/studio/model-version";
 import JSZip from "jszip";
@@ -49,6 +50,8 @@ export async function GET(_request: Request, { params }: Context) {
     const json = (name: string, value: unknown) => zip.file(name, JSON.stringify(value, null, 2));
     json("document.json", document);
     json("model.json", document.model);
+    json("human-program.json", document.model.program??importLegacyModel(document.model));
+    json("human-program.schema.json",humanProgramContract);
     json("conversations.json", document.conversations);
     json("annotations.json", document.annotations);
     json("reviews.json", document.reviewResponses);
@@ -113,7 +116,7 @@ export async function GET(_request: Request, { params }: Context) {
       ...document.model.entities.map(entity => ({ objectId: entity.id, sourceId: entity.evidence.sourceId, page: entity.evidence.page, quote: entity.evidence.quote })),
       ...document.model.procedure.map(step => ({ objectId: step.id, sourceId: step.evidence.sourceId, page: step.evidence.page, quote: step.evidence.quote })),
     ];
-    json("manifest.json", { format: "humanstudy-studio-export", version: 1, exportedAt: new Date().toISOString(), workspaceId: id, revision: workspace.revision, sourceFiles: fileManifest, buildPackage, auxiliaryMaterials, pendingProposals, unresolved, sourceReferences, executable: false });
+    json("manifest.json", { format: "humanstudy-studio-export", version: 1, program: {schemaVersion:2,file:"human-program.json",contract:"human-program.schema.json",imported:!document.model.program}, exportedAt: new Date().toISOString(), workspaceId: id, revision: workspace.revision, sourceFiles: fileManifest, buildPackage, auxiliaryMaterials, pendingProposals, unresolved, sourceReferences, executable: false });
     zip.file("HANDOFF.md", [
       `# ${document.title}`,
       "",

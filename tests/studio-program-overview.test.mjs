@@ -8,7 +8,7 @@ if(!globalThis.crypto)globalThis.crypto=webcrypto;
 function load(file,deps={}){
  const source=fs.readFileSync(new URL(`../${file}`,import.meta.url),'utf8');
  const js=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
- const module={exports:{}};new Function('require','module','exports',js)(id=>deps[id]||require(id),module,module.exports);return module.exports;
+ const module={exports:{}};new Function('require','module','exports',js)(id=>deps[id]||((id === "./human-program" || id === "@/lib/studio/human-program") ? load("lib/studio/human-program.ts") : id === "./human-program.schema.json" ? JSON.parse(fs.readFileSync(new URL("../lib/studio/human-program.schema.json",import.meta.url),"utf8")) : require(id)),module,module.exports);return module.exports;
 }
 const tree=load('lib/studio/conversation-tree.ts'),resources=load('lib/studio/resources.ts');
 const validation=load('lib/studio/validation.ts',{'./conversation-tree':tree,'./resources':resources});

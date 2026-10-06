@@ -12,7 +12,7 @@ function load(file,dependencies={}){
   const source=fs.readFileSync(path.join(root,file),"utf8");
   const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   const loaded={exports:{}};
-  new Function("require","module","exports",compiled)(id=>dependencies[id]??requireLocal(id),loaded,loaded.exports);
+  new Function("require","module","exports",compiled)(id=>dependencies[id]??((id === "./human-program" || id === "@/lib/studio/human-program") ? load("lib/studio/human-program.ts") : id === "./human-program.schema.json" ? JSON.parse(fs.readFileSync(path.join(root,"lib/studio/human-program.schema.json"),"utf8")) : requireLocal(id)),loaded,loaded.exports);
   return loaded.exports;
 }
 const schema=load("app/build-preview/study-schema.ts");

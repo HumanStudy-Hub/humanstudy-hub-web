@@ -10,7 +10,9 @@ function normalize(value:unknown):unknown {
 const sourceEvidence=(value:StudySchema['entities'][number]['evidence'])=>({sourceId:value.sourceId,page:value.page,quote:value.quote});
 // Scientific content only. Moving a node or selecting a different rectangle is
 // a view/evidence-location edit and must not stale a proposal or package.
+const exactSort=(v:unknown):unknown=>Array.isArray(v)?v.map(exactSort):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,item])=>[k,exactSort(item)])):v;
 export function modelFingerprint(model:StudySchema):string {
+  if(model.program)return createHash("sha256").update(JSON.stringify(exactSort({...model.program,evidence:model.program.evidence.map(({verification,...e})=>{void verification;return e;})}))).digest("hex");
   const semantic={
     id:model.id,title:model.title,source:model.source,
     entities:model.entities.map(entity=>({id:entity.id,kind:entity.kind,title:entity.title,subtitle:entity.subtitle,description:entity.description,evidence:sourceEvidence(entity.evidence),fields:[...entity.fields].sort((a,b)=>a.name.localeCompare(b.name))})).sort((a,b)=>a.id.localeCompare(b.id)),
