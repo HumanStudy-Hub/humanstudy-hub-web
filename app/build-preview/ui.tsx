@@ -11,6 +11,7 @@ const zh: Record<string,string> = {
  "+ Paper":"+ 论文",
  "+ Resource":"+ 资源",
  "Download original":"下载原文件",
+ "Drag to resize · double-click to reset widths":"拖动调宽 · 双击恢复宽度", "Source & resources":"原文与材料", "All views":"全部视图", "Resize panels":"调整面板宽度", "Collapse source":"收起原文", "Collapse study model":"收起研究模型", "agent":"Agent", "source":"原文", "model":"模型", "Blocking":"阻塞项", "Decision":"研究者选择", "Check":"待核查", "Source pointer":"原文位置", "Reason":"原因", "Suggested next step":"建议下一步", "Study":"研究", "Field":"字段",
  "Original resource":"原始材料",
  "Research resource":"研究资源",
  "Loading resource…":"加载资源中…",

@@ -16,7 +16,7 @@ export default function StudioEditor({id}:{id:string}){
  const [pipelineMessage,setPipelineMessage]=useState(''),[refreshVersion,setRefreshVersion]=useState(0);
  const syncPipelineRef=useRef<()=>Promise<void>>(async()=>{});
  const server=useRef<StudioWorkspace|null>(null),pending=useRef<StudioDocument|null>(null),current=useRef<StudioDocument|null>(null),operation=useRef(false),blocked=useRef(false),timer=useRef<ReturnType<typeof setTimeout>|null>(null),saving=useRef<Promise<void>|null>(null);
- const telemetry=useStudioTelemetry({workspaceId:id,enabled:Boolean(workspace)});
+ const telemetry=useStudioTelemetry({workspaceId:id,enabled:Boolean(workspace),surfaceVersion:refreshVersion});
  const setCurrent=useCallback((doc:StudioDocument)=>{current.current=doc;setDocument(doc);},[]);
  const flush=useCallback(async()=>{
   while(saving.current)await saving.current;
@@ -93,6 +93,7 @@ export default function StudioEditor({id}:{id:string}){
    {loading&&pages.length>0&&<small title={loading}>OCR needed</small>}
   </div>,
   sourceContent:selectedSource&&!isPaper(selectedSource)?<ResourceViewer key={selectedSource.id} workspaceId={id} source={selectedSource} onDownload={()=>void download(selectedSource)}/>:undefined,
+  onSelection:metadata=>telemetry.track("selection",metadata),onLayout:metadata=>telemetry.track("layout",metadata),
   onChange,onChat:async request=>{telemetry.track('chat',{action:'send'});return transact('chat',{...request,sourceId:paper?.id});},
   onProposal:async(proposalId,decision)=>{telemetry.track('review',{action:decision});return transact('proposals',{proposalId,decision});},
   onExport:()=>void exportWorkspace(),onManage:flush,onNavigate:async href=>{await flush();window.location.assign(href);},

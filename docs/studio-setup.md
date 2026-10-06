@@ -17,7 +17,9 @@ remains available inside the workspace. Existing `/pipeline` jobs are unchanged.
    runner or Supabase SQL editor. It creates owner-scoped workspaces/events,
    the revision-check RPC, and the private `studio-sources` bucket. Apply
    `supabase/migrations/20261006062534_studio_resources.sql` to enable resource
-   MIME types and extend the same owner/workspace storage policies.
+   MIME types and extend the same owner/workspace storage policies. Apply
+   `supabase/migrations/20261006065000_studio_layout_telemetry.sql` for semantic
+   layout events and server-assigned event revision stamps.
 3. Enable email/password authentication. Set the Auth Site URL to the deployment
    origin and configure confirmation email delivery. Confirmation returns to the
    site; the user signs in at `/build` after confirming. Configure SMTP and rate
@@ -34,7 +36,7 @@ remains available inside the workspace. Existing `/pipeline` jobs are unchanged.
    `http://127.0.0.1:3100/build`. Restart after changing environment variables.
 
 Development project `humanstudy-hub-dev` (`zigbuogyerivbnxtnjjw`, us-west-1)
-was created on 2026-10-05. The base, pipeline and resource migrations have been applied. Local
+was created on 2026-10-05. The base, pipeline, resource and telemetry migrations have been applied. Local
 `.env.local` contains its URL and modern publishable key, is ignored by Git,
 and has file mode 0600. `/api/studio/auth` reports `configured: true`.
 The private source bucket has a 25 MB per-object limit and a MIME allowlist;
@@ -71,7 +73,11 @@ or drag a region, save a highlight without a comment, add a comment, or send
 that reference to the agent. Highlights and comments survive a saved-study
 reload. Scanned pages support region marks; text requires OCR. Select or circle
 model objects to attach them to the left Agent composer. Need input discussions
-use that same composer; there is no separate model-side prompt form.
+use that same composer; there is no separate model-side prompt form. Panels can
+be resized with the separators (keyboard arrows also work), independently
+collapsed into rails, and reopened with the view buttons. At least one stays
+open. Layout preferences are stored on the current device; narrow screens show
+one active pane. PDF and study contents stay mounted while collapsed.
 
 Chat history uses a simple indented branch list. Reply references an earlier
 message; Side talk forks context at that message. Later parent messages and
@@ -112,13 +118,19 @@ agent package under `build-package/` (up to 40 MB), with status/omissions record
 in its manifest. A download does not imply that research decisions are approved.
 
 Drafts, conversations, references, review decisions and annotations are saved
-with a revision. A stale save is rejected, and the UI offers a local JSON copy
+with a revision. The revision is a concurrency counter, not an immutable document history.
+Resaving a review answer replaces that answer; conversation proposal snapshots
+remain available. A stale save is rejected, and the UI offers a local JSON copy
 before loading the current server version. Account separation is enforced by
 RLS and verified server sessions, independent of the legacy promo-code gate.
 
 Workspace telemetry captures clicks, normalized pointer positions (up to four
 per second), scrolling, selection length, visibility duration and explicit
-chat/review actions. Events have stable IDs, bounded queues and bounded retries.
+chat/review actions and explicit panel layout changes. Selection events record
+source/page, selection mode, length and rectangle count, not selected text.
+The server stamps events with the owned workspace revision at receipt; this
+links events to saved state but is not an exact reconstruction of unsaved drafts. Events have stable IDs, bounded queues and bounded retries.
+Listeners rebind after keyed workspace refreshes while retaining the session ID.
 No password, keypress or DOM-wide text capture is performed. Conversations are
 saved in the study document. Settings disclose recording. Events are in
 `studio_events`; this version does not provide a researcher analytics dashboard.
@@ -129,6 +141,14 @@ applied auxiliary files and `HANDOFF.md`. It lists unresolved choices and pendin
 research design data and draft materials. Packaging and validation of a runnable
 study, execution and result analysis remain work for the local agent or the
 legacy pipeline.
+
+Need input uses optional agent-produced `model.reviewIssues` with blocking,
+researcher-decision and check priorities. Each issue can preserve the audit
+reason, downstream impact, suggested next step and source pointer. If older
+output only supplies unresolved fields, it stays a conservative check without
+invented severity or impact. Saved answers remain pending application. Agent
+output and audit files still require review; the UI does not independently
+establish that every research decision has been found.
 
 ## Limits and verification
 

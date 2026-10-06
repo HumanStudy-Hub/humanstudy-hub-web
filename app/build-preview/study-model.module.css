@@ -353,6 +353,14 @@
   background: var(--accent-bg);
   color: var(--accent);
 }
+.severity {
+  font-size: inherit;
+  font-weight: 700;
+  color: var(--muted);
+}
+.severity.blocking {
+  color: var(--warning);
+}
 .dock {
   border-top: 1px solid var(--accent-line);
   background: var(--surface);

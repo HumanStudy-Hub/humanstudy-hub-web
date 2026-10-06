@@ -165,7 +165,7 @@ test("store rejects foreign source paths and invalid revisions before calling st
 
 const eventRoute = load("app/api/studio/workspaces/[id]/events/route.ts", {
   "next/server": nextServer, "@/lib/studio/auth": { requireStudioUser: async () => ctx },
-  "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ id: workspaceId }) }, "@/lib/studio/resources": resources,
+  "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ id: workspaceId, revision: 7 }) }, "@/lib/studio/resources": resources,
 });
 const eventContext = { params: Promise.resolve({ id: workspaceId }) };
 const validEvent = () => ({ id: eventId, sessionId: "session_1", type: "click", at: new Date().toISOString(), target: "button[role-tab]", metadata: { area: "source" } });
@@ -180,15 +180,34 @@ test("event batch uses owner from verified context and idempotent insert prefere
   const rows = JSON.parse(sent.options.body);
   assert.equal(rows[0].owner_id, userId);
   assert.equal(rows[0].workspace_id, workspaceId);
+  assert.equal(rows[0].workspace_revision, 7);
   assert.equal(rows[0].id, rows[1].id);
   assert.equal(rows[0].target, "button[role-tab]");
   assert.equal(rows[0].metadata.area, "source");
+}));
+
+test("semantic layout and selection events persist bounded metadata with server revision", async () => withService(async () => {
+  let rows;
+  global.fetch = async (_url, options) => { rows = JSON.parse(options.body); return new Response(null, { status: 201 }); };
+  const events = [
+    { ...validEvent(), id: crypto.randomUUID(), type: "selection", metadata: { area: "source", mode: "text", page: 3, selectionLength: 42, sourceId, }, workspaceRevision: 999 },
+    { ...validEvent(), id: crypto.randomUUID(), type: "layout", metadata: { area: "agent", action: "resize", mode: "expanded", count: 35 }, workspaceRevision: 999 },
+  ];
+  const response = await eventRoute.POST(jsonRequest({ events }), eventContext);
+  assert.equal(response.status, 200);
+  assert.deepEqual(rows.map(row => row.event_type), ["selection", "layout"]);
+  assert.deepEqual(rows.map(row => row.workspace_revision), [7, 7]);
+  assert.ok(rows.every(row => !Object.hasOwn(row, "workspaceRevision")));
+  assert.equal(rows[0].metadata.selectionLength, 42);
+  assert.equal(rows[1].metadata.count, 35);
 }));
 
 test("event route rejects raw DOM text, oversized batches, and cross-origin input before insert", async () => withService(async () => {
   global.fetch = () => { throw new Error("must not fetch"); };
   const rawText = { ...validEvent(), metadata: { text: "participant answer" } };
   assert.equal((await eventRoute.POST(jsonRequest({ events: [rawText] }), eventContext)).status, 400);
+  assert.equal((await eventRoute.POST(jsonRequest({ events: [{ ...validEvent(), type: "selection", metadata: { selectionLength: 100_001 } }] }), eventContext)).status, 400);
+  assert.equal((await eventRoute.POST(jsonRequest({ events: [{ ...validEvent(), type: "layout", metadata: { count: -1 } }] }), eventContext)).status, 400);
   assert.equal((await eventRoute.POST(jsonRequest({ events: [{ ...validEvent(), target: "Submit password" }] }), eventContext)).status, 400);
   assert.equal((await eventRoute.POST(jsonRequest({ events: Array.from({ length: 101 }, validEvent) }), eventContext)).status, 400);
   assert.equal((await eventRoute.POST(jsonRequest({ events: [validEvent()], padding: "x".repeat(130_000) }), eventContext)).status, 413);

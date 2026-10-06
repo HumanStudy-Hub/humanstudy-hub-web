@@ -1,4 +1,4 @@
-import type { Evidence, StudySchema, Entity, Variable } from "@/app/build-preview/study-schema";
+import type { Evidence, StudySchema, StudyReviewIssue, Entity, Variable } from "@/app/build-preview/study-schema";
 import type { StudioArtifact, StudioDocument } from "./types";
 import { validateStudyModel, validateStudioArtifacts } from "./validation";
 
@@ -57,9 +57,75 @@ function sidecarModel(files: PackageFile[], document: StudioDocument): StudySche
     const grounded = { ...model,
       entities: model.entities.map(entity => ({ ...entity, evidence: cleanEvidence(entity.evidence, document) })),
       procedure: model.procedure.map(step => ({ ...step, evidence: cleanEvidence(step.evidence, document) })),
+      reviewIssues: model.reviewIssues?.map(issue => ({ ...issue, ...(issue.evidence ? { evidence: cleanEvidence(issue.evidence, document) } : {}) })),
     };
     return validateStudyModel(grounded, { sources: document.sources });
   } catch { return undefined; }
+}
+
+function auditIssues(files: PackageFile[], document: StudioDocument): StudyReviewIssue[] {
+  const auditRaw = getFile(files, "audit/missing_information.json");
+  let audit: unknown = [];
+  try { audit = auditRaw ? JSON.parse(auditRaw.content) : []; } catch { return []; }
+  const checklist = Array.isArray(audit) ? audit : list(first(record(audit), "items", "missing_information", "questions", "review_items"));
+  const candidates = checklist.slice(0, 200).map(raw => {
+    const item = record(raw);
+    const severity: StudyReviewIssue["severity"] = item.severity === "blocking" || item.severity === "decision" || item.severity === "check" ? item.severity : item.blocking === true ? "blocking" : "check";
+    const pointer = text(first(item, "source_pointer", "sourcePointer", "source", "citation"));
+    const rawEvidence = record(item.evidence);
+    const candidate = typeof rawEvidence.page === "number" && Number.isInteger(rawEvidence.page) && typeof rawEvidence.quote === "string"
+      ? cleanEvidence({ sourceId: text(rawEvidence.sourceId) || undefined, page: rawEvidence.page, rects: [], quote: rawEvidence.quote }, document) : undefined;
+    return { id: "", title: clipped(text(first(item, "title", "field", "name")) || "Review item", 200), severity,
+      reason: clipped(text(first(item, "reason", "question")), 4000), impact: clipped(text(item.impact), 4000),
+      suggestedAction: clipped(text(first(item, "suggested_action", "suggestedAction")), 4000),
+      ...(text(item.study) ? { study: clipped(text(item.study), 300) } : {}),
+      ...(text(item.field) ? { field: clipped(text(item.field), 300) } : {}),
+      ...(pointer ? { sourcePointer: clipped(pointer, 1000) } : {}),
+      ...(candidate?.quote ? { evidence: candidate } : {}),
+    };
+  });
+  // Identity excludes package order and mutable remediation text. Changing the
+  // actual question gives it a new response key; identical audit rows collapse.
+  const identity = (issue: StudyReviewIssue) => [issue.study ?? "", issue.field ?? "", issue.title, issue.reason].join("\u0000");
+  const hash = (value: string) => {
+    let result = 0x811c9dc5;
+    for (let i = 0; i < value.length; i++) result = Math.imul(result ^ value.charCodeAt(i), 0x01000193);
+    return (result >>> 0).toString(16).padStart(8, "0");
+  };
+  const unique = [...new Map(candidates.map(issue => [identity(issue), issue])).entries()];
+  const collisions = new Map<string, string[]>();
+  for (const [key] of unique) {
+    const digest = hash(key), group = collisions.get(digest) ?? [];
+    group.push(key); collisions.set(digest, group);
+  }
+  for (const group of collisions.values()) group.sort();
+  return unique.map(([key, issue]) => {
+    const digest = hash(key), group = collisions.get(digest)!;
+    return { ...issue, id: `audit-${digest}${group.length > 1 ? `-${group.indexOf(key) + 1}` : ""}` };
+  });
+}
+
+function withAuditIssues(model: StudySchema, files: PackageFile[], document: StudioDocument): StudySchema {
+  const key = (issue: StudyReviewIssue) => `${issue.study ?? ""}\u0000${issue.field ?? issue.title}`.toLowerCase();
+  const audits = auditIssues(files, document);
+  const consumed = new Set<string>();
+  const explicit = (model.reviewIssues ?? []).map(issue => {
+    const audit = audits.find(candidate => key(candidate) === key(issue) && !consumed.has(candidate.id) && candidate.reason === issue.reason)
+      ?? audits.find(candidate => key(candidate) === key(issue) && !consumed.has(candidate.id));
+    if (!audit) return issue;
+    consumed.add(audit.id);
+    return { ...issue, id: audit.id, reason: audit.reason || issue.reason, impact: audit.impact || issue.impact,
+      suggestedAction: audit.suggestedAction || issue.suggestedAction,
+      ...(audit.sourcePointer ? { sourcePointer: audit.sourcePointer } : {}) };
+  });
+  const additions = audits.filter(issue => !consumed.has(issue.id));
+  const used = new Set(explicit.map(issue => issue.id));
+  for (const issue of additions) {
+    let id = issue.id, serial = 2;
+    while (used.has(id)) id = `${issue.id}-${serial++}`;
+    issue.id = id; used.add(id);
+  }
+  return explicit.length || additions.length ? { ...model, reviewIssues: [...explicit, ...additions].slice(0, 200) } : model;
 }
 
 function packageArtifacts(files: PackageFile[], document: StudioDocument): { artifacts: StudioArtifact[]; omitted: string[] } {
@@ -175,7 +241,7 @@ function fallbackModel(files: PackageFile[], document: StudioDocument): StudySch
 /** Pure, bounded presentation of a complete HumanStudy-Bench package. */
 export function adaptPipelinePackage(files: PackageFile[], document: StudioDocument): { model: StudySchema; artifacts: StudioArtifact[]; summary: string } {
   const validatedSidecar = sidecarModel(files, document);
-  const model = validatedSidecar ?? fallbackModel(files, document);
+  const model = validateStudyModel(withAuditIssues(validatedSidecar ?? fallbackModel(files, document), files, document), { sources: document.sources });
   const { artifacts, omitted } = packageArtifacts(files, document);
   const usedSidecar = !!validatedSidecar;
   let summary = `HumanStudy-Bench package: ${files.length} file(s); ${artifacts.length} available in Studio. ${usedSidecar ? "Validated studio-model.json sidecar used." : "Package mapped into a reviewable model; source evidence and missing choices require researcher review."}`;

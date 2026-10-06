@@ -8,11 +8,17 @@ export type Entity = {
   x: number; y: number; w: number; h: number;
 };
 export type Variable = { id: string; name: string; role: string; type: string; unit: string; producedBy: string; usedBy: string; definition: string; status: "reported" | "implementation" | "unresolved"; entity: string };
+export type StudyReviewIssue = {
+  id: string; title: string; severity: "blocking" | "decision" | "check";
+  reason: string; impact: string; suggestedAction: string;
+  entity?: string; study?: string; field?: string; sourcePointer?: string; evidence?: Evidence;
+};
 export type StudySchema = {
   id: string; title: string; source: { title: string; authors: string; filename: string };
   entities: Entity[]; relations: { from: string; to: string; label: string }[];
   procedure: { id: string; name: string; input: string; actor: string; output: string; evidence: Evidence }[];
   variables: Variable[];
+  reviewIssues?: StudyReviewIssue[];
 };
 const assignmentEvidence: Evidence = { page:3,rects:[{x:8.9,y:51.8,w:39.4,h:7.8}],quote:"There were two versions of the questionnaire, each with high anchors for some quantities and low anchors for the others. The quantities appeared in the same order in all questionnaires." };
 const trialEvidence:Evidence={page:2,rects:[{x:51.1,y:87.3,w:40.1,h:6.2}],quote:"Experimental subjects (n = 103) answered three consecutive questions about each of the 15 quantities. They first indicated whether the quantity was greater or less than an anchor value; next, they estimated the quantity;"};

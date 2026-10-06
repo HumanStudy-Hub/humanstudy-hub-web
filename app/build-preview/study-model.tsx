@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { study as exampleStudy, type StudySchema, type Evidence } from "./study-schema";
-import { intersectsPolygon, modelOverview, modelIssues, type ModelAnchor, type Point, type ReviewResponse } from "./model-review";
+import { intersectsPolygon, modelOverview, modelIssues, prioritizeReviewIssues, type ModelAnchor, type Point, type ReviewResponse } from "./model-review";
 import s from "./study-model.module.css";
 import { useT } from "./ui";
 import Materials from "@/components/studio/materials";
@@ -25,7 +25,7 @@ type Props = {
 export default function StudyModel({ model, artifacts=[], onDiscussArtifact, busy, selected, anchor, responses, onSelect, onSource, onDiscuss, onRespond }: Props) {
   const study=model||exampleStudy;
   const pageNumber=(n:number)=>study.id===exampleStudy.id?1160+n:n;
-  const overview=modelOverview(study), reviewIssues=modelIssues(study);
+  const overview=modelOverview(study), reviewIssues=prioritizeReviewIssues(modelIssues(study),responses);
   const [materialsOpen,setMaterialsOpen]=useState(false);
   const [tool, setTool] = useState<"select" | "circle">("select");
   const [ink, setInk] = useState<Point[]>([]);
@@ -59,10 +59,10 @@ export default function StudyModel({ model, artifacts=[], onDiscussArtifact, bus
   }
   function openIssue(id: string) {
     const next = reviewIssues.find(i => i.id === id)!;
-    onSelect({ kind: "issue", entityIds: [next.entity], issueId: id });
+    onSelect({ kind: "issue", entityIds: next.entity ? [next.entity] : [], issueId: id });
     setInspect(false); setNotice("");
     setReviewOpen(false);
-    requestAnimationFrame(() => canvas.current?.querySelector<HTMLElement>(`[data-model-id="${next.entity}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    if(next.entity)requestAnimationFrame(() => canvas.current?.querySelector<HTMLElement>(`[data-model-id="${next.entity}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   }
   function position(event: PointerEvent<HTMLDivElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -103,7 +103,7 @@ export default function StudyModel({ model, artifacts=[], onDiscussArtifact, bus
     <header className={s.heading}><div><strong>{t("Study model")}</strong><small>{t("Overview · source-linked draft")}</small></div><div className={s.headerActions}>{onDiscussArtifact&&<button aria-pressed={materialsOpen} onClick={()=>setMaterialsOpen(!materialsOpen)}>{t("Materials")} <span>{artifacts.length}</span></button>}<button className={s.needsInput} aria-expanded={reviewOpen} onClick={() => {setMaterialsOpen(false);setReviewOpen(!reviewOpen);}}><span>{needsInput.length}</span> {t("Need input")}</button></div></header>
     {materialsOpen&&onDiscussArtifact?<Materials artifacts={artifacts} onDiscuss={onDiscussArtifact}/>:<>
     <div className={s.toolbar}><div><button aria-pressed={tool === "select"} className={tool === "select" ? s.activeTool : ""} onClick={() => setTool("select")}>{t("↖ Select")}</button><button aria-pressed={tool === "circle"} className={tool === "circle" ? s.activeTool : ""} onClick={() => { setTool("circle"); setInspect(false); }}>{t("◯ Circle to ask")}</button></div><button aria-label={t("Return to full study overview")} onClick={() => { onSelect(null); setReviewOpen(false); setTool("select"); scroll.current?.scrollTo({ top: 0, behavior: "smooth" }); }}>{t("⌂ Overview")}</button></div>
-    {reviewOpen && <div className={s.reviewList} aria-label="Study review queue"><div><strong>{t("What needs your judgment")}</strong><button aria-label={t("Close review queue")} onClick={() => setReviewOpen(false)}>×</button></div><p>{t("Questions linked to the affected part of the study.")}</p>{reviewIssues.map(i => <button key={i.id} onClick={() => openIssue(i.id)}><span className={responses[i.id] ? s.responded : s.issueDot}>{responses[i.id] ? "✓" : "!"}</span><span><strong>{t(i.title)}</strong><small>{responses[i.id] ? t("Response saved · pending application") : t(i.type)} · {t(overview.cards[i.entity].title)}</small></span><span>↗</span></button>)}</div>}
+    {reviewOpen && <div className={s.reviewList} aria-label="Study review queue"><div><strong>{t("What needs your judgment")}</strong><button aria-label={t("Close review queue")} onClick={() => setReviewOpen(false)}>×</button></div><p>{t("Questions linked to the affected part of the study.")}</p>{reviewIssues.map(i => <button key={i.id} onClick={() => openIssue(i.id)}><span className={responses[i.id] ? s.responded : s.issueDot}>{responses[i.id] ? "✓" : "!"}</span><span><strong>{t(i.title)}</strong><small><b className={`${s.severity} ${i.severity === "blocking" ? s.blocking : ""}`}>{t(i.severity === "blocking" ? "Blocking" : i.severity === "decision" ? "Decision" : "Check")}</b> · {responses[i.id] ? t("Response saved · pending application") : i.entity ? t(overview.cards[i.entity]?.title||i.entity) : [i.study,i.field].filter(Boolean).join(" · ")}</small></span><span>↗</span></button>)}</div>}
     <div className={s.scroll} ref={scroll}>
       <div className={s.overviewHeading}><span>{t("THE STUDY AT A GLANCE")}</span><h1>{t(overview.question)}</h1></div>
       {study.entities.length===0&&<p className={s.gestureHint}>{t("Upload a paper, then ask the agent to build the first model.")}</p>}
@@ -125,14 +125,15 @@ export default function StudyModel({ model, artifacts=[], onDiscussArtifact, bus
       <div className={s.legend}><span><i/> Source-linked draft</span><span><i/> Need input</span></div>
     </div>
     {anchor && <div className={`${s.dock} ${!issue&&!inspect?s.compactDock:""}`} aria-label="Study model selection">
-      <div className={s.dockHeader}><span>{issue ? t(issue.type) : `${t(anchor.kind === "lasso" ? "Circled region" : "Model selection")} · ${selectedIds.length} ${t("objects")}`}</span><button aria-label={t("Clear model selection")} onClick={() => { onSelect(null); setNotice(""); }}>×</button></div>
+      <div className={s.dockHeader}><span>{issue ? t(issue.severity === "blocking" ? "Blocking" : issue.severity === "decision" ? "Decision" : "Check") : `${t(anchor.kind === "lasso" ? "Circled region" : "Model selection")} · ${selectedIds.length} ${t("objects")}`}</span><button aria-label={t("Clear model selection")} onClick={() => { onSelect(null); setNotice(""); }}>×</button></div>
       {(issue||inspect)&&<div className={s.selectedNames}>{selectedIds.length ? selectedIds.map(id => <button key={id} disabled={!study.entities.find(e=>e.id===id)?.evidence.quote.trim()&&!study.entities.find(e=>e.id===id)?.evidence.rects.length} onClick={() => onSource(id)} title={t("Locate original evidence")}>{t(overview.cards[id]?.title||id)} <span>↗</span></button>) : <span>{t("Canvas region · your drawing is attached")}</span>}</div>}
       {issue ? <div className={s.issueDetail} key={issue.id}>
-        <h3>{t(issue.title)}</h3><p>{t(issue.question)}</p><p><strong>{t("Why it matters")}</strong> {t(issue.impact)}</p>
-        <button className={s.sourceLink} disabled={!issue.evidence.quote.trim()&&!issue.evidence.rects.length} onClick={() => onSource(issue.entity, issue.evidence)}>{issue.evidence.quote.trim()||issue.evidence.rects.length?`${t("Source")} · p. ${pageNumber(issue.evidence.page)} ↗`:t("Source not located")}</button>
-        <details><summary>{t("Evidence & suggested next step")}</summary><blockquote>{issue.evidence.quote}</blockquote><p>{t(issue.suggestion)}</p></details>
+        <h3>{t(issue.title)}</h3>{issue.study&&<p><strong>{t("Study")}</strong> {issue.study}</p>}{issue.field&&<p><strong>{t("Field")}</strong> {issue.field}</p>}{issue.reason&&<p><strong>{t("Reason")}</strong> {t(issue.reason)}</p>}{issue.impact&&<p><strong>{t("Why it matters")}</strong> {t(issue.impact)}</p>}{issue.suggestedAction&&<p><strong>{t("Suggested next step")}</strong> {t(issue.suggestedAction)}</p>}
+        {issue.evidence?.quote&&<button className={s.sourceLink} onClick={() => onSource(issue.entity||"", issue.evidence)}>{t("Source")} · p. {pageNumber(issue.evidence.page)} ↗</button>}
+        {issue.sourcePointer&&<p><strong>{t("Source pointer")}</strong> {issue.sourcePointer}</p>}
+        {issue.evidence?.quote&&<details><summary>{t("Evidence & suggested next step")}</summary><blockquote>{issue.evidence.quote}</blockquote></details>}
         <label htmlFor="review-response">{t("Your correction or decision")}</label><textarea id="review-response" value={reply} onChange={e => setReplyDrafts({...replyDrafts,[issue.id]:e.target.value})} placeholder={t("Describe the correction, supply evidence, or specify a study decision…")}/>
-        <div className={s.issueActions}><button onClick={() => { onDiscuss(anchor,reply.trim()||`Help me review: ${t(issue.title)}. ${t(issue.question)}`); }}>{t("Discuss with AI ↗")}</button><button className={s.primary} disabled={!reply.trim()} onClick={() => { onRespond(issue.id, reply.trim()); setNotice(t("Response saved. Discuss it with the agent to update the model.")); }}>{t("Save response")}</button></div>
+        <div className={s.issueActions}><button onClick={() => { onDiscuss(anchor,reply.trim()||`Help me review: ${t(issue.title)}. ${t(issue.reason)}`); }}>{t("Discuss with AI ↗")}</button><button className={s.primary} disabled={!reply.trim()} onClick={() => { onRespond(issue.id, reply.trim()); setNotice(t("Response saved. Discuss it with the agent to update the model.")); }}>{t("Save response")}</button></div>
         {responses[issue.id] && <small className={s.savedState}>{t("✓ Response saved · pending application to the program")}</small>}
       </div> : <>
         <div className={s.selectionActions}>{selectedIds.length > 0 && <button aria-expanded={inspect} onClick={() => setInspect(!inspect)}>{inspect ? t("Hide details ↑") : t("Inspect details ↓")}</button>}<button onClick={() => { onDiscuss(anchor,t("I think there is an error here: ")); }}>{t("Flag an error")}</button></div>

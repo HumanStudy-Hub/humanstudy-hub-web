@@ -42,6 +42,8 @@ test("maps pipeline contract into a bounded model and unresolved review checklis
   assert.equal(result.model.variables.some(variable => variable.name === "Accuracy"), true);
   assert.equal(result.model.variables.find(variable => variable.name === "scale").status, "unresolved");
   assert.equal(result.model.entities.find(entity => entity.id === "review").fields[0].status, "unresolved");
+  assert.match(result.model.reviewIssues?.[0].id, /^audit-[0-9a-f]{8}$/);
+  assert.deepEqual({ ...result.model.reviewIssues?.[0], id: "audit-id" }, { id: "audit-id", title: "Exact wording", severity: "check", study: "1", field: "Exact wording", reason: "Not printed", impact: "Cannot verify fidelity", suggestedAction: "Find original instrument" });
   assert.equal(result.model.entities.every(entity => entity.evidence.quote === "" && entity.evidence.rects.length === 0), true);
   assert.equal(result.artifacts.length, files.length);
 });
@@ -99,4 +101,36 @@ test('keeps live-run categorical variables with null units and list references',
   assert.equal(result.model.variables[0].unit,'');
   assert.equal(result.model.variables[0].usedBy,'compare, report');
   assert.match(result.summary,/sidecar used/);
+});
+
+test('keeps explicit review issues and audit provenance while removing unverified quotes', () => {
+  const sidecar={...document.model,id:'reviewed',reviewIssues:[
+    {id:'choice',title:'Choose allocation',severity:'decision',entity:undefined,study:'Experiment 1',field:'allocation',reason:'Source omits assignment rule',impact:'Cannot assign arms reproducibly',suggestedAction:'Researcher decides',sourcePointer:'Methods',evidence:{sourceId:'paper',page:2,rects:[{x:2,y:3,w:4,h:5}],quote:'Not in the source'}},
+  ]};
+  const files=[file('studio-model.json',sidecar),file('audit/missing_information.json',[
+    {study:'Experiment 1',field:'allocation',reason:'Audit reason',impact:'Audit impact',suggested_action:'Audit action'},
+    {study:'Experiment 2',field:'stopping rule',reason:'Not specified',impact:'Run length varies',suggested_action:'Define a stopping rule',severity:'blocking',source_pointer:'p. 2'},
+  ])];
+  const result=adaptPipelinePackage(files,document);
+  assert.equal(result.model.reviewIssues?.length,2,'matching audit item does not duplicate a sidecar issue');
+  assert.equal(result.model.reviewIssues?.[0].evidence?.quote,'');
+  assert.deepEqual(result.model.reviewIssues?.[0].evidence?.rects,[]);
+  assert.equal(result.model.reviewIssues?.[0].reason,'Audit reason','authoritative audit metadata survives sidecar deduplication');
+  assert.equal(result.model.reviewIssues?.[1].severity,'blocking');
+  assert.equal(result.model.reviewIssues?.[1].sourcePointer,'p. 2');
+  assert.equal(result.model.reviewIssues?.[1].reason,'Not specified');
+});
+
+test('audit IDs survive reordering and change when the question changes', () => {
+  const a={study:'One',field:'allocation',reason:'Rule absent',impact:'Cannot assign',suggested_action:'Decide'};
+  const b={study:'Two',field:'stopping',reason:'Rule absent',impact:'Cannot stop',suggested_action:'Decide'};
+  const read=items=>adaptPipelinePackage([file('audit/missing_information.json',items)],document).model.reviewIssues;
+  const initial=read([a,b,a]);
+  const reordered=read([b,a]);
+  assert.equal(initial.length,2,'duplicate audit rows collapse');
+  assert.equal(initial.find(issue=>issue.field==='allocation').id,reordered.find(issue=>issue.field==='allocation').id);
+  assert.equal(initial.find(issue=>issue.field==='stopping').id,reordered.find(issue=>issue.field==='stopping').id);
+  const changed=read([{...a,reason:'Different missing rule'},b]);
+  assert.notEqual(initial.find(issue=>issue.field==='allocation').id,changed.find(issue=>issue.field==='allocation').id,
+    'a response saved for the old question cannot mark the new one answered');
 });

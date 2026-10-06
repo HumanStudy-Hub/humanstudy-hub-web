@@ -5,10 +5,10 @@ import { getWorkspace } from "@/lib/studio/store";
 import type { StudioEvent } from "@/lib/studio/types";
 
 type Context = { params: Promise<{ id: string }> };
-const eventTypes = new Set(["click", "pointer", "scroll", "selection", "visibility", "chat", "review"]);
+const eventTypes = new Set(["click", "pointer", "scroll", "selection", "visibility", "chat", "review", "layout"]);
 const metadataKeys = new Set(["action", "area", "mode", "status", "sourceId", "conversationId", "entityId", "reviewId", "page", "count", "selectionLength", "button", "direction"]);
 
-function validateEvent(input: unknown, workspaceId: string, ownerId: string): Record<string, unknown> {
+function validateEvent(input: unknown, workspaceId: string, ownerId: string, workspaceRevision: number): Record<string, unknown> {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new StudioError(400, "invalid_event");
   const event = input as Partial<StudioEvent>;
   if (!isUuid(event.id) || typeof event.sessionId !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(event.sessionId) ||
@@ -30,13 +30,13 @@ function validateEvent(input: unknown, workspaceId: string, ownerId: string): Re
   if (typeof metadata !== "object" || Array.isArray(metadata) || Object.keys(metadata).length > 16) throw new StudioError(400, "invalid_event");
   for (const [key, value] of Object.entries(metadata)) {
     if (!metadataKeys.has(key) || !(typeof value === "boolean" ||
-      (typeof value === "number" && Number.isFinite(value)) ||
+      (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100_000) ||
       (typeof value === "string" && /^[a-zA-Z0-9_.:/#-]{1,80}$/.test(value)))) {
       throw new StudioError(400, "invalid_event");
     }
   }
   return {
-    id: event.id, workspace_id: workspaceId, owner_id: ownerId,
+    id: event.id, workspace_id: workspaceId, owner_id: ownerId, workspace_revision: workspaceRevision,
     session_id: event.sessionId, event_type: event.type, occurred_at: new Date(at).toISOString(),
     ...(event.target === undefined ? {} : { target: event.target }),
     ...(event.x === undefined ? {} : { x: event.x }),
@@ -51,12 +51,13 @@ export async function POST(request: Request, context: Context) {
     assertSameOrigin(request);
     const ctx = await requireStudioUser();
     const { id } = await context.params;
-    if (!await getWorkspace(ctx, id)) throw new StudioError(404, "not_found");
+    const workspace = await getWorkspace(ctx, id);
+    if (!workspace) throw new StudioError(404, "not_found");
     const body = await readJsonBody(request, 128_000);
     if (!body || typeof body !== "object" || !Array.isArray((body as { events?: unknown }).events)) throw new StudioError(400, "invalid_events");
     const events = (body as { events: unknown[] }).events;
     if (events.length < 1 || events.length > 100) throw new StudioError(400, "invalid_events");
-    const rows = events.map(event => validateEvent(event, id, ctx.user.id));
+    const rows = events.map(event => validateEvent(event, id, ctx.user.id, workspace.revision));
     const response = await studioFetch("/rest/v1/studio_events?on_conflict=id", {
       method: "POST", token: ctx.accessToken,
       headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },

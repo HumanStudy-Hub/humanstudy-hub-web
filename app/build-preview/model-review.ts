@@ -1,4 +1,4 @@
-import type { Evidence } from "./study-schema";
+import type { StudyReviewIssue } from "./study-schema";
 import { study } from "./study-schema";
 
 export type Point = { x: number; y: number };
@@ -9,14 +9,11 @@ export type ModelAnchor = {
   issueId?: string;
 };
 export type ReviewResponse = { text: string; savedAt: string };
-export type ReviewIssue = {
-  id: string; entity: string; type: "Interpretation" | "Missing information";
-  title: string; question: string; impact: string; suggestion: string; evidence: Evidence;
-};
+export type ReviewIssue = StudyReviewIssue & { type?: "Interpretation" | "Missing information"; question?: string; suggestion?: string };
 const evidence = (id: string) => study.entities.find(e => e.id === id)!.evidence;
 
 // Curated review examples for this prototype, not the result of a live audit.
-export const reviewIssues: ReviewIssue[] = [
+const exampleIssues = [
   { id: "anchor-unit", entity: "manipulation", type: "Interpretation",
     title: "Check the unit of manipulation",
     question: "The earlier extraction treated high / low anchor as a participant group. The revised model attaches it to each item in a questionnaire version. Is this correction right?",
@@ -32,7 +29,10 @@ export const reviewIssues: ReviewIssue[] = [
     question: "The paper reports a contrast of individual average percentile scores. Confirm the exact pooling, pairing and missing-response policy before producing analysis code.",
     impact: "Determines the rows and values entering the test, and whether incomplete observations are included.",
     suggestion: "Review the source and specify these choices explicitly. A reported t statistic alone is not an executable analysis plan.", evidence: evidence("analysis") },
-];
+] as const;
+export const reviewIssues: ReviewIssue[] = exampleIssues.map(issue => ({ ...issue,
+  severity: issue.id === "version-allocation" ? "blocking" : "decision",
+  reason: issue.question, suggestedAction: issue.suggestion }));
 
 export const overview = {
   question: "How much do numerical anchors shift estimates?",
@@ -89,5 +89,18 @@ export function modelOverview(model: typeof study) {
 }
 export function modelIssues(model: typeof study): ReviewIssue[] {
   if(model.id===study.id)return reviewIssues;
-  return model.entities.flatMap(entity=>entity.fields.flatMap((field,i)=>field.status==='unresolved'?[{id:`${entity.id}:field:${i}`,entity:entity.id,type:'Missing information' as const,title:field.name,question:field.value,impact:'This choice is not yet specified in the study model.',suggestion:'Supply evidence or record a researcher decision.',evidence:entity.evidence}]:[]));
+  const explicit=model.reviewIssues??[];
+  const generic=model.entities.flatMap(entity=>entity.fields.flatMap((field,i)=>{
+    if(field.status!=='unresolved')return [];
+    const covered=explicit.some(issue=>issue.field===field.name&&(issue.entity===undefined||issue.entity===entity.id)
+      ||issue.entity===entity.id&&issue.title===field.name);
+    if(covered)return [];
+    const id=`${entity.id}:field:${i}`;
+    return explicit.some(issue=>issue.id===id)?[]:[{id,entity:entity.id,severity:'check' as const,title:field.name,reason:field.value,question:field.value,impact:'',suggestedAction:'',evidence:entity.evidence}];
+  }));
+  return [...explicit,...generic];
+}
+export function prioritizeReviewIssues(issues: ReviewIssue[], responses: Record<string, ReviewResponse>): ReviewIssue[] {
+  const rank = { blocking: 0, decision: 1, check: 2 };
+  return [...issues].sort((a, b) => Number(!!responses[a.id]) - Number(!!responses[b.id]) || rank[a.severity] - rank[b.severity]);
 }

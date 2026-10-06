@@ -1972,3 +1972,35 @@ fieldset.workspace {
   flex-wrap: wrap;
   gap: 8px 12px;
 }
+
+/* Every panel retains its contents while collapsed, including the PDF renderer. */
+.paneSwitcher { display:flex; gap:4px; flex-shrink:0; margin:0 32px; padding:4px 0 8px; }
+.paneSwitcher button { padding:6px 12px; border-radius:4px; color:var(--muted); font-size:var(--text-xs); }
+.paneSwitcher button[aria-pressed="true"] { background:var(--accent-bg); color:var(--accent); }
+.paneSwitcher button:last-child { margin-left:auto; }
+.shell .workspace > [data-pane] { width:auto; min-height:0; display:flex; border-right:0; }
+.modelPane { display:flex; flex-direction:column; position:relative; background:var(--surface); }
+.modelPane > section { min-height:0; width:100%; flex:1; }
+.modelCollapse { position:absolute; top:20px; right:8px; z-index:5; color:var(--muted); padding:2px 4px; }
+.modelPane > section > header { padding-right:32px; height:auto; min-height:64px; flex-wrap:wrap; padding-top:8px; padding-bottom:8px; }
+.collapsedRail { display:none; }
+.shell .workspace > [data-collapsed="true"] > :not(.collapsedRail):not(.agentHeader) { display:none; }
+.shell .workspace > [data-collapsed="true"] > .collapsedRail { display:flex; writing-mode:vertical-rl; align-items:center; gap:12px; flex:1; width:44px; padding:18px 10px; color:var(--muted); font-size:var(--text-xs); }
+.shell .workspace > [data-collapsed="true"] { border-right:1px solid var(--line); }
+.resizeHandle { flex:0 0 7px; position:relative; cursor:col-resize; touch-action:none; user-select:none; background:var(--surface); }
+.resizeHandle::after { content:""; position:absolute; top:0; bottom:0; left:3px; width:1px; background:var(--line); }
+.resizeHandle:hover::after,.resizeHandle:focus-visible::after { width:3px; left:2px; background:var(--accent); }
+.resizeHandle:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+@media (min-width:801px) {
+ .shell[data-active-pane] .workspace > [data-pane] { display:flex; }
+ .shell fieldset.workspace { overflow:auto; }
+ .shell .agentHeader > button:first-child { display:block; }
+}
+@media (max-width:800px) {
+ .resizeHandle { display:none; }
+ .shell .workspace > [data-pane] { flex:1!important; min-width:0!important; }
+ .shell[data-active-pane="agent"] .workspace > [data-pane]:not([data-pane="agent"]),
+ .shell[data-active-pane="source"] .workspace > [data-pane]:not([data-pane="source"]),
+ .shell[data-active-pane="model"] .workspace > [data-pane]:not([data-pane="model"]) { display:none; }
+ .paneSwitcher { margin:0 20px; flex-wrap:wrap; }
+}

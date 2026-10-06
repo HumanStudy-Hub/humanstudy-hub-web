@@ -127,16 +127,24 @@ test("PDF abort cancels rendering and destroys the loading task", async () => {
 
 function fakeTelemetry(fetchImpl) {
   let cleanup;
+  let effectDeps;
   let state = { droppedEvents: 0, deliveryError: null };
   let nextId = 0;
+  let refIndex = 0;
+  const refs = [];
   const timers = new Map();
   const listeners = new Map();
-  const root = {
-    getAttribute: () => "workspace-1",
-    addEventListener: (type, listener) => listeners.set(`root:${type}`, listener),
-    removeEventListener: (type) => listeners.delete(`root:${type}`),
-    contains: () => true,
+  const makeRoot = () => {
+    const events = new Map();
+    return {
+      events,
+      getAttribute: () => "workspace-1",
+      addEventListener: (type, listener) => { events.set(type, listener); listeners.set(`root:${type}`, listener); },
+      removeEventListener: (type) => { events.delete(type); listeners.delete(`root:${type}`); },
+      contains: () => true,
+    };
   };
+  let root = makeRoot();
   const doc = {
     visibilityState: "visible",
     querySelectorAll: () => [root],
@@ -149,8 +157,13 @@ function fakeTelemetry(fetchImpl) {
   };
   const react = {
     useCallback: (fn) => fn,
-    useEffect: (fn) => { cleanup = fn(); },
-    useRef: (value) => ({ current: value }),
+    useEffect: (fn, deps) => {
+      if (effectDeps && deps.every((item, index) => Object.is(item, effectDeps[index]))) return;
+      cleanup?.();
+      cleanup = fn();
+      effectDeps = deps;
+    },
+    useRef: (value) => refs[refIndex++] ??= { current: value },
     useState: (value) => [value, (next) => { state = typeof next === "function" ? next(state) : next; }],
   };
   const globals = {
@@ -166,8 +179,18 @@ function fakeTelemetry(fetchImpl) {
     assert.equal(name, "react");
     return react;
   });
-  const hook = api.useStudioTelemetry({ workspaceId: "workspace-1", enabled: true });
-  return { hook, timers, listeners, get state() { return state; }, cleanup: () => cleanup?.() };
+  let hook;
+  const render = (surfaceVersion = 0) => {
+    refIndex = 0;
+    hook = api.useStudioTelemetry({ workspaceId: "workspace-1", enabled: true, surfaceVersion });
+  };
+  render();
+  return {
+    get hook() { return hook; }, timers, listeners, get root() { return root; }, get state() { return state; },
+    replaceRoot: () => { const previous = root; root = makeRoot(); return previous; },
+    render,
+    cleanup: () => cleanup?.(),
+  };
 }
 
 test("telemetry batches 50 events, retries with stable IDs, and sends a bounded final keepalive", async () => {
@@ -224,4 +247,25 @@ test("telemetry drops rejected batches without retrying a client error", async (
   assert.equal(harness.state.deliveryError, "Telemetry delivery failed; some events were dropped.");
   assert.equal([...harness.timers.values()].filter((timer) => timer.delay === 1000).length, 0);
   harness.cleanup();
+});
+
+test("telemetry rebinds to a remounted workspace root without changing session", async () => {
+  const requests = [];
+  const harness = fakeTelemetry((_url, options) => {
+    requests.push(JSON.parse(options.body).events);
+    return Promise.resolve({ ok: true, status: 200 });
+  });
+  harness.hook.track("layout", { action: "collapse", area: "source" });
+  const oldRoot = harness.replaceRoot();
+  harness.render(1);
+  assert.equal(oldRoot.events.size, 0, "old workspace listeners must be removed");
+  assert.ok(harness.root.events.has("click"), "new workspace root must receive listeners");
+  harness.hook.track("selection", { area: "source", selectionLength: 8 });
+  harness.cleanup();
+  await new Promise((resolve) => setImmediate(resolve));
+  const events = requests.flat();
+  const layout = events.find(event => event.type === "layout");
+  const selection = events.find(event => event.type === "selection");
+  assert.ok(layout && selection);
+  assert.equal(layout.sessionId, selection.sessionId);
 });

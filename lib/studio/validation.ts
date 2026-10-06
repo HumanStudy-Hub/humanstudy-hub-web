@@ -1,5 +1,5 @@
 import type { ModelAnchor } from "@/app/build-preview/model-review";
-import type { Evidence, StudySchema } from "@/app/build-preview/study-schema";
+import type { Evidence, StudyReviewIssue, StudySchema } from "@/app/build-preview/study-schema";
 import type { SourceSelection, StudioArtifact, StudioDocument, StudioSource } from "./types";
 import { assertConversationTree } from "./conversation-tree";
 import { MAX_PAPER_BYTES, MAX_RESOURCE_BYTES, sourceSpec } from "./resources";
@@ -99,7 +99,23 @@ export function validateStudyModel(input: unknown, options: { allowedPages?: Rea
     return { id: id(v.id, "variable.id"), name: string(v.name, "variable.name", 200, true), role: string(v.role, "variable.role", 500), type: string(v.type, "variable.type", 500), unit: string(v.unit, "variable.unit", 500), producedBy: string(v.producedBy, "variable.producedBy", 2000), usedBy: string(v.usedBy, "variable.usedBy", 2000), definition: string(v.definition, "variable.definition", 8000), status: oneOf(v.status, "variable.status", ["reported", "implementation", "unresolved"] as const), entity };
   });
   unique(variables.map(v => v.id), "model.variables");
-  return { id: id(value.id, "model.id"), title: string(value.title, "model.title", 300, true), source: { title: string(source.title, "model.source.title", 300), authors: string(source.authors, "model.source.authors", 500), filename: string(source.filename, "model.source.filename", 300) }, entities, relations, procedure, variables };
+  const reviewIssues: StudyReviewIssue[] | undefined = value.reviewIssues === undefined ? undefined : array(value.reviewIssues, "model.reviewIssues", 200).map((raw, i) => {
+    const issue = object(raw, `model.reviewIssues[${i}]`);
+    const entity = issue.entity === undefined ? undefined : id(issue.entity, "reviewIssue.entity");
+    if (entity && !entityIds.has(entity)) fail(`model.reviewIssues[${i}] refers to a missing entity.`);
+    return { id: id(issue.id, "reviewIssue.id"), title: string(issue.title, "reviewIssue.title", 200, true),
+      severity: oneOf(issue.severity, "reviewIssue.severity", ["blocking", "decision", "check"] as const),
+      reason: string(issue.reason, "reviewIssue.reason", 4000), impact: string(issue.impact, "reviewIssue.impact", 4000),
+      suggestedAction: string(issue.suggestedAction, "reviewIssue.suggestedAction", 4000),
+      ...(entity ? { entity } : {}),
+      ...(issue.study === undefined ? {} : { study: string(issue.study, "reviewIssue.study", 300) }),
+      ...(issue.field === undefined ? {} : { field: string(issue.field, "reviewIssue.field", 300) }),
+      ...(issue.sourcePointer === undefined ? {} : { sourcePointer: string(issue.sourcePointer, "reviewIssue.sourcePointer", 1000) }),
+      ...(issue.evidence === undefined ? {} : { evidence: evidence(issue.evidence, `model.reviewIssues[${i}].evidence`, options.allowedPages, options.sources) }),
+    };
+  });
+  if (reviewIssues) unique(reviewIssues.map(issue => issue.id), "model.reviewIssues");
+  return { id: id(value.id, "model.id"), title: string(value.title, "model.title", 300, true), source: { title: string(source.title, "model.source.title", 300), authors: string(source.authors, "model.source.authors", 500), filename: string(source.filename, "model.source.filename", 300) }, entities, relations, procedure, variables, ...(reviewIssues ? { reviewIssues } : {}) };
 }
 
 export function validateModelAnchor(input: unknown, model: StudySchema, options: { historical?: boolean } = {}): ModelAnchor | null {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StudioEvent } from "./types";
 
-type ExplicitEvent = Extract<StudioEvent["type"], "selection" | "chat" | "review">;
+type ExplicitEvent = Extract<StudioEvent["type"], "selection" | "chat" | "review" | "layout">;
 type Metadata = StudioEvent["metadata"];
 type TelemetryState = { droppedEvents: number; deliveryError: string | null };
 
@@ -19,7 +19,7 @@ function cleanMetadata(metadata?: Metadata): Metadata | undefined {
   const clean: NonNullable<Metadata> = {};
   for (const [key, value] of Object.entries(metadata).slice(0, 12)) {
     if (!METADATA_KEYS.has(key)) continue;
-    if (typeof value === "number" && Number.isFinite(value)) clean[key] = value;
+    if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 100_000) clean[key] = value;
     else if (typeof value === "boolean") clean[key] = value;
     else if (typeof value === "string") {
       const safe = value.replace(/[^a-zA-Z0-9_.:/#-]/g, "").slice(0, 80);
@@ -47,7 +47,7 @@ function normalized(value: number, start: number, size: number): number {
   return Math.round(Math.max(0, Math.min(1, (value - start) / size)) * 1000) / 1000;
 }
 
-export function useStudioTelemetry({ workspaceId, enabled }: { workspaceId?: string; enabled: boolean }): {
+export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion }: { workspaceId?: string; enabled: boolean; surfaceVersion?: number }): {
   track: (type: ExplicitEvent, metadata?: Metadata) => void;
   droppedEvents: number;
   deliveryError: string | null;
@@ -233,7 +233,7 @@ export function useStudioTelemetry({ workspaceId, enabled }: { workspaceId?: str
       // A final bounded keepalive request can outlive this component.
       sendFinal();
     };
-  }, [enabled, workspaceId]);
+  }, [enabled, workspaceId, surfaceVersion]);
 
   return { track, droppedEvents: state.droppedEvents, deliveryError: state.deliveryError };
 }
