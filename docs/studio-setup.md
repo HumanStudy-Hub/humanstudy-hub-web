@@ -53,8 +53,17 @@ The connected MCP does not expose Auth configuration; the browser dashboard
 is signed out and the CLI has no management access token. Existing default
 email confirmation was preserved. The local development server now uses the
 existing GitHub login token in ignored `.env.local`; do not copy that personal
-credential to a shared deployment. Vercel needs team-managed GitHub credentials,
-Supabase variables and `STUDIO_PIPELINE_REF` in its Preview environment.
+credential to a shared deployment.
+
+Vercel Preview configuration was completed on 2026-10-06 using `xuanl17` in
+`xuanl17s-projects`, project `humanstudy-hub-web`. Preview variables scoped to
+`codex/build-study-platform` are `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and
+`STUDIO_PIPELINE_REF=codex/build-study-platform`. The deployment inherits the
+project's existing GitHub credentials; no local personal token was copied.
+The [branch Preview](https://humanstudy-hub-web-git-codex-build-stu-0b1c60-xuanl17s-projects.vercel.app)
+is Ready, and `/api/studio/auth` returns `configured: true`. Production was not
+changed. This configuration check does not verify signup, email delivery or a
+signed-in end-to-end agent run.
 
 ## Workflow and persisted data
 
@@ -202,7 +211,8 @@ The test job remains in the private jobs repository and is not a user study.
 
 This verifies real workflow dispatch, runner execution, package validation and
 presentation mapping. It does not verify a full browser signup/upload session;
-email delivery and the Vercel team's Preview environment still need configuration.
+email delivery still needs configuration. The Vercel Preview environment was
+configured and checked separately on 2026-10-06, as documented above.
 
 ## Discussion and package synchronization (2026-10-06)
 
