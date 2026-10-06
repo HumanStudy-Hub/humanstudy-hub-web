@@ -213,3 +213,24 @@ email delivery and the Vercel team's Preview environment still need configuratio
 Accepting the initial build records its package without rebuilding it. Accepting a discussion proposal saves the model before queueing an accepted-model sync. Changes accepted during an existing sync are coalesced into a later sync. `POST /pipeline` supports `action: "retry"` with `lane`, `action: "sync-package"` with an applied `proposalId`, and `action: "reconcile-approval"` for remote approval after the durable save. Exports contain a package only when its accepted fingerprint matches the current model.
 
 Current local checks: 88 web tests and 36 focused Bench tests, TypeScript, lint and production build. These modes still need a real Actions run and browser acceptance testing. Automatic approval review rejected reusing the existing benchmark PDF for a new external-processing test; no new job was dispatched.
+
+
+## Workspace layout refinement (2026-10-06)
+
+Artifact tabs switch between source/resources and the model beside the Agent.
+Split view opens both artifacts and retains resize handles. Closing a panel
+removes its reserved rail; tabs and the Agent toggle reopen it. Narrow screens
+activate a view instead of toggling the selected view off.
+
+Each panel supports temporary Focus. Restore or Escape returns to its previous
+open panels and widths; focus does not overwrite the saved layout. Opening an
+anchored source or sending a selection to the Agent exits focus so the target
+is visible. Source and model contents remain mounted, preserving PDF page/zoom
+and the inspection view. Need input remains above the conversation. Save and
+package status share the bottom strip.
+
+Commands opens a searchable keyboard palette (Cmd/Ctrl+Shift+P). It offers
+layout presets, artifact navigation, conversation history, settings and export;
+only executing a command changes a view. No command submits an Agent prompt or
+accepts a proposal. This is a layout refinement; the existing real-agent protocol
+and review flow remain unchanged.

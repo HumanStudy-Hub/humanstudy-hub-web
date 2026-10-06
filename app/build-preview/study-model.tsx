@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { study as exampleStudy, type StudySchema, type Evidence } from "./study-schema";
 import { intersectsPolygon, modelOverview, modelIssues, prioritizeReviewIssues, type ModelAnchor, type Point, type ReviewResponse } from "./model-review";
 import s from "./study-model.module.css";
@@ -10,6 +10,7 @@ import type { StudioArtifact } from "@/lib/studio/types";
 import { modelChanges } from "@/lib/studio/model-diff";
 
 type Props = {
+  workspaceActions?:ReactNode;
   model?:StudySchema;
   previewModel?:StudySchema;
   artifacts?:StudioArtifact[];
@@ -24,7 +25,7 @@ type Props = {
   onRespond: (id: string, text: string) => void;
 };
 
-export default function StudyModel({ model, previewModel, artifacts=[], onDiscussArtifact, busy, selected, anchor, responses, onSelect, onSource, onDiscuss }: Props) {
+export default function StudyModel({ workspaceActions, model, previewModel, artifacts=[], onDiscussArtifact, busy, selected, anchor, responses, onSelect, onSource, onDiscuss }: Props) {
   const approvedModel=model||exampleStudy;
   const study=previewModel||approvedModel;
   const preview=previewModel?modelChanges(approvedModel,previewModel):null;
@@ -106,7 +107,7 @@ export default function StudyModel({ model, previewModel, artifacts=[], onDiscus
   }
 
   return <section data-event="model.panel" className={s.model} aria-label="Study model and data schema">
-    <header className={s.heading}><div><strong>{t("Study model")}</strong><small>{previewModel?t("Proposed changes · preview"):t("Experiment overview")}</small></div><div className={s.headerActions}>{onDiscussArtifact&&<button aria-pressed={materialsOpen} onClick={()=>setMaterialsOpen(!materialsOpen)}>{t("Materials")} <span>{artifacts.length}</span></button>}<button className={s.needsInput} aria-expanded={reviewOpen} onClick={() => {setMaterialsOpen(false);setReviewOpen(!reviewOpen);}}><span>{needsInput.length}</span> {t("Questions")}</button></div></header>
+    <header className={s.heading}><div><strong>{t("Study model")}</strong><small>{previewModel?t("Proposed changes · preview"):t("Experiment overview")}</small></div><div className={s.headerActions}>{onDiscussArtifact&&<button aria-pressed={materialsOpen} onClick={()=>setMaterialsOpen(!materialsOpen)}>{t("Materials")} <span>{artifacts.length}</span></button>}<button className={s.needsInput} aria-expanded={reviewOpen} onClick={() => {setMaterialsOpen(false);setReviewOpen(!reviewOpen);}}><span>{needsInput.length}</span> {t("Questions")}</button>{workspaceActions}</div></header>
     {materialsOpen&&onDiscussArtifact?<Materials artifacts={artifacts} onDiscuss={onDiscussArtifact}/>:<>
     <div className={s.toolbar}><div><button aria-pressed={tool === "select"} className={tool === "select" ? s.activeTool : ""} onClick={() => setTool("select")}>{t("↖ Select")}</button><button aria-pressed={tool === "circle"} className={tool === "circle" ? s.activeTool : ""} onClick={() => { setTool("circle"); setInspect(false); }}>{t("◯ Circle to ask")}</button></div><button aria-label={t("Return to full study overview")} onClick={() => { onSelect(null); setReviewOpen(false); setTool("select"); scroll.current?.scrollTo({ top: 0, behavior: "smooth" }); }}>{t("⌂ Overview")}</button></div>
     {reviewOpen && <div className={s.reviewList} aria-label="All study questions"><div><strong>{t("All study questions")}</strong><button aria-label={t("Close questions")} onClick={() => setReviewOpen(false)}>×</button></div><p>{t("Select a question to see its context. Answer in the conversation.")}</p>{reviewIssues.map(i => <button key={i.id} onClick={() => openIssue(i.id)}><span className={responses[i.id] ? s.responded : s.issueDot}>{responses[i.id] ? "✓" : "!"}</span><span><strong>{t(i.title)}</strong><small><b className={`${s.severity} ${i.severity === "blocking" ? s.blocking : ""}`}>{t(i.severity === "blocking" ? "Blocking" : i.severity === "decision" ? "Decision" : "Check")}</b> · {responses[i.id] ? t("Response saved · pending application") : i.entity ? t(overview.cards[i.entity]?.title||i.entity) : [i.study,i.field].filter(Boolean).join(" · ")}</small></span><span>↗</span></button>)}</div>}
