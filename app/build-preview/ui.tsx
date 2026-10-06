@@ -3,6 +3,7 @@ import { createContext, useContext } from "react";
 export type Language = "en" | "zh";
 export const LanguageContext = createContext<Language>("en");
 const zh: Record<string,string> = {
+ "Select objects":"选择对象", "Circle selection":"圈选",
  "Workspace views":"工作区视图", "Artifact views":"内容视图", "Show / hide conversation":"显示 / 收起对话", "Split view":"分屏对照", "Layout":"布局", "Conversation + model":"对话 + 模型", "Conversation + source":"对话 + 原文", "Reset panel widths":"恢复面板宽度", "Focus panel":"放大面板", "Close panel":"收起面板", "Focus":"放大", "Restore":"还原", "Restore layout":"恢复布局", "Commands":"快捷命令", "Workspace commands":"工作区命令", "Search commands":"搜索命令", "Search commands…":"搜索视图与操作…", "No matching commands":"没有匹配的命令", "Navigate":"选择", "Choose":"执行", "Focus conversation":"回到对话", "View study model":"查看研究模型", "View sources and resources":"查看原文与材料", "Compare source and model":"对照原文与模型", "Focus study model":"放大研究模型", "Focus original source":"放大论文原文", "Conversation history":"会话历史", "Example · AI offline":"示例 · AI 离线",
  "Experiment overview":"实验总览", "Proposed changes · preview":"修改提案 · 预览", "Added":"新增", "Changed":"修改", "Proposed change":"提议改动", "Study part":"研究组成", "Question":"待确认", "question":"项待确认", "questions":"项待确认", "questions for":"项问题对应", "open questions":"项待确认", "All questions →":"全部待确认 →", "Answer in conversation ↗":"在左侧讨论 ↗", "Study title or source changed":"研究名称或来源发生变化", "Procedure sequence changed":"实验流程顺序发生变化",
 
