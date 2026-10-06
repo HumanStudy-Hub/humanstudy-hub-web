@@ -1894,3 +1894,81 @@ fieldset.workspace {
     margin: 0 20px;
   }
 }
+/* One shared conversation composer, with a small branch navigation list. */
+.messageActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 8px;
+  font-size: var(--text-xs, .75rem);
+  color: var(--muted);
+}
+.messageActions button {
+  min-height: 28px;
+}
+.branchOrigin {
+  margin-bottom: 16px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent-line);
+  background: var(--surface-soft);
+  font-size: var(--text-xs, .75rem);
+  color: var(--muted);
+}
+.branchOrigin button {
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+.branchOrigin blockquote {
+  max-height: 64px;
+  overflow: hidden;
+  line-height: 1.6;
+}
+.replyLabel {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: var(--text-xs, .75rem);
+}
+.conversationTree {
+  margin: 12px 0;
+  list-style: none;
+}
+.conversationTree li {
+  border-left: 1px solid var(--line);
+}
+.conversationTree button {
+  width: 100%;
+  text-align: left;
+  padding: 10px 9px;
+  border-radius: 4px;
+}
+.conversationTree button:hover {
+  background: var(--accent-bg);
+}
+.conversationTree span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.zoomControls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.zoomControls button {
+  width: 32px;
+  min-height: 32px;
+  font-size: var(--text-lg, 1.125rem);
+}
+.paperSizing {
+  min-width: 0;
+  max-width: none;
+  flex-shrink: 0;
+}
+.sourceScroll {
+  min-height: 0;
+}
+.selectionBar footer {
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}

@@ -25,7 +25,8 @@ function load(file, dependencies = {}) {
 }
 
 const http = load("lib/studio/http.ts", { "next/server": nextServer });
-const store = load("lib/studio/store.ts", { "./http": http });
+const resources = load("lib/studio/resources.ts");
+const store = load("lib/studio/store.ts", { "./http": http, "./resources": resources });
 const jarValues = new Map();
 const cookieWrites = [];
 const jar = {
@@ -164,7 +165,7 @@ test("store rejects foreign source paths and invalid revisions before calling st
 
 const eventRoute = load("app/api/studio/workspaces/[id]/events/route.ts", {
   "next/server": nextServer, "@/lib/studio/auth": { requireStudioUser: async () => ctx },
-  "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ id: workspaceId }) },
+  "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ id: workspaceId }) }, "@/lib/studio/resources": resources,
 });
 const eventContext = { params: Promise.resolve({ id: workspaceId }) };
 const validEvent = () => ({ id: eventId, sessionId: "session_1", type: "click", at: new Date().toISOString(), target: "button[role-tab]", metadata: { area: "source" } });
@@ -196,7 +197,7 @@ test("event route rejects raw DOM text, oversized batches, and cross-origin inpu
 
 const sourceRoute = load("app/api/studio/workspaces/[id]/sources/route.ts", {
   "next/server": nextServer, "@/lib/studio/auth": { requireStudioUser: async () => ctx },
-  "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ id: workspaceId }) },
+  "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ id: workspaceId }) }, "@/lib/studio/resources": resources,
 });
 
 test("signed upload uses owner/workspace PDF path, token, size cap, and authenticated signer", async () => withService(async () => {
@@ -214,14 +215,19 @@ test("signed upload uses owner/workspace PDF path, token, size cap, and authenti
   assert.equal(call.url, `https://db.example.test/storage/v1/object/upload/sign/studio-sources/${response.body.source.path}`);
   assert.equal(call.options.headers.Authorization, "Bearer verified-access");
   assert.equal((await sourceRoute.POST(jsonRequest({ name: "large.pdf", mimeType: "application/pdf", size: 25 * 1024 * 1024 + 1 }), eventContext)).status, 400);
-  assert.equal((await sourceRoute.POST(jsonRequest({ name: "paper.txt", mimeType: "text/plain", size: 500 }), eventContext)).status, 400);
+  const resource = await sourceRoute.POST(jsonRequest({ name: "notes.txt", mimeType: "text/plain", size: 500 }), eventContext);
+  assert.equal(resource.status, 201);
+  assert.equal(resource.body.source.kind, "resource");
+  assert.match(resource.body.source.path, /[.]txt$/);
+  assert.equal(resource.body.headers["Content-Type"], "text/plain");
+  assert.equal((await sourceRoute.POST(jsonRequest({ name: "script.html", mimeType: "text/html", size: 500 }), eventContext)).status, 400);
 }));
 
 test("download signing rejects source metadata outside authenticated owner prefix", async () => withService(async () => {
-  const source = { id: sourceId, path: `other-user/${workspaceId}/${sourceId}.pdf` };
+  const source = { id: sourceId, name: "paper.pdf", path: `other-user/${workspaceId}/${sourceId}.pdf`, mimeType: "application/pdf", size: 500 };
   const route = load("app/api/studio/workspaces/[id]/sources/[sourceId]/route.ts", {
     "next/server": nextServer, "@/lib/studio/auth": { requireStudioUser: async () => ctx },
-    "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ document: { sources: [source] } }) },
+    "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ document: { sources: [source] } }) }, "@/lib/studio/resources": resources,
   });
   global.fetch = () => { throw new Error("must not fetch"); };
   const response = await route.GET(new Request("https://app.example.test/api"), { params: Promise.resolve({ id: workspaceId, sourceId }) });
@@ -230,10 +236,10 @@ test("download signing rejects source metadata outside authenticated owner prefi
 }));
 
 test("download signer returns only the owned PDF's Supabase signed URL", async () => withService(async () => {
-  const source = { id: sourceId, path: `${userId}/${workspaceId}/${sourceId}.pdf` };
+  const source = { id: sourceId, name: "paper.pdf", path: `${userId}/${workspaceId}/${sourceId}.pdf`, mimeType: "application/pdf", size: 500 };
   const route = load("app/api/studio/workspaces/[id]/sources/[sourceId]/route.ts", {
     "next/server": nextServer, "@/lib/studio/auth": { requireStudioUser: async () => ctx },
-    "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ document: { sources: [source] } }) },
+    "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspace: async () => ({ document: { sources: [source] } }) }, "@/lib/studio/resources": resources,
   });
   let sent;
   global.fetch = async (url, options) => {

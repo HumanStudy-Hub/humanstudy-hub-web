@@ -1,6 +1,8 @@
 import type { ModelAnchor } from "@/app/build-preview/model-review";
 import type { Evidence, StudySchema } from "@/app/build-preview/study-schema";
 import type { SourceSelection, StudioArtifact, StudioDocument, StudioSource } from "./types";
+import { assertConversationTree } from "./conversation-tree";
+import { MAX_PAPER_BYTES, MAX_RESOURCE_BYTES, sourceSpec } from "./resources";
 
 export class StudioValidationError extends Error {
   readonly status = 400;
@@ -29,6 +31,12 @@ const timestamp = (value: unknown, name: string) => {
   if (Number.isNaN(Date.parse(result))) fail(`${name} must be a date-time.`);
   return result;
 };
+
+export function validateStudioMessageRef(input: unknown, name = "message reference") {
+  if (input === undefined || input === null) return undefined;
+  const ref = object(input, name);
+  return { conversationId: id(ref.conversationId, `${name}.conversationId`), messageId: id(ref.messageId, `${name}.messageId`) };
+}
 
 function rect(value: unknown, name: string) {
   const r = object(value, name);
@@ -122,11 +130,21 @@ export function validateSourceSelection(input: unknown, sources: StudioSource[],
 
 function validateSource(input: unknown, index: number): StudioSource {
   const source = object(input, `sources[${index}]`);
+  const name = string(source.name, "source.name", 300, true);
+  const spec = sourceSpec(name);
+  if (!spec) return fail("source.name must identify a supported file type.");
+  if (source.mimeType !== spec.mimeType) fail("source.mimeType does not match its file type.");
+  const kind = source.kind === undefined ? undefined : oneOf(source.kind, "source.kind", ["paper", "resource"] as const);
+  if (kind !== undefined && kind !== spec.kind || spec.kind === "resource" && kind !== "resource") fail("source.kind does not match its file type.");
+  const includeInBuild = source.includeInBuild === undefined ? undefined : source.includeInBuild;
+  if (includeInBuild !== undefined && typeof includeInBuild !== "boolean") return fail("source.includeInBuild must be a boolean.");
   const path = string(source.path, "source.path", 500);
   if (path && (path.startsWith("/") || path.includes("\\") || path.split("/").some(part => part === ".." || !part) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(path))) fail("source.path must be a relative storage key.");
   const pages = source.pages === undefined ? undefined : array(source.pages, "source.pages", 2000).map((raw, i) => { const page = object(raw, `source.pages[${i}]`); return { page: integer(page.page, "source.page", 1, 10000), text: string(page.text, "source.page.text", 30000) }; });
   if (pages) unique(pages.map(page => String(page.page)), "source.pages");
-  return { id: id(source.id, "source.id"), name: string(source.name, "source.name", 300, true), path, mimeType: string(source.mimeType, "source.mimeType", 150, true), size: integer(source.size, "source.size", 0, 100_000_000), ...(source.text === undefined ? {} : { text: string(source.text, "source.text", 1_000_000) }), ...(pages ? { pages } : {}) };
+  if (spec.kind === "resource" && (source.text !== undefined || pages !== undefined)) fail("Auxiliary resources do not have PDF page text.");
+  const size = integer(source.size, "source.size", 1, spec.kind === "paper" ? MAX_PAPER_BYTES : MAX_RESOURCE_BYTES);
+  return { id: id(source.id, "source.id"), name, path, mimeType: spec.mimeType, size, ...(kind ? { kind } : {}), ...(includeInBuild === undefined ? {} : { includeInBuild }), ...(source.text === undefined ? {} : { text: string(source.text, "source.text", 1_000_000) }), ...(pages ? { pages } : {}) };
 }
 
 const artifactExtensions: Record<StudioArtifact["format"], readonly string[]> = {
@@ -190,14 +208,19 @@ export function validateStudioDocument(input: unknown): StudioDocument {
       // A later model/source change must not erase that history.
       const sourceSelection = validateSourceSelection(m.sourceSelection, sources, { historical: true });
       const modelAnchor = validateModelAnchor(m.modelAnchor, model, { historical: true });
+      const replyTo = validateStudioMessageRef(m.replyTo, "message.replyTo");
+      const mergedFrom = validateStudioMessageRef(m.mergedFrom, "message.mergedFrom");
       const evidenceList = m.evidence === undefined ? undefined : array(m.evidence, "message.evidence", 100).map((entry, k) => evidence(entry, `message.evidence[${k}]`));
       const proposal = m.proposal === undefined ? undefined : (() => { const p = object(m.proposal, "message.proposal"); const artifacts = validateStudioArtifacts(p.artifacts, sources, { historical: true }); if (p.changesModel !== undefined && typeof p.changesModel !== "boolean") fail("proposal.changesModel must be a boolean."); return { id: id(p.id, "proposal.id"), model: validateStudyModel(p.model), ...(typeof p.changesModel === "boolean" ? { changesModel: p.changesModel } : {}), ...(artifacts ? { artifacts } : {}), summary: string(p.summary, "proposal.summary", 4000), status: oneOf(p.status, "proposal.status", ["pending", "applied", "rejected"] as const) }; })();
-      return { id: id(m.id, "message.id"), role: oneOf(m.role, "message.role", ["user", "agent"] as const), text: string(m.text, "message.text", 20000), createdAt: timestamp(m.createdAt, "message.createdAt"), ...(entityId ? { entityId } : {}), ...(m.context === undefined ? {} : { context: string(m.context, "message.context", 2000) }), ...(modelAnchor ? { modelAnchor } : {}), ...(sourceSelection ? { sourceSelection } : {}), ...(evidenceList ? { evidence: evidenceList } : {}), ...(proposal ? { proposal } : {}) };
+      return { id: id(m.id, "message.id"), role: oneOf(m.role, "message.role", ["user", "agent"] as const), text: string(m.text, "message.text", 20000), createdAt: timestamp(m.createdAt, "message.createdAt"), ...(entityId ? { entityId } : {}), ...(m.context === undefined ? {} : { context: string(m.context, "message.context", 2000) }), ...(modelAnchor ? { modelAnchor } : {}), ...(sourceSelection ? { sourceSelection } : {}), ...(replyTo ? { replyTo } : {}), ...(mergedFrom ? { mergedFrom } : {}), ...(evidenceList ? { evidence: evidenceList } : {}), ...(proposal ? { proposal } : {}) };
     });
     unique(messages.map(message => message.id), "conversation.messages");
-    return { id: id(c.id, "conversation.id"), title: string(c.title, "conversation.title", 300), updatedAt: timestamp(c.updatedAt, "conversation.updatedAt"), messages, draft: string(c.draft, "conversation.draft", 20000), modelAnchor: validateModelAnchor(c.modelAnchor, model), sourceSelection: validateSourceSelection(c.sourceSelection, sources), selected };
+    const parent = validateStudioMessageRef(c.parent, "conversation.parent");
+    return { id: id(c.id, "conversation.id"), title: string(c.title, "conversation.title", 300), updatedAt: timestamp(c.updatedAt, "conversation.updatedAt"), messages, ...(parent ? { parent } : {}), draft: string(c.draft, "conversation.draft", 20000), modelAnchor: validateModelAnchor(c.modelAnchor, model), sourceSelection: validateSourceSelection(c.sourceSelection, sources), selected };
   });
   unique(conversations.map(conversation => conversation.id), "document.conversations");
+  try { assertConversationTree(conversations); }
+  catch (error) { fail(error instanceof Error ? error.message : "Invalid conversation links."); }
   const reviewResponses: StudioDocument["reviewResponses"] = {};
   const rawResponses = object(value.reviewResponses, "document.reviewResponses");
   for (const [key, raw] of Object.entries(rawResponses)) {

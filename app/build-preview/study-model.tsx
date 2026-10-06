@@ -13,18 +13,16 @@ type Props = {
   artifacts?:StudioArtifact[];
   onDiscussArtifact?:(artifact:StudioArtifact)=>void;
   busy?:boolean;
-  prompt:string;
-  setPrompt:(text:string)=>void;
   selected: string;
   anchor: ModelAnchor | null;
   responses: Record<string, ReviewResponse>;
   onSelect: (anchor: ModelAnchor | null) => void;
   onSource: (id: string, evidence?: Evidence) => void;
-  onAsk: (text: string, anchor: ModelAnchor) => void;
+  onDiscuss: (anchor: ModelAnchor, draft?: string) => void;
   onRespond: (id: string, text: string) => void;
 };
 
-export default function StudyModel({ model, artifacts=[], onDiscussArtifact, busy, prompt, setPrompt, selected, anchor, responses, onSelect, onSource, onAsk, onRespond }: Props) {
+export default function StudyModel({ model, artifacts=[], onDiscussArtifact, busy, selected, anchor, responses, onSelect, onSource, onDiscuss, onRespond }: Props) {
   const study=model||exampleStudy;
   const pageNumber=(n:number)=>study.id===exampleStudy.id?1160+n:n;
   const overview=modelOverview(study), reviewIssues=modelIssues(study);
@@ -38,7 +36,6 @@ export default function StudyModel({ model, artifacts=[], onDiscussArtifact, bus
   const [notice, setNotice] = useState("");
   const canvas = useRef<HTMLDivElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
-  const promptInput = useRef<HTMLTextAreaElement>(null);
   const drawing = useRef<Point[] | null>(null);
   const suppressClick = useRef(false);
   const needsInput = reviewIssues.filter(i => !responses[i.id]);
@@ -92,17 +89,14 @@ export default function StudyModel({ model, artifacts=[], onDiscussArtifact, bus
         const r = node.getBoundingClientRect();
         return intersectsPolygon(points, { x: (r.left - bounds.left) / bounds.width * 100, y: (r.top - bounds.top) / bounds.height * 100, w: r.width / bounds.width * 100, h: r.height / bounds.height * 100 });
       }).map(node => node.dataset.modelId!);
-      onSelect({ kind: "lasso", entityIds: ids, points });
+      const next:ModelAnchor={ kind: "lasso", entityIds: ids, points };
+      onSelect(next);
       setInspect(false); setNotice("");
-      requestAnimationFrame(() => promptInput.current?.focus());
+      onDiscuss(next);
     }
     setTool("select"); setInk([]);
     // The pointer-up is followed by a click; do not turn a lasso into a single selection.
     setTimeout(() => { suppressClick.current = false; }, 0);
-  }
-  function submitPrompt() {
-    if (!prompt.trim() || !anchor || busy) return;
-    onAsk(prompt.trim(), anchor);
   }
 
   return <section data-event="model.panel" className={s.model} aria-label="Study model and data schema">
@@ -130,28 +124,27 @@ export default function StudyModel({ model, artifacts=[], onDiscussArtifact, bus
       </div>
       <div className={s.legend}><span><i/> Source-linked draft</span><span><i/> Need input</span></div>
     </div>
-    {anchor && <div className={s.dock} aria-label="Study model selection">
+    {anchor && <div className={`${s.dock} ${!issue&&!inspect?s.compactDock:""}`} aria-label="Study model selection">
       <div className={s.dockHeader}><span>{issue ? t(issue.type) : `${t(anchor.kind === "lasso" ? "Circled region" : "Model selection")} · ${selectedIds.length} ${t("objects")}`}</span><button aria-label={t("Clear model selection")} onClick={() => { onSelect(null); setNotice(""); }}>×</button></div>
-      <div className={s.selectedNames}>{selectedIds.length ? selectedIds.map(id => <button key={id} onClick={() => onSource(id)} title={t("Locate original evidence")}>{t(overview.cards[id]?.title||id)} <span>↗</span></button>) : <span>{t("Canvas region · your drawing is attached")}</span>}</div>
+      {(issue||inspect)&&<div className={s.selectedNames}>{selectedIds.length ? selectedIds.map(id => <button key={id} disabled={!study.entities.find(e=>e.id===id)?.evidence.quote.trim()&&!study.entities.find(e=>e.id===id)?.evidence.rects.length} onClick={() => onSource(id)} title={t("Locate original evidence")}>{t(overview.cards[id]?.title||id)} <span>↗</span></button>) : <span>{t("Canvas region · your drawing is attached")}</span>}</div>}
       {issue ? <div className={s.issueDetail} key={issue.id}>
         <h3>{t(issue.title)}</h3><p>{t(issue.question)}</p><p><strong>{t("Why it matters")}</strong> {t(issue.impact)}</p>
-        <button className={s.sourceLink} onClick={() => onSource(issue.entity, issue.evidence)}>{t("Source")} · p. {pageNumber(issue.evidence.page)} ↗</button>
+        <button className={s.sourceLink} disabled={!issue.evidence.quote.trim()&&!issue.evidence.rects.length} onClick={() => onSource(issue.entity, issue.evidence)}>{issue.evidence.quote.trim()||issue.evidence.rects.length?`${t("Source")} · p. ${pageNumber(issue.evidence.page)} ↗`:t("Source not located")}</button>
         <details><summary>{t("Evidence & suggested next step")}</summary><blockquote>{issue.evidence.quote}</blockquote><p>{t(issue.suggestion)}</p></details>
         <label htmlFor="review-response">{t("Your correction or decision")}</label><textarea id="review-response" value={reply} onChange={e => setReplyDrafts({...replyDrafts,[issue.id]:e.target.value})} placeholder={t("Describe the correction, supply evidence, or specify a study decision…")}/>
-        <div className={s.issueActions}><button onClick={() => { onAsk(`Help me review: ${t(issue.title)}. ${t(issue.question)}`, anchor); setNotice(t("Review question sent with the issue and its source evidence.")); }}>{t("Discuss with AI ↗")}</button><button className={s.primary} disabled={!reply.trim()} onClick={() => { onRespond(issue.id, reply.trim()); setNotice(t("Response saved. Discuss it with the agent to update the model.")); }}>{t("Save response")}</button></div>
+        <div className={s.issueActions}><button onClick={() => { onDiscuss(anchor,reply.trim()||`Help me review: ${t(issue.title)}. ${t(issue.question)}`); }}>{t("Discuss with AI ↗")}</button><button className={s.primary} disabled={!reply.trim()} onClick={() => { onRespond(issue.id, reply.trim()); setNotice(t("Response saved. Discuss it with the agent to update the model.")); }}>{t("Save response")}</button></div>
         {responses[issue.id] && <small className={s.savedState}>{t("✓ Response saved · pending application to the program")}</small>}
       </div> : <>
-        <div className={s.selectionActions}><button onClick={() => promptInput.current?.focus()}>{t("Ask AI")}</button>{selectedIds.length > 0 && <button aria-expanded={inspect} onClick={() => setInspect(!inspect)}>{inspect ? t("Hide details ↑") : t("Inspect details ↓")}</button>}<button onClick={() => { setPrompt(t("I think there is an error here: ")); promptInput.current?.focus(); }}>{t("Flag an error")}</button></div>
+        <div className={s.selectionActions}>{selectedIds.length > 0 && <button aria-expanded={inspect} onClick={() => setInspect(!inspect)}>{inspect ? t("Hide details ↑") : t("Inspect details ↓")}</button>}<button onClick={() => { onDiscuss(anchor,t("I think there is an error here: ")); }}>{t("Flag an error")}</button></div>
         {inspect && focused && <div className={s.inspector}>
           {selectedIds.length > 1 && <p>{t("Details")} · {t(overview.cards[focused.id].title)}</p>}
           <h3>{t(overview.cards[focused.id].title)}</h3><p>{t(focused.description)}</p>
           <dl>{focused.fields.map(f => <div key={t(f.name)}><dt>{t(f.name)}</dt><dd>{f.value}<small>{f.status === "reported" ? t("Reported in source") : f.status === "implementation" ? t("Implementation proposal") : t("Needs review")}</small></dd></div>)}</dl>
-          {focused.kind === "procedure" && <div className={s.stepDetails}><h4>{t("Inside one trial")}</h4>{study.procedure.map((step,i) => <div key={step.id}><button onClick={() => onSource(focused.id, step.evidence)}>{i+1}. {t(step.name)} ↗</button><dl><dt>{t("Input")}</dt><dd>{t(step.input)}</dd><dt>{t("Person")}</dt><dd>{t(step.actor)}</dd><dt>{t("Output")}</dt><dd>{t(step.output)}</dd></dl></div>)}</div>}
+          {focused.kind === "procedure" && <div className={s.stepDetails}><h4>{t("Inside one trial")}</h4>{study.procedure.map((step,i) => <div key={step.id}><button disabled={!step.evidence.quote.trim()&&!step.evidence.rects.length} onClick={() => onSource(focused.id, step.evidence)}>{i+1}. {t(step.name)} ↗</button><dl><dt>{t("Input")}</dt><dd>{t(step.input)}</dd><dt>{t("Person")}</dt><dd>{t(step.actor)}</dd><dt>{t("Output")}</dt><dd>{t(step.output)}</dd></dl></div>)}</div>}
           <details><summary>{t("Variables used here")} ({study.variables.filter(v => v.entity === focused.id).length})</summary>{study.variables.filter(v => v.entity === focused.id).map(v => <div className={s.variable} key={v.id}><code>{v.name}</code><p>{v.role} · {v.type} · {v.unit}</p><small>{v.producedBy} → {v.usedBy}</small><p>{v.definition}</p></div>)}</details>
-          <blockquote>{focused.evidence.quote}</blockquote><button className={s.sourceLink} onClick={() => onSource(focused.id, focused.evidence)}>{t("Comment")} · p. {pageNumber(focused.evidence.page)} ↗</button>
+          <blockquote>{focused.evidence.quote||t("Source not located")}</blockquote><button className={s.sourceLink} disabled={!focused.evidence.quote.trim()&&!focused.evidence.rects.length} onClick={() => onSource(focused.id, focused.evidence)}>{t("Source")} · p. {pageNumber(focused.evidence.page)} ↗</button>
         </div>}
-        <form className={s.prompt} onSubmit={e => { e.preventDefault(); submitPrompt(); }}><textarea disabled={busy} ref={promptInput} aria-label={t("Ask AI about model selection")} value={prompt} onChange={e => setPrompt(e.target.value)} placeholder={anchor.kind === "lasso" ? t("Ask about this circled region…") : t("Ask, correct, or describe a change to this selection…")} onKeyDown={e => { if(e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submitPrompt(); } }}/><button aria-label={t("Send model prompt")} disabled={!prompt.trim()||busy}>↑</button></form>
-        <small className={s.attachedHint}>↔ {t("Shared with chat")}</small>
+
       </>}
       {notice && <p className={s.notice} role="status">{notice}</p>}
     </div>}

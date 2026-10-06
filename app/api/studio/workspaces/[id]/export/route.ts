@@ -5,6 +5,7 @@ import { requireStudioUser } from "@/lib/studio/auth";
 import { routeError, studioFetch, StudioError } from "@/lib/studio/http";
 import { getWorkspace } from "@/lib/studio/store";
 import { validateStudioDocument } from "@/lib/studio/validation";
+import { sourceSpec, validStoredSource } from "@/lib/studio/resources";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -62,8 +63,8 @@ export async function GET(_request: Request, { params }: Context) {
     let totalSourceBytes = 0;
     for (const source of document.sources) {
       const item: { sourceId: string; originalName: string; archivePath?: string; reason?: string } = { sourceId: source.id, originalName: source.name };
-      const expectedPath = `${ctx.user.id}/${id}/${source.id}.pdf`;
-      if (source.path !== expectedPath || source.mimeType !== "application/pdf") {
+      const spec = sourceSpec(source.name);
+      if (!spec || !validStoredSource(source, ctx.user.id, id)) {
         item.reason = "The source has no verified private storage path.";
       } else if (source.size + totalSourceBytes > MAX_SOURCE_BYTES) {
         item.reason = "Including this source would exceed the 50 MB export source limit.";
@@ -73,7 +74,7 @@ export async function GET(_request: Request, { params }: Context) {
           const response = await studioFetch(`/storage/v1/object/authenticated/studio-sources/${path}`, { token: ctx.accessToken });
           if (!response.ok) throw new Error("Source unavailable");
           const bytes = await readSourceBytes(response, Math.min(source.size + 1024, MAX_SOURCE_BYTES - totalSourceBytes));
-          item.archivePath = `source-files/${source.id}.pdf`;
+          item.archivePath = `source-files/${source.id}.${spec.extension}`;
           zip.file(item.archivePath, bytes);
           totalSourceBytes += bytes.byteLength;
         } catch {
@@ -124,7 +125,7 @@ export async function GET(_request: Request, { params }: Context) {
       "## Auxiliary materials",
       ...(auxiliaryMaterials.length ? auxiliaryMaterials.map(item => `- ${item.title} (${item.archivePath})`) : ["- None"]),
       "",
-      "The complete model, conversations, annotations, review responses, auxiliary materials and source references are in the JSON files. Generated scripts are drafts and have not been executed. Source PDFs are included when accessible from the authenticated private bucket; check manifest.json for any omissions.",
+      "The complete model, conversations, annotations, review responses, auxiliary materials and source references are in the JSON files. Generated scripts are drafts and have not been executed. Source files are included when accessible from the authenticated private bucket; check manifest.json for any omissions.",
       "",
     ].join("\n"));
     const archive = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 6 } });

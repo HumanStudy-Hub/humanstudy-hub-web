@@ -17,7 +17,9 @@ function load(file, dependencies = {}) {
   return loadedModule.exports;
 }
 class StudioError extends Error { constructor(status, code) { super(code); this.status = status; this.code = code; } }
-const validation = load("lib/studio/validation.ts");
+const conversationTree = load("lib/studio/conversation-tree.ts");
+const resources = load("lib/studio/resources.ts");
+const validation = load("lib/studio/validation.ts", { "./conversation-tree": conversationTree, "./resources": resources });
 const owner = "11111111-1111-4111-8111-111111111111";
 const workspaceId = "22222222-2222-4222-8222-222222222222";
 const sourceId = "33333333-3333-4333-8333-333333333333";
@@ -77,8 +79,8 @@ test("completed pipeline proposal requires apply, preserves edits, and exports a
       approvals++;
     },
   };
-  const pipeline = load("lib/studio/pipeline.ts", { "@/lib/github-jobs": github, "./http": http, "./store": store, "./validation": validation, "./pipeline-adapter": {} });
-  const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/pipeline": pipeline, "@/lib/github-jobs": github, jszip: JSZip };
+  const pipeline = load("lib/studio/pipeline.ts", { "@/lib/github-jobs": github, "./http": http, "./store": store, "./validation": validation, "./pipeline-adapter": {}, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": {} });
+  const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/pipeline": pipeline, "@/lib/studio/resources": resources, "@/lib/github-jobs": github, jszip: JSZip };
   const proposals = load("app/api/studio/workspaces/[id]/proposals/route.ts", deps);
   const exportRoute = load("app/api/studio/workspaces/[id]/export/route.ts", deps);
   const context = { params: Promise.resolve({ id: workspaceId }) };

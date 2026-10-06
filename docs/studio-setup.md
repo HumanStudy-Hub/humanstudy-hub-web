@@ -15,7 +15,9 @@ remains available inside the workspace. Existing `/pipeline` jobs are unchanged.
    user's token and RLS policies.
 2. Apply `supabase/migrations/202610050001_studio.sql` once through your migration
    runner or Supabase SQL editor. It creates owner-scoped workspaces/events,
-   the revision-check RPC, and the private `studio-sources` PDF bucket.
+   the revision-check RPC, and the private `studio-sources` bucket. Apply
+   `supabase/migrations/20261006062534_studio_resources.sql` to enable resource
+   MIME types and extend the same owner/workspace storage policies.
 3. Enable email/password authentication. Set the Auth Site URL to the deployment
    origin and configure confirmation email delivery. Confirmation returns to the
    site; the user signs in at `/build` after confirming. Configure SMTP and rate
@@ -32,10 +34,12 @@ remains available inside the workspace. Existing `/pipeline` jobs are unchanged.
    `http://127.0.0.1:3100/build`. Restart after changing environment variables.
 
 Development project `humanstudy-hub-dev` (`zigbuogyerivbnxtnjjw`, us-west-1)
-was created on 2026-10-05. Both studio migrations have been applied. Local
+was created on 2026-10-05. The base, pipeline and resource migrations have been applied. Local
 `.env.local` contains its URL and modern publishable key, is ignored by Git,
 and has file mode 0600. `/api/studio/auth` reports `configured: true`.
-The private PDF bucket has a 25 MB limit. No production website was deployed.
+The private source bucket has a 25 MB per-object limit and a MIME allowlist;
+PDFs may use that full limit, while individual resources are limited to 20 MB
+by the application. No production website was deployed.
 
 Hosted transaction tests passed for revision updates, stale-write rejection,
 cross-owner workspace/event/file visibility and cross-owner event insertion
@@ -52,15 +56,35 @@ Supabase variables and `STUDIO_PIPELINE_REF` in its Preview environment.
 
 ## Workflow and persisted data
 
-A study begins with an empty model. Upload one or more PDFs; original PDFs go
-directly to signed private storage URLs. PDF.js renders the original pages and
-extracts selectable text in the browser. Select text or a region, add a comment,
-or send that source reference to the agent. Select or circle model objects to
-ask contextual questions through the same conversation.
+A study begins with an empty model. Upload a primary PDF and optional additional
+papers or research resources. Originals go to signed private storage URLs.
+The resource selector switches between PDFs, raw text, images and ZIP directory
+previews. DOCX/XLSX originals can be downloaded; they have no inline preview.
+Resource previews do not execute uploaded scripts or interpret their contents.
+Include in build is reversible: excluded files stay available for preview, download
+and export but their original contents do not enter the next agent request.
+Previously extracted model evidence and conversation references remain in context. Existing files default to included.
+
+PDF.js renders original pages and extracts selectable text in the browser.
+Zoom is relative to the available viewer width, from 75% to 300%. Select text
+or drag a region, save a highlight without a comment, add a comment, or send
+that reference to the agent. Highlights and comments survive a saved-study
+reload. Scanned pages support region marks; text requires OCR. Select or circle
+model objects to attach them to the left Agent composer. Need input discussions
+use that same composer; there is no separate model-side prompt form.
+
+Chat history uses a simple indented branch list. Reply references an earlier
+message; Side talk forks context at that message. Later parent messages and
+sibling conversations stay out of a branch's agent context. Bring to main
+copies the selected side-talk message into a main-line draft with an explicit
+reference. Sending that draft asks the agent to reconcile it; applying a
+proposal remains a separate action. Conversations share the current study model;
+branches are discussion paths, not independent model versions.
 
 Upload a PDF and select **Build study**, or send a request in the agent panel.
 The API reserves the request with the workspace revision, signs the selected
-private PDF for the runner and starts the original `run-humanstudy-pipeline.yml`
+private PDF for the runner, freezes all additional sources in a private resource
+archive, and starts the original `run-humanstudy-pipeline.yml`
 workflow. Each feedback request has its own private job branch; completed output
 from the previous request is copied for refinement when the source is unchanged.
 The existing Claude Code tools and package validator still run in Actions.
@@ -100,7 +124,7 @@ saved in the study document. Settings disclose recording. Events are in
 `studio_events`; this version does not provide a researcher analytics dashboard.
 
 Export produces a ZIP with the versioned document, study model, conversations,
-annotations, review responses, source manifest, available original PDFs,
+annotations, review responses, source manifest, available original source files,
 applied auxiliary files and `HANDOFF.md`. It lists unresolved choices and pending proposals. The handoff is
 research design data and draft materials. Packaging and validation of a runnable
 study, execution and result analysis remain work for the local agent or the
@@ -113,11 +137,19 @@ legacy pipeline.
   service for text extraction. No OCR service is configured in this version.
 - Agent context: the runner reads the selected original PDF plus a bounded Studio
   context excerpt; the full context file remains available to the agent. A build
-  uses the currently selected PDF as its primary source. Other attached PDFs are
-  represented by extracted text and metadata in the context, not separate downloads.
+  still requires a primary PDF. Selecting a non-PDF resource retains the selected
+  primary paper. All other included papers and resources enter a private archive, limited
+  to 20 MB combined, passed through the original worker's `openMaterialsUrl`.
+  Retry re-signs its private URL. Original resource types include TXT, MD, CSV,
+  JSON, Python, R, PNG, JPEG, WebP, ZIP, DOCX and XLSX; downloadable inputs do not
+  imply the agent successfully understood each format. Required Studio attachments
+  fail the build visibly if unavailable or invalid. ZIP extraction allows the
+  outer resource bundle and one uploaded ZIP level, with a shared 100 MiB
+  expansion, 2,000-file and 4,000-entry limit; traversal, links and collisions
+  are rejected.
 - Materials: up to 30 applied files and 120 KB of combined UTF-8 content.
   Accepted formats are Markdown, CSV, JSON, text, Python and R.
-- Saved document requests: 2 MB. Export includes up to 50 MB of source PDFs and
+- Saved document requests: 2 MB. Export includes up to 50 MB of original sources and
   records omissions in its manifest. Viewer truncation does not alter the stored
   original PDF.
 - PDF text placement for unusual fonts or right-to-left text is approximate;

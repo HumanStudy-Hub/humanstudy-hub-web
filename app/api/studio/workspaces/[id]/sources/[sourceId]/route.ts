@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireStudioUser } from "@/lib/studio/auth";
 import { isUuid, routeError, studioConfig, studioFetch, upstreamJson, StudioError } from "@/lib/studio/http";
 import { getWorkspace } from "@/lib/studio/store";
+import { validStoredSource } from "@/lib/studio/resources";
 
 type Context = { params: Promise<{ id: string; sourceId: string }> };
 
@@ -13,8 +14,8 @@ export async function GET(_request: Request, context: Context) {
     const workspace = await getWorkspace(ctx, id);
     if (!workspace) throw new StudioError(404, "not_found");
     const source = workspace.document.sources.find(item => item.id === sourceId);
-    const path = `${ctx.user.id}/${id}/${sourceId}.pdf`;
-    if (!source || source.path !== path) throw new StudioError(404, "not_found");
+    if (!source || !validStoredSource(source, ctx.user.id, id)) throw new StudioError(404, "not_found");
+    const path = source.path.split("/").map(encodeURIComponent).join("/");
     const response = await studioFetch(`/storage/v1/object/sign/studio-sources/${path}`, {
       method: "POST", token: ctx.accessToken, body: { expiresIn: 3600 },
     });

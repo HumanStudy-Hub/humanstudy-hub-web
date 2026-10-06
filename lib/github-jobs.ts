@@ -564,7 +564,7 @@ export async function assignStudyId(id: string) {
 // Studio uses the existing Claude Code workflow, with an immutable job for each
 // researcher request. Identity is written by the server, never inferred from UI state.
 export type StudioJobIdentity = { workspaceId:string; ownerId:string; requestId:string; conversationId:string };
-export type StudioPipelineJob = PipelineJob & { studio:StudioJobIdentity; pipelineRef:string };
+export type StudioPipelineJob = PipelineJob & { studio:StudioJobIdentity; pipelineRef:string; openMaterialsSourceIds?:string[] };
 export function studioPipelineConfigured() {
   return Boolean(process.env.GITHUB_TOKEN && (process.env.STUDIO_PIPELINE_REF || process.env.GITHUB_PIPELINE_REF));
 }
@@ -574,7 +574,7 @@ export async function readOwnedStudioJob(id:string, identity:Pick<StudioJobIdent
   if (!job.studio || job.studio.ownerId!==identity.ownerId || job.studio.workspaceId!==identity.workspaceId) throw new Error('Study job not found.');
   return job;
 }
-export async function createStudioPipelineJob(input:{id:string;identity:StudioJobIdentity;paperName:string;paperUrl:string;request:unknown;previousJobId?:string}) {
+export async function createStudioPipelineJob(input:{id:string;identity:StudioJobIdentity;paperName:string;paperUrl:string;openMaterialsUrl?:string;openMaterialsPathname?:string;openMaterialsSourceIds?:string[];request:unknown;previousJobId?:string}) {
   if (!studioPipelineConfigured()) throw new Error('Studio pipeline GitHub token and branch are required.');
   const ref=process.env.STUDIO_PIPELINE_REF || process.env.GITHUB_PIPELINE_REF!;
   const api=jobsOctokit(), target=splitRepo(jobsRepo), now=new Date().toISOString();
@@ -582,13 +582,16 @@ export async function createStudioPipelineJob(input:{id:string;identity:StudioJo
   if(input.previousJobId){
     const previous=await readOwnedStudioJob(input.previousJobId,input.identity);
     if(previous.status!=='review'&&previous.status!=='complete')throw new Error('Previous package is not ready.');
-    for(const file of await listPackageFiles(previous.id,input.identity)) {
-      if (!file.path.split('/').every(part=>part&&part!=='.'&&part!=='..') || file.path.includes('\\')) throw new Error('Invalid package path.');
-      files.push({path:`package/${file.path}`,content:file.content});
+    const sameResources=JSON.stringify(previous.openMaterialsSourceIds||[])===JSON.stringify(input.openMaterialsSourceIds||[]);
+    if(sameResources){
+      for(const file of await listPackageFiles(previous.id,input.identity)) {
+        if (!file.path.split('/').every(part=>part&&part!=='.'&&part!=='..') || file.path.includes('\\')) throw new Error('Invalid package path.');
+        files.push({path:`package/${file.path}`,content:file.content});
+      }
     }
   }
   if(files.reduce((n,f)=>n+f.content.length,0)>40*1024*1024)throw new Error('Package exceeds the 40 MB refinement limit.');
-  const job:StudioPipelineJob={id:input.id,experimentId:draftId(input.paperName,input.id),contributorName:'Studio researcher',paperName:input.paperName,paperUrl:input.paperUrl,currentStage:1,status:'queued',message:'Waiting for the study-building agent',packageReady:false,createdAt:now,updatedAt:now,reviews:{},studio:input.identity,pipelineRef:ref};
+  const job:StudioPipelineJob={id:input.id,experimentId:draftId(input.paperName,input.id),contributorName:'Studio researcher',paperName:input.paperName,paperUrl:input.paperUrl,openMaterialsUrl:input.openMaterialsUrl,openMaterialsPathname:input.openMaterialsPathname,openMaterialsName:input.openMaterialsUrl?'Studio resources':undefined,openMaterialsSourceIds:input.openMaterialsSourceIds||[],currentStage:1,status:'queued',message:'Waiting for the study-building agent',packageReady:false,createdAt:now,updatedAt:now,reviews:{},studio:input.identity,pipelineRef:ref};
   files.push({path:'job.json',content:Buffer.from(JSON.stringify(job))},{path:'studio_request.json',content:Buffer.from(JSON.stringify(input.request))});
   const parent=await branchSha(await defaultBranch(jobsRepo));
   // One initial commit prevents runners from seeing half-written context/files.
@@ -608,12 +611,13 @@ export async function dispatchStudioPipelineJob(job:StudioPipelineJob) {
   await octokit().actions.createWorkflowDispatch({...splitRepo(pipelineRepo),workflow_id:workflowFile,ref:job.pipelineRef,inputs:{job_id:job.id,jobs_repo:jobsRepo}});
 }
 
-export async function retryStudioPipelineJob(id:string,identity:Pick<StudioJobIdentity,'ownerId'|'workspaceId'>,paperUrl:string) {
+export async function retryStudioPipelineJob(id:string,identity:Pick<StudioJobIdentity,'ownerId'|'workspaceId'>,paperUrl:string,openMaterialsUrl?:string) {
   const job=await readOwnedStudioJob(id,identity);
   const age=Date.now()-Date.parse(job.updatedAt||job.createdAt);
   if(!(job.status==='failed'||(job.status==='queued'&&age>5*60_000)||(job.status==='running'&&age>100*60_000)))throw new Error('This build is still active or ready for review.');
   // Same branch and concurrency group: retry cannot fork a second live build.
-  job.paperUrl=paperUrl;job.status='queued';job.packageReady=false;job.error=undefined;
+  if(job.openMaterialsPathname&&!openMaterialsUrl)throw new Error('The uploaded resources need a fresh signed URL.');
+  job.paperUrl=paperUrl;job.openMaterialsUrl=openMaterialsUrl;job.status='queued';job.packageReady=false;job.error=undefined;
   job.message='Waiting for the study-building agent';job.updatedAt=new Date().toISOString();
   await saveJob(job,`studio: retry ${id}`);
   await dispatchStudioPipelineJob(job);

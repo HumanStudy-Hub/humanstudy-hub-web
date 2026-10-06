@@ -15,7 +15,9 @@ function load(file, dependencies = {}) {
   new Function("require", "module", "exports", compiled)(id => dependencies[id] ?? requireLocal(id), loadedModule, loadedModule.exports);
   return loadedModule.exports;
 }
-const validation = load("lib/studio/validation.ts");
+const conversationTree = load("lib/studio/conversation-tree.ts");
+const resources = load("lib/studio/resources.ts");
+const validation = load("lib/studio/validation.ts", { "./conversation-tree": conversationTree, "./resources": resources });
 const { adaptPipelinePackage } = load("lib/studio/pipeline-adapter.ts", { "./validation": validation });
 const source = { id: "paper", name: "paper.pdf", path: "owner/paper.pdf", mimeType: "application/pdf", size: 10,
   pages: [{ page: 2, text: "Participants read the instructions before answering." }] };

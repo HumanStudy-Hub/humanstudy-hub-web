@@ -10,7 +10,7 @@ function load(file,dependencies={}){
  new Function('require','module','exports',js)(id=>dependencies[id]||require(id),loadedModule,loadedModule.exports);
  return loadedModule.exports;
 }
-const {quoteRects}=load('lib/studio/source-anchor.ts');
+const {quoteRects,sourceRect}=load('lib/studio/source-anchor.ts');
 const schema=load('app/build-preview/study-schema.ts');
 const {modelOverview,modelIssues}=load('app/build-preview/model-review.ts',{'./study-schema':schema});
 const box=(t,x=10,y=20)=>({t,x,y,w:12,h:3});
@@ -31,4 +31,16 @@ test('new study overview and review IDs do not depend on the anchoring fixture o
  assert.equal(issues[0].id,'research-team:field:1');
  assert.match(issues[0].id,/^[A-Za-z0-9][A-Za-z0-9._:-]*$/);
  assert.equal(issues[0].question,'Specify recruitment');
+});
+
+
+test('PDF highlights keep the same page coordinates after zoom and horizontal scrolling',()=>{
+ const fit=sourceRect({left:20,top:40,width:400,height:600},{left:60,top:160,width:80,height:30});
+ const zoom=sourceRect({left:-120,top:-80,width:800,height:1200},{left:-40,top:160,width:160,height:60});
+ assert.deepEqual(fit,{x:10,y:20,w:20,h:5});
+ assert.deepEqual(zoom,fit);
+});
+test('PDF selection clips to page boundaries so saved marks always validate',()=>{
+ assert.deepEqual(sourceRect({left:0,top:0,width:100,height:100},{left:90,top:95,width:30,height:10}),{x:90,y:95,w:10,h:5});
+ assert.equal(sourceRect({left:0,top:0,width:100,height:100},{left:110,top:95,width:30,height:10}),null);
 });

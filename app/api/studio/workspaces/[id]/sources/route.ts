@@ -3,6 +3,7 @@ import { requireStudioUser } from "@/lib/studio/auth";
 import { assertSameOrigin, readJsonBody, routeError, studioConfig, studioFetch, upstreamJson, StudioError } from "@/lib/studio/http";
 import { getWorkspace } from "@/lib/studio/store";
 import type { StudioSource } from "@/lib/studio/types";
+import { MAX_PAPER_BYTES, MAX_RESOURCE_BYTES, sourceSpec, sourceStoragePath } from "@/lib/studio/resources";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -15,12 +16,14 @@ export async function POST(request: Request, context: Context) {
     const body = await readJsonBody(request, 4_096);
     if (!body || typeof body !== "object") throw new StudioError(400, "invalid_source");
     const { name, mimeType, size } = body as Record<string, unknown>;
-    if (typeof name !== "string" || !name.toLowerCase().endsWith(".pdf") || name.length > 200 || name.length < 5 || /[\x00-\x1f\x7f]/.test(name) ||
-        mimeType !== "application/pdf" || !Number.isInteger(size) || (size as number) < 1 || (size as number) > 25 * 1024 * 1024) {
+    const filename = typeof name === "string" ? name : "";
+    const spec = sourceSpec(filename);
+    if (!spec || mimeType !== spec.mimeType || !Number.isInteger(size) || (size as number) < 1 ||
+        (size as number) > (spec.kind === "paper" ? MAX_PAPER_BYTES : MAX_RESOURCE_BYTES)) {
       throw new StudioError(400, "invalid_source");
     }
     const sourceId = crypto.randomUUID();
-    const path = `${ctx.user.id}/${id}/${sourceId}.pdf`;
+    const path = sourceStoragePath(ctx.user.id, id, sourceId, spec.extension);
     const response = await studioFetch(`/storage/v1/object/upload/sign/studio-sources/${path}`, {
       method: "POST", token: ctx.accessToken, body: {},
     });
@@ -32,7 +35,7 @@ export async function POST(request: Request, context: Context) {
     catch { throw new StudioError(502, "invalid_service_response"); }
     if (!token) throw new StudioError(502, "invalid_service_response");
     const uploadUrl = `${url}/storage/v1/object/upload/sign/studio-sources/${path}?token=${encodeURIComponent(token)}`;
-    const source: StudioSource = { id: sourceId, name, path, mimeType, size: size as number };
-    return NextResponse.json({ source, uploadUrl, method: "PUT", headers: { "Content-Type": "application/pdf" } }, { status: 201 });
+    const source: StudioSource = { id: sourceId, name: filename, path, mimeType: spec.mimeType, size: size as number, kind: spec.kind };
+    return NextResponse.json({ source, uploadUrl, method: "PUT", headers: { "Content-Type": spec.mimeType } }, { status: 201 });
   } catch (error) { return routeError(error); }
 }

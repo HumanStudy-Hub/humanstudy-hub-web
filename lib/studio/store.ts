@@ -1,6 +1,7 @@
 import type { StudioDocument, StudioSource, StudioWorkspace } from "./types";
 import type { StudioContext } from "./auth";
 import { isUuid, StudioError, studioFetch, upstreamJson } from "./http";
+import { validStoredSource } from "./resources";
 
 function assertId(id: string): void {
   if (!isUuid(id)) throw new StudioError(404, "not_found");
@@ -11,9 +12,8 @@ function assertSources(ctx: StudioContext, id: string, sources: StudioSource[]):
   const prefix = `${ctx.user.id}/${id}/`;
   const seen = new Set<string>();
   for (const source of sources) {
-    if (!isUuid(source.id) || seen.has(source.id) || source.path !== `${prefix}${source.id}.pdf` ||
-        source.mimeType !== "application/pdf" || !Number.isInteger(source.size) || source.size < 1 || source.size > 25 * 1024 * 1024 ||
-        typeof source.name !== "string" || source.name.length < 1 || source.name.length > 200) {
+    if (!isUuid(source.id) || seen.has(source.id) || typeof source.name !== "string" ||
+        !validStoredSource(source, ctx.user.id, id) || !source.path.startsWith(prefix)) {
       throw new StudioError(400, "invalid_sources");
     }
     seen.add(source.id);

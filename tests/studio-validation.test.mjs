@@ -17,11 +17,27 @@ function load(file, dependencies = {}) {
   new Function("require", "module", "exports", compiled)(localRequire, loadedModule, loadedModule.exports);
   return loadedModule.exports;
 }
-const validation = load("lib/studio/validation.ts");
+const conversationTree = load("lib/studio/conversation-tree.ts");
+const resources = load("lib/studio/resources.ts");
+const validation = load("lib/studio/validation.ts", { "./conversation-tree": conversationTree, "./resources": resources });
 const evidence = (sourceId, quote = "") => ({ sourceId, page: 1, rects: [], quote });
 const emptyModel = () => ({ id: "study", title: "Untitled study", source: { title: "", authors: "", filename: "" }, entities: [], relations: [], procedure: [], variables: [] });
 const source = { id: "source-1", name: "paper.pdf", path: "owner/workspace/source-1.pdf", mimeType: "application/pdf", size: 100, pages: [{ page: 1, text: "Participants read the instructions before the task." }] };
 const document = () => ({ version: 1, title: "Untitled study", model: emptyModel(), sources: [source], annotations: [], conversations: [], reviewResponses: {} });
+
+test("resource inclusion is reversible metadata and auxiliary files cannot fabricate parsed PDF text", () => {
+  const draft = document();
+  draft.sources.push({ id: "resource-1", name: "survey.docx", path: "owner/workspace/resource-1.docx", mimeType: resources.sourceSpec("survey.docx").mimeType, kind: "resource", size: 100, includeInBuild: false });
+  const saved = validation.validateStudioDocument(draft);
+  assert.equal(saved.sources[1].includeInBuild, false);
+  saved.sources[1].includeInBuild = true;
+  assert.equal(validation.validateStudioDocument(saved).sources[1].includeInBuild, true);
+  draft.sources[1].pages = [{ page: 1, text: "invented" }];
+  assert.throws(() => validation.validateStudioDocument(draft), /do not have PDF page text/);
+  delete draft.sources[1].pages;
+  draft.sources[1].includeInBuild = "false";
+  assert.throws(() => validation.validateStudioDocument(draft), /includeInBuild must be a boolean/);
+});
 
 test("empty generic model and conversation validate", () => {
   const draft = document();

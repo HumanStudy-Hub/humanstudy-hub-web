@@ -18,7 +18,9 @@ function load(file, dependencies = {}) {
   return loadedModule.exports;
 }
 class StudioError extends Error { constructor(status, code) { super(code); this.status = status; this.code = code; } }
-const validation = load("lib/studio/validation.ts");
+const conversationTree = load("lib/studio/conversation-tree.ts");
+const resources = load("lib/studio/resources.ts");
+const validation = load("lib/studio/validation.ts", { "./conversation-tree": conversationTree, "./resources": resources });
 const ids = {
   owner: "11111111-1111-4111-8111-111111111111",
   workspace: "22222222-2222-4222-8222-222222222222",
@@ -42,7 +44,7 @@ const routeContext = { params: Promise.resolve({ id: ids.workspace }) };
 
 function harness(initial = document()) {
   let workspace = { id: ids.workspace, title: "Study", revision: 1, document: initial, created_at: now, updated_at: now };
-  let configured = true, signing = `/object/sign/studio-sources/${source().path}?token=secret`, dispatchError = null;
+  let configured = true, signing = `/object/sign/studio-sources/${source().path}?token=secret`, materialsSigning = null, dispatchError = null;
   let casConflict = false, reads = 0, lists = 0;
   const calls = [];
   const job = { id: jobId, status: "queued", message: "Waiting", updatedAt: now, progress: 0, packageReady: false };
@@ -53,7 +55,7 @@ function harness(initial = document()) {
     async readOwnedStudioJob(id, identity) { reads++; calls.push(["read", id, identity]); return { ...job, id }; },
     async listPackageFiles(id, identity) { lists++; calls.push(["list", id, identity]); return [{ path: "paper/study.json", content: Buffer.from(JSON.stringify({ title: "Pipeline study", participant_flow: "Read then answer" })) }, { path: "paper/studio-reply.md", content: Buffer.from("Generated package is ready.") }]; },
     async approveStage(id, decision, identity) { calls.push(["approve", id, decision, identity]); return job; },
-    async retryStudioPipelineJob(id, identity, paperUrl) { calls.push(["retry", id, identity, paperUrl]); return { ...job, id, status: "queued", message: "Waiting for retry", updatedAt: new Date().toISOString() }; },
+    async retryStudioPipelineJob(id, identity, paperUrl, materialsUrl) { calls.push(["retry", id, identity, paperUrl, materialsUrl]); return { ...job, id, status: "queued", message: "Waiting for retry", updatedAt: new Date().toISOString() }; },
   };
   const store = {
     async getWorkspace(_ctx, id) { return id === ids.workspace ? workspace : null; },
@@ -71,17 +73,24 @@ function harness(initial = document()) {
     async readJsonBody(req) { return req.json(); },
     routeError(error) { return Response.json({ error: error instanceof StudioError ? error.code : "internal_error" }, { status: error instanceof StudioError ? error.status : 500 }); },
     studioConfig() { return { url: "https://storage.test" }; },
-    async studioFetch(path, options) { calls.push(["sign", path, options]); return Response.json({ signedURL: signing }); },
+    async studioFetch(path, options) { calls.push(["sign", path, options]); return Response.json({ signedURL: path.endsWith(".zip") && materialsSigning ? materialsSigning : signing }); },
     async upstreamJson(response) { return response.json(); },
   };
   const adapter = load("lib/studio/pipeline-adapter.ts", { "./validation": validation });
-  const pipeline = load("lib/studio/pipeline.ts", { "@/lib/github-jobs": github, "./http": http, "./store": store, "./pipeline-adapter": adapter, "./validation": validation });
+  const resourceServer = {
+    ...load("lib/studio/resource-server.ts", { "./http": http, "./resources": resources }),
+    async prepareStudioResourceArchive(_ctx, current, primaryId) {
+      const sourceIds = current.document.sources.filter(item => item.id !== primaryId && item.includeInBuild !== false).map(item => item.id);
+      return sourceIds.length ? { path: `${ids.owner}/${ids.workspace}/${ids.next}.zip`, url: "https://storage.test/materials.zip", sourceIds } : null;
+    },
+  };
+  const pipeline = load("lib/studio/pipeline.ts", { "@/lib/github-jobs": github, "./http": http, "./store": store, "./pipeline-adapter": adapter, "./validation": validation, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": resourceServer });
   const auth = { async requireStudioUser() { return ctx; } };
   const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/pipeline": pipeline, "@/lib/github-jobs": github };
   const chat = load("app/api/studio/workspaces/[id]/chat/route.ts", deps);
   const sync = load("app/api/studio/workspaces/[id]/pipeline/route.ts", deps);
   const proposals = load("app/api/studio/workspaces/[id]/proposals/route.ts", deps);
-  return { chat, sync, proposals, pipeline, github, job, calls, get workspace() { return workspace; }, set workspace(value) { workspace = value; }, get reads() { return reads; }, get lists() { return lists; }, set configured(value) { configured = value; }, set signing(value) { signing = value; }, set dispatchError(value) { dispatchError = value; }, set casConflict(value) { casConflict = value; } };
+  return { chat, sync, proposals, pipeline, github, job, calls, get workspace() { return workspace; }, set workspace(value) { workspace = value; }, get reads() { return reads; }, get lists() { return lists; }, set configured(value) { configured = value; }, set signing(value) { signing = value; }, set materialsSigning(value) { materialsSigning = value; }, set dispatchError(value) { dispatchError = value; }, set casConflict(value) { casConflict = value; } };
 }
 
 test("chat requires a PDF and setup before signing or dispatch", async () => {
@@ -134,6 +143,40 @@ test("chat reserves by CAS before dispatch, queues without OpenRouter, and block
   assert.equal(busy.status, 409);
   assert.equal((await busy.json()).error, "pipeline_busy");
   assert.equal(h.calls.filter(call => call[0] === "dispatch").length, 1);
+});
+
+test("chat persists a branch parent and message references in the pipeline request", async () => {
+  const parentMessageId = "99999999-9999-4999-8999-999999999999";
+  const sideConversationId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const siblingConversationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const siblingMessageId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const initial = document();
+  initial.conversations.push({ id: ids.conversation, title: "Main", updatedAt: now, draft: "", modelAnchor: null, sourceSelection: null, selected: "",
+    messages: [{ id: parentMessageId, role: "agent", text: "Fork here", createdAt: now }, { id: ids.next, role: "agent", text: "Later parent turn", createdAt: now }] });
+  initial.conversations.push({ id: siblingConversationId, title: "Sibling", updatedAt: now, draft: "", modelAnchor: null, sourceSelection: null, selected: "", parent: { conversationId: ids.conversation, messageId: parentMessageId },
+    messages: [{ id: siblingMessageId, role: "user", text: "Selected side-talk insight", createdAt: now, sourceSelection: { sourceId: ids.source, page: 1, rects: [], text: "Participants followed the instructions.", kind: "text" } }] });
+  const h = harness(initial);
+  const parent = { conversationId: ids.conversation, messageId: parentMessageId };
+  const mergedFrom = { conversationId: siblingConversationId, messageId: siblingMessageId };
+  const response = await h.chat.POST(request("chat", { ...input(), conversationId: sideConversationId, parent, replyTo: parent, mergedFrom }), routeContext);
+  assert.equal(response.status, 202);
+  const side = h.workspace.document.conversations.find(item => item.id === sideConversationId);
+  assert.deepEqual(side.parent, parent);
+  assert.deepEqual(side.messages[0].replyTo, parent);
+  assert.deepEqual(side.messages[0].mergedFrom, mergedFrom);
+  const sent = h.calls.find(call => call[0] === "create")[1].request;
+  assert.deepEqual(sent.document.conversations.find(item => item.id === sideConversationId).parent, parent);
+  assert.deepEqual(sent.document.conversations.map(item => [item.id, item.messages.map(message => message.id)]), [[ids.conversation, [parentMessageId]], [sideConversationId, [ids.request]]]);
+  assert.deepEqual(sent.replyTo, parent);
+  assert.deepEqual(sent.referencedMessages.map(item => [item.relation, item.message.text]), [["replyTo", "Fork here"], ["mergedFrom", "Selected side-talk insight"]]);
+  assert.equal(sent.referencedMessages[1].message.sourceSelection.text, "Participants followed the instructions.");
+});
+
+test("chat rejects a missing branch parent before signing or saving", async () => {
+  const h = harness();
+  const response = await h.chat.POST(request("chat", { ...input(), parent: { conversationId: ids.conversation, messageId: ids.next } }), routeContext);
+  assert.equal(response.status, 400);
+  assert.deepEqual(h.calls, []);
 });
 
 test("reservation CAS conflict prevents external job creation", async () => {
@@ -213,7 +256,31 @@ test("explicit sourceId chooses its PDF over the previous job source", async () 
   assert.match(h.calls.find(call => call[0] === "sign")[1], new RegExp(`${ids.otherSource}\\.pdf`));
   const created = h.calls.find(call => call[0] === "create")[1];
   assert.equal(created.paperName, "other.pdf");
+  assert.deepEqual(created.openMaterialsSourceIds, [ids.source], "the other PDF must travel as an auxiliary source");
   assert.equal(created.previousJobId, undefined, "a different PDF must start a fresh package");
+});
+
+test("excluded sources stay in the workspace but leave the worker payload and resource bundle", async () => {
+  const initial = document([source(), { ...otherSource(), includeInBuild: false }]);
+  const h = harness(initial);
+  const response = await h.chat.POST(request("chat", input()), routeContext);
+  assert.equal(response.status, 202);
+  assert.equal(h.workspace.document.sources.length, 2);
+  const created = h.calls.find(call => call[0] === "create")[1];
+  assert.deepEqual(created.request.document.sources.map(item => item.id), [ids.source]);
+  assert.deepEqual(created.openMaterialsSourceIds, []);
+});
+
+test("retry refreshes the owner-bound resource bundle URL", async () => {
+  const h = harness();
+  await h.chat.POST(request("chat", input()), routeContext);
+  h.job.status = "failed";
+  h.job.openMaterialsPathname = `${ids.owner}/${ids.workspace}/${ids.next}.zip`;
+  h.materialsSigning = `/object/sign/studio-sources/${h.job.openMaterialsPathname}?token=fresh`;
+  const response = await h.sync.POST(request("pipeline", { revision: h.workspace.revision, action: "retry" }), routeContext);
+  assert.equal(response.status, 200);
+  const retry = h.calls.find(call => call[0] === "retry");
+  assert.match(retry[4], new RegExp(`${ids.next}\\.zip\\?token=fresh$`));
 });
 
 test("a rejected proposal still reuses the completed package for the same PDF", async () => {
