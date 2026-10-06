@@ -13,7 +13,6 @@ type Props = {
   workspaceActions?:ReactNode;
   model?:StudySchema;
   previewModel?:StudySchema;
-  historical?:boolean;
   artifacts?:StudioArtifact[];
   onDiscussArtifact?:(artifact:StudioArtifact)=>void;
   busy?:boolean;
@@ -26,7 +25,7 @@ type Props = {
   onRespond: (id: string, text: string) => void;
 };
 
-export default function StudyModel({ workspaceActions, model, previewModel, historical, artifacts=[], onDiscussArtifact, busy, selected, anchor, responses, onSelect, onSource, onDiscuss }: Props) {
+export default function StudyModel({ workspaceActions, model, previewModel, artifacts=[], onDiscussArtifact, busy, selected, anchor, responses, onSelect, onSource, onDiscuss }: Props) {
   const approvedModel=model||exampleStudy;
   const study=previewModel||approvedModel;
   const preview=previewModel?modelChanges(approvedModel,previewModel):null;
@@ -112,8 +111,8 @@ export default function StudyModel({ workspaceActions, model, previewModel, hist
     <div className={s.toolbar}><div><button aria-label={t("Select objects")} title={t("Select objects")} aria-pressed={tool === "select"} className={tool === "select" ? s.activeTool : ""} onClick={() => setTool("select")}><UiIcon name="selection"/>{t("Select")}</button><button aria-label={t("Circle selection")} title={t("Circle selection")} aria-pressed={tool === "circle"} className={tool === "circle" ? s.activeTool : ""} onClick={() => { setTool("circle"); setInspect(false); }}><UiIcon name="circle"/>{t("Circle")}</button></div><button title={t("Return to full study overview")} aria-label={t("Return to full study overview")} onClick={() => { onSelect(null); setReviewOpen(false); setTool("select"); scroll.current?.scrollTo({ top: 0, behavior: "smooth" }); }}>{t("Overview")}</button></div>
     {reviewOpen && <div className={s.reviewList} aria-label="All study questions"><div><strong>{t("All study questions")}</strong><button aria-label={t("Close questions")} onClick={() => setReviewOpen(false)}>×</button></div>{reviewIssues.map(i => <button key={i.id} onClick={() => openIssue(i.id)}><span className={responses[i.id] ? s.responded : s.issueDot}>{responses[i.id] ? "✓" : "!"}</span><span><strong>{t(i.title)}</strong><small><b className={`${s.severity} ${i.severity === "blocking" ? s.blocking : ""}`}>{t(i.severity === "blocking" ? "Blocking" : i.severity === "decision" ? "Decision" : "Check")}</b> · {responses[i.id] ? t("Response saved · pending application") : i.entity ? t(overview.cards[i.entity]?.title||i.entity) : [i.study,i.field].filter(Boolean).join(" · ")}</small></span><span>↗</span></button>)}</div>}
     <div className={s.scroll} ref={scroll}>
-      <div className={s.overviewHeading}><h1>{t(overview.question)}</h1>{preview&&preview.hasChanges&&<div className={s.previewSummary}><strong>{t(historical?"Past version":"Proposed changes")}</strong>{preview.changedEntityIds.length>0&&<span> · {preview.changedEntityIds.length} {t("affected parts")}</span>}{preview.sections.filter(section=>section!=="entities").length>0&&<span> · {preview.sections.filter(section=>section!=="entities").map(section=>t(section==="study"?"Study details":section==="reviewIssues"?"Review questions":section[0].toUpperCase()+section.slice(1))).join(", ")}</span>}{preview.removedEntityIds.length>0&&<small>{t("Removed")}: {preview.entities.filter(item=>item.kind==="removed").map(item=>t(item.title)).join(", ")}</small>}</div>}</div>
-      {study.entities.length===0&&<p className={s.gestureHint}>{t(historical?"Empty program":"Upload a paper, then ask the agent to build the first model.")}</p>}
+      <div className={s.overviewHeading}><h1>{t(overview.question)}</h1>{preview&&preview.hasChanges&&<div className={s.previewSummary}><strong>{t("Proposed changes")}</strong>{preview.changedEntityIds.length>0&&<span> · {preview.changedEntityIds.length} {t("affected parts")}</span>}{preview.sections.filter(section=>section!=="entities").length>0&&<span> · {preview.sections.filter(section=>section!=="entities").map(section=>t(section==="study"?"Study details":section==="reviewIssues"?"Review questions":section[0].toUpperCase()+section.slice(1))).join(", ")}</span>}{preview.removedEntityIds.length>0&&<small>{t("Removed")}: {preview.entities.filter(item=>item.kind==="removed").map(item=>t(item.title)).join(", ")}</small>}</div>}</div>
+      {study.entities.length===0&&<p className={s.gestureHint}>{t("Upload a paper, then ask the agent to build the first model.")}</p>}
       <div data-event="model.canvas" ref={canvas} className={`${s.canvas} ${tool === "circle" ? s.circling : ""}`} onPointerDown={startCircle} onPointerMove={moveCircle} onPointerUp={finishCircle} onPointerCancel={() => { drawing.current = null; setInk([]); suppressClick.current = false; setTool("select"); }}>
         {overview.stages.map((stage) => <section key={stage.id} className={s.stage} aria-label={t(stage.title)}>
           <div className={s.stageLabel}><div><h2>{t(stage.title)}</h2></div></div>
@@ -121,7 +120,7 @@ export default function StudyModel({ workspaceActions, model, previewModel, hist
             const card = overview.cards[id];
             const problems = reviewIssues.filter(i => i.entity === id && !responses[i.id]);
             return <div key={id} data-model-id={id} data-event={`model.object.${id}`} className={`${s.card} ${["procedure","record"].includes(study.entities.find(entity=>entity.id===id)?.kind||"") || id === "manipulation" ? s.wide : ""} ${selectedIds.includes(id) ? s.selectedCard : ""} ${problems.length ? s.flagged : ""} ${changedIds.has(id) ? s.previewCard : ""}`}>
-              <button className={s.cardBody} aria-label={`Inspect ${t(card.title)}`} aria-pressed={selectedIds.includes(id)} onClick={e => pick(id, e.shiftKey)}><span className={s.cardTitle}><strong>{t(card.title)}</strong>{changedIds.has(id)&&<em className={s.changeBadge}>{preview?.addedEntityIds.includes(id)?t(historical?"Difference":"Added"):t(historical?"Difference":"Changed")}</em>}</span><p>{t(card.text)}</p></button>
+              <button className={s.cardBody} aria-label={`Inspect ${t(card.title)}`} aria-pressed={selectedIds.includes(id)} onClick={e => pick(id, e.shiftKey)}><span className={s.cardTitle}><strong>{t(card.title)}</strong>{changedIds.has(id)&&<em className={s.changeBadge}>{preview?.addedEntityIds.includes(id)?t("Added"):t("Changed")}</em>}</span><p>{t(card.text)}</p></button>
               {problems.length>0&&<button className={s.cardIssue} onClick={() => { if (tool !== "circle" && !suppressClick.current) openIssue(problems[0].id); }} aria-label={`${problems.length} ${t("questions for")} ${t(card.title)}`}><span>!</span>{problems.length} {t(problems.length===1?"question":"questions")}<span>↗</span></button>}
             </div>;
           })}</div>
@@ -136,7 +135,7 @@ export default function StudyModel({ workspaceActions, model, previewModel, hist
         {inspect && focused && <div className={s.inspector}>
           {selectedIds.length > 1 && <p>{t("Details")} · {t(overview.cards[focused.id].title)}</p>}
           <h3>{t(overview.cards[focused.id].title)}</h3><p>{t(focused.description)}</p>
-          {preview?.entities.find(item=>item.id===focused.id)&&<div className={s.changeDetail}><strong>{t(historical?"Difference from current":"Proposed change")}</strong><ul>{preview.entities.find(item=>item.id===focused.id)!.details.map(detail=><li key={detail}>{t(detail)}</li>)}</ul></div>}
+          {preview?.entities.find(item=>item.id===focused.id)&&<div className={s.changeDetail}><strong>{t("Proposed change")}</strong><ul>{preview.entities.find(item=>item.id===focused.id)!.details.map(detail=><li key={detail}>{t(detail)}</li>)}</ul></div>}
           <dl>{focused.fields.map(f => <div key={t(f.name)}><dt>{t(f.name)}</dt><dd>{f.value}<small>{f.status === "reported" ? t("Reported in source") : f.status === "implementation" ? t("Implementation proposal") : t("Needs review")}</small></dd></div>)}</dl>
           {focused.kind === "procedure" && <div className={s.stepDetails}><h4>{t("Inside one trial")}</h4>{study.procedure.map((step,i) => <div key={step.id}><button disabled={!step.evidence.quote.trim()&&!step.evidence.rects.length} onClick={() => onSource(focused.id, step.evidence)}>{i+1}. {t(step.name)} ↗</button><dl><dt>{t("Input")}</dt><dd>{t(step.input)}</dd><dt>{t("Person")}</dt><dd>{t(step.actor)}</dd><dt>{t("Output")}</dt><dd>{t(step.output)}</dd></dl></div>)}</div>}
           <details><summary>{t("Variables used here")} ({study.variables.filter(v => v.entity === focused.id).length})</summary>{study.variables.filter(v => v.entity === focused.id).map(v => <div className={s.variable} key={v.id}><code>{v.name}</code><p>{v.role} · {v.type} · {v.unit}</p><small>{v.producedBy} → {v.usedBy}</small><p>{v.definition}</p></div>)}</details>

@@ -10,6 +10,7 @@ export type StudioConversation = { id:string; title:string; updatedAt:string; me
 export type StudioSource = { id:string; name:string; path:string; mimeType:string; size:number; kind?:"paper"|"resource"; includeInBuild?:boolean; text?:string; pages?:{page:number; text:string}[] };
 export type StudioPipeline = { jobId:string; requestId:string; conversationId:string; sourceId:string; status:"preparing"|"queued"|"running"|"review"|"complete"|"failed"; message:string; updatedAt:string; proposalId?:string; resultMessageId?:string; kind?:"initial"|"sync"; baseModelFingerprint?:string; targetModelFingerprint?:string };
 export type StudioAcceptedPackage = { jobId:string; modelFingerprint:string; acceptedAt:string; approvalPending?:boolean };
+// Retained for compatibility with existing saved metadata; no new version entries are created.
 export type ProgramVersion = { id:string; parentId?:string; createdAt:string; label:string; fingerprint:string; proposalId?:string; model?:StudySchema };
 export type StudioDocument = {
  programVersions?:ProgramVersion[];

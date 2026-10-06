@@ -22,7 +22,6 @@ const conversationTree = load("lib/studio/conversation-tree.ts");
 const resources = load("lib/studio/resources.ts");
 const validation = load("lib/studio/validation.ts", { "./conversation-tree": conversationTree, "./resources": resources });
 const modelVersion = load("lib/studio/model-version.ts");
-const programVersions = load("lib/studio/program-versions.ts", { "./model-version": modelVersion });
 const ids = {
   owner: "11111111-1111-4111-8111-111111111111",
   workspace: "22222222-2222-4222-8222-222222222222",
@@ -90,7 +89,7 @@ function harness(initial = document()) {
   };
   const pipeline = load("lib/studio/pipeline.ts", { "@/lib/github-jobs": github, "./http": http, "./store": store, "./pipeline-adapter": adapter, "./validation": validation, "./model-version": modelVersion, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": resourceServer });
   const auth = { async requireStudioUser() { return ctx; } };
-  const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/model-version": modelVersion, "@/lib/studio/program-versions": programVersions, "@/lib/studio/pipeline": pipeline, "@/lib/github-jobs": github };
+  const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/model-version": modelVersion, "@/lib/studio/pipeline": pipeline, "@/lib/github-jobs": github };
   const chat = load("app/api/studio/workspaces/[id]/chat/route.ts", deps);
   const sync = load("app/api/studio/workspaces/[id]/pipeline/route.ts", deps);
   const proposals = load("app/api/studio/workspaces/[id]/proposals/route.ts", deps);
@@ -500,7 +499,7 @@ test("legacy GitHub job reads reject Studio IDs before accessing a repository", 
   await assert.rejects(jobs.approveStage(jobId, { decision: "approved" }), /authenticated study workspace/);
 });
 
-test("acceptance records a durable program lineage and autosave cannot remove it", async()=>{
+test("acceptance stops adding program versions and autosave preserves existing metadata", async()=>{
  const h=harness();
  await h.chat.POST(request('chat',{...input(),intent:'discuss'}),routeContext);
  h.job.status='complete';h.turn={requestId:ids.request,reply:'Use a clearer research question.',summary:'Clarify question',model:model('Refined question')};
@@ -508,8 +507,9 @@ test("acceptance records a durable program lineage and autosave cannot remove it
  const proposal=h.workspace.document.conversations[0].messages.at(-1).proposal;
  const accepted=await h.proposals.POST(request('proposals',{revision:h.workspace.revision,proposalId:proposal.id,decision:'apply'}),routeContext);
  assert.equal(accepted.status,200);
- const log=h.workspace.document.programVersions;
- assert.equal(log.length,2);assert.equal(log[0].model.title,'Draft');assert.equal(log[1].proposalId,proposal.id);assert.equal(log[1].parentId,log[0].id);
+ assert.equal(h.workspace.document.programVersions,undefined);
+ const log=[{id:'legacy-version',createdAt:now,label:'Existing program',fingerprint:modelVersion.modelFingerprint(h.workspace.document.model),model:structuredClone(h.workspace.document.model)}];
+ h.workspace.document.programVersions=log;
  const tampered={...h.workspace.document,programVersions:[]};
  const patch=new Request(`https://studio.test/api/studio/workspaces/${ids.workspace}`,{method:'PATCH',headers:{origin:'https://studio.test','content-type':'application/json'},body:JSON.stringify({document:tampered,expectedRevision:h.workspace.revision})});
  const saved=await h.workspaceRoute.PATCH(patch,routeContext);

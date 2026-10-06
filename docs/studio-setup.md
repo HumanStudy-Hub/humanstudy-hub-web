@@ -91,21 +91,16 @@ one active pane. PDF and study contents stay mounted while collapsed.
 The editor auto-saves changes to the signed-in account after a 900 ms debounce;
 Save or Cmd/Ctrl+S immediately flushes the same revision-checked save queue.
 The example saves locally. The status bar distinguishes account/local saves and
-reports conflicts or failures; saving does not run the agent. Language (EN/中文)
-is available directly in the header; theme and account access are in its menu.
+reports conflicts or failures; saving does not run the agent. The interface uses
+English with no language switch. Theme and account access are in the header menu.
 Human Program and Resources switch artifact views, Compare opens both, and
 Study agent toggles the conversation pane. Advanced focus/restore/layout commands
 remain in the command palette rather than competing toolbar buttons.
 
-History has separate Program versions and Conversations tabs. Program versions
-records an initial snapshot and the lineage of accepted scientific proposals;
-pending/rejected proposals branch from their recorded base fingerprint. Autosave
-revisions and material-only changes do not add scientific versions. Selecting a
-version previews its model against the current one and can anchor a discussion
-to the original proposal message; it does not restore it. Legacy proposals whose
-base snapshots were never saved show an explicit unavailable parent. The offline
-example has one current node until there are actual accepted changes. Version
-metadata is server-owned and persists in the existing owner-scoped workspace JSON.
+History is a single searchable conversation list. Program version DAG and past
+model preview have been removed; accepted proposals remain in their conversations.
+Acceptance no longer creates program version metadata. Previously recorded metadata
+remains compatible with storage and export so reverting the feature loses no data.
 
 Human Program organizes background/hypotheses, study design, participant
 procedure, data/variables, analysis and reported results. Background, hypothesis,
