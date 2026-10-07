@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireStudioUser } from "@/lib/studio/auth";
 import { assertSameOrigin, isUuid, readJsonBody, routeError, studioFetch, StudioError } from "@/lib/studio/http";
-import { getWorkspace } from "@/lib/studio/store";
+import { getWorkspaceMetadata } from "@/lib/studio/store";
 import type { StudioEvent } from "@/lib/studio/types";
 
 type Context = { params: Promise<{ id: string }> };
@@ -53,7 +53,7 @@ export async function POST(request: Request, context: Context) {
     assertSameOrigin(request);
     const ctx = await requireStudioUser();
     const { id } = await context.params;
-    const workspace = await getWorkspace(ctx, id);
+    const workspace = await getWorkspaceMetadata(ctx, id);
     if (!workspace) throw new StudioError(404, "not_found");
     const body = await readJsonBody(request, 128_000);
     if (!body || typeof body !== "object" || !Array.isArray((body as { events?: unknown }).events)) throw new StudioError(400, "invalid_events");

@@ -42,6 +42,15 @@ export async function getWorkspace(ctx: StudioContext, id: string): Promise<Stud
   return rows[0] || null;
 }
 
+/** Frequent telemetry requests only need ownership and revision, not the complete study. */
+export async function getWorkspaceMetadata(ctx: StudioContext, id: string): Promise<Pick<StudioWorkspace, 'id' | 'revision'> | null> {
+  assertId(id);
+  const response = await studioFetch(`/rest/v1/studio_workspaces?id=eq.${id}&owner_id=eq.${ctx.user.id}&select=id,revision&limit=1`, { token: ctx.accessToken });
+  const rows = await upstreamJson<Pick<StudioWorkspace, 'id' | 'revision'>[]>(response);
+  if (!Array.isArray(rows)) throw new StudioError(502, 'invalid_service_response');
+  return rows[0] || null;
+}
+
 export async function createWorkspace(ctx: StudioContext, document: StudioDocument): Promise<StudioWorkspace> {
   const id = crypto.randomUUID();
   assertDocument(ctx, id, document);

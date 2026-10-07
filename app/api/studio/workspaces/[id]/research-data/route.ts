@@ -1,23 +1,24 @@
 import { NextResponse } from 'next/server';
 import { requireStudioUser } from '@/lib/studio/auth';
-import { getWorkspace } from '@/lib/studio/store';
+import { getWorkspaceMetadata } from '@/lib/studio/store';
 import { isUuid, routeError, studioFetch, StudioError, upstreamJson } from '@/lib/studio/http';
 
 export const runtime = 'nodejs';
-const PAGE_SIZE = 100;
 type RecordRow = { revision?: number; created_at?: string; id?: string } & Record<string, unknown>;
 
 /** Paginated research export. Ownership and RLS apply to both datasets. */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const ctx = await requireStudioUser(), { id } = await params;
-    const workspace = await getWorkspace(ctx, id);
+    const workspace = await getWorkspaceMetadata(ctx, id);
     if (!workspace) throw new StudioError(404, 'not_found');
     const url = new URL(request.url), dataset = url.searchParams.get('dataset');
     if (dataset !== 'use' && dataset !== 'knowledge') throw new StudioError(400, 'invalid_dataset');
+    // Scientific records can include complete models; keep each response bounded.
+    const pageSize = dataset === 'use' ? 100 : 1;
     const after = url.searchParams.get('after');
     if (after && after.length > 512) throw new StudioError(400, 'invalid_cursor');
-    const filter = new URLSearchParams({ workspace_id: `eq.${id}`, owner_id: `eq.${ctx.user.id}`, limit: String(PAGE_SIZE + 1) });
+    const filter = new URLSearchParams({ workspace_id: `eq.${id}`, owner_id: `eq.${ctx.user.id}`, limit: String(pageSize + 1) });
     if (dataset === 'knowledge') {
       filter.set('select', 'workspace_id,revision,recorded_at,capture_kind,knowledge');
       filter.set('order', 'revision.asc');
@@ -40,8 +41,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const table = dataset === 'use' ? 'studio_events' : 'studio_research_history';
     const rows = await upstreamJson<RecordRow[]>(await studioFetch(`/rest/v1/${table}?${filter}`, { token: ctx.accessToken }));
     if (!Array.isArray(rows)) throw new StudioError(502, 'invalid_service_response');
-    const records = rows.slice(0, PAGE_SIZE), last = records.at(-1);
-    const nextCursor = rows.length > PAGE_SIZE && last ? dataset === 'knowledge' ? String(last.revision) : Buffer.from(JSON.stringify({ at: last.created_at, id: last.id })).toString('base64url') : null;
+    const records = rows.slice(0, pageSize), last = records.at(-1);
+    const nextCursor = rows.length > pageSize && last ? dataset === 'knowledge' ? String(last.revision) : Buffer.from(JSON.stringify({ at: last.created_at, id: last.id })).toString('base64url') : null;
     return NextResponse.json({ dataset, workspaceId: id, records, nextCursor, mapping: dataset === 'use' ? 'display_revision is client-observed; workspace_revision is server revision at receipt. Join to the latest knowledge record at or before that revision.' : 'Each record preserves committed scientific content. Draft-only changes are omitted. Baseline records do not reconstruct earlier history.' }, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) { return routeError(error); }
 }
