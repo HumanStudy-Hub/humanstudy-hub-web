@@ -1,0 +1,61 @@
+{
+  "recordedAt": "2026-10-07T00:53:13.898908+00:00",
+  "project": "humanstudy-hub-dev",
+  "flow": [
+    "intake",
+    "original GitHub Claude Build Study job",
+    "processing",
+    "pending Human Program preview",
+    "researcher approval",
+    "editor"
+  ],
+  "useDataset": {
+    "table": "studio_events",
+    "scope": "authenticated study workspace: intake, processing, editor",
+    "events": [
+      "click",
+      "pointer",
+      "scroll",
+      "selection",
+      "visibility",
+      "layout",
+      "chat",
+      "review"
+    ],
+    "pointerIntervalMs": 250,
+    "timeMetric": "page visibility, not inferred productive time",
+    "revisionColumns": {
+      "display_revision": "client-observed",
+      "workspace_revision": "server at receipt"
+    },
+    "export": "/api/studio/workspaces/{id}/research-data?dataset=use"
+  },
+  "knowledgeDataset": {
+    "table": "studio_research_history",
+    "content": [
+      "model",
+      "source references",
+      "annotations",
+      "conversation messages and branches",
+      "proposals and acceptance/rejection",
+      "review responses",
+      "auxiliary artifacts",
+      "package and agent job state"
+    ],
+    "capture": "atomic append on committed scientific changes; drafts and extracted source text omitted",
+    "export": "/api/studio/workspaces/{id}/research-data?dataset=knowledge"
+  },
+  "databaseVerification": {
+    "test": "tests/studio-research-history.sql",
+    "passed": true,
+    "testRowsRolledBack": true,
+    "securityAdvisors": [],
+    "realUserWorkspacesObserved": 0,
+    "realUserEventsObserved": 0
+  },
+  "limitations": [
+    "Offline /build/example does not write research data.",
+    "No historical data can be reconstructed for earlier unsaved prototype interactions.",
+    "Real Claude extraction quality and browser click/visual acceptance have not been verified in this iteration."
+  ]
+}

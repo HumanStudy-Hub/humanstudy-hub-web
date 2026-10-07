@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const body = await readJsonBody(request, 2_000_000);
     if (!body || typeof body !== "object" || !("document" in body)) throw new StudioError(400, "invalid_document");
     const document = validateStudioDocument((body as { document: unknown }).document);
-    // Version lineage is recorded only by server-side proposal acceptance.
+    // Client-created lineage is not accepted. Scientific history is recorded by the database.
     delete document.programVersions;
     const workspace = await createWorkspace(ctx, document);
     return NextResponse.json({ workspace }, { status: 201 });

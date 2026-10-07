@@ -127,7 +127,8 @@ test("PDF abort cancels rendering and destroys the loading task", async () => {
 
 function fakeTelemetry(fetchImpl) {
   let cleanup;
-  let effectDeps;
+  let effectIndex=0;
+  const effects=[];
   let state = { droppedEvents: 0, deliveryError: null };
   let nextId = 0;
   let refIndex = 0;
@@ -158,10 +159,11 @@ function fakeTelemetry(fetchImpl) {
   const react = {
     useCallback: (fn) => fn,
     useEffect: (fn, deps) => {
-      if (effectDeps && deps.every((item, index) => Object.is(item, effectDeps[index]))) return;
-      cleanup?.();
-      cleanup = fn();
-      effectDeps = deps;
+      const i=effectIndex++,previous=effects[i];
+      if (previous && deps.every((item,index)=>Object.is(item,previous.deps[index]))) return;
+      previous?.cleanup?.();
+      effects[i]={cleanup:fn(),deps};
+      cleanup=()=>effects.forEach(effect=>effect.cleanup?.());
     },
     useRef: (value) => refs[refIndex++] ??= { current: value },
     useState: (value) => [value, (next) => { state = typeof next === "function" ? next(state) : next; }],
@@ -180,9 +182,9 @@ function fakeTelemetry(fetchImpl) {
     return react;
   });
   let hook;
-  const render = (surfaceVersion = 0) => {
-    refIndex = 0;
-    hook = api.useStudioTelemetry({ workspaceId: "workspace-1", enabled: true, surfaceVersion });
+  const render = (surfaceVersion = 0, workspaceRevision = 1) => {
+    refIndex = 0;effectIndex=0;
+    hook = api.useStudioTelemetry({ workspaceId: "workspace-1", enabled: true, surfaceVersion, workspaceRevision });
   };
   render();
   return {
@@ -268,4 +270,11 @@ test("telemetry rebinds to a remounted workspace root without changing session",
   const selection = events.find(event => event.type === "selection");
   assert.ok(layout && selection);
   assert.equal(layout.sessionId, selection.sessionId);
+});
+
+test('telemetry keeps the displayed revision of each event while an autosave advances the workspace',async()=>{
+ const sent=[];const h=fakeTelemetry(async(_,options)=>{sent.push(JSON.parse(options.body));return new Response(null,{status:200});});
+ h.hook.track('selection',{entityId:'design'});h.render(0,2);h.hook.track('selection',{entityId:'analysis'});h.cleanup();await new Promise(resolve=>setImmediate(resolve));
+ const selections=sent.flatMap(batch=>batch.events).filter(e=>e.type==='selection');
+ assert.deepEqual(selections.map(e=>e.displayRevision),[1,2]);assert.equal(selections[0].sessionId,selections[1].sessionId);
 });

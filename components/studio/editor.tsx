@@ -10,14 +10,19 @@ import { mergeStudioUpdate } from '@/lib/studio/merge-update';
 import { isPaper, MAX_PAPER_BYTES, MAX_RESOURCE_BYTES, sourceSpec } from '@/lib/studio/resources';
 import { downloadStudioResource, PrimaryPaperHint, ResourceControls, ResourceViewer } from './resources';
 import s from './studio.module.css';
+import { workspaceBuildStage } from '@/lib/studio/build-stage';
+import type { PipelineProgress } from '@/lib/github-jobs';
+import BuildStart from './build-start';
 import { useT } from '@/app/build-preview/ui';
 
 export default function StudioEditor({id}:{id:string}){
  const [workspace,setWorkspace]=useState<StudioWorkspace|null>(null),[document,setDocument]=useState<StudioDocument|null>(null),[sourceId,setSourceId]=useState(''),[primaryPaperId,setPrimaryPaperId]=useState(''),[pages,setPages]=useState<Page[]>([]),[loading,setLoading]=useState(''),[error,setError]=useState(''),[status,setStatus]=useState('Saved'),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[conflict,setConflict]=useState(false);
  const [pipelineMessage,setPipelineMessage]=useState(''),[refreshVersion,setRefreshVersion]=useState(0);
+ const [buildJob,setBuildJob]=useState<{status:string;message:string;progress?:PipelineProgress}|null>(null);
+ const stage=document?workspaceBuildStage(document):'loading';
  const syncPipelineRef=useRef<()=>Promise<void>>(async()=>{});
  const server=useRef<StudioWorkspace|null>(null),pending=useRef<StudioDocument|null>(null),current=useRef<StudioDocument|null>(null),operation=useRef(false),blocked=useRef(false),timer=useRef<ReturnType<typeof setTimeout>|null>(null),saving=useRef<Promise<void>|null>(null);
- const telemetry=useStudioTelemetry({workspaceId:id,enabled:Boolean(workspace),surfaceVersion:refreshVersion});
+ const telemetry=useStudioTelemetry({workspaceId:id,enabled:Boolean(workspace),surfaceVersion:`${stage}:${refreshVersion}`,workspaceRevision:workspace?.revision});
  const setCurrent=useCallback((doc:StudioDocument)=>{current.current=doc;setDocument(doc);},[]);
  const flush=useCallback(async()=>{
   while(saving.current)await saving.current;
@@ -47,14 +52,15 @@ export default function StudioEditor({id}:{id:string}){
  const discussionId=document?.discussion?.jobId;
  const discussionState=document?.discussion?.status;
  useEffect(()=>{
-  const buildPending=!!pipelineId&&(!!approvalPending||!pipelineProposal&&!!pipelineState&&['preparing','queued','running'].includes(pipelineState));
+  const buildPending=!!pipelineId&&(!!approvalPending||!pipelineProposal&&!!pipelineState&&['preparing','queued','running','review'].includes(pipelineState));
   const discussionPending=!!discussionId&&!!discussionState&&['preparing','queued','running'].includes(discussionState);
   if(!buildPending&&!discussionPending)return;
   let cancelled=false,inFlight=false;
   const check=async()=>{
    if(cancelled||inFlight||operation.current)return;inFlight=true;
-   try{const result=await studioApi<{job:{status:string;message:string}|null;discussion:{status:string;message:string}|null}>(`/api/studio/workspaces/${id}/pipeline`);
+   try{const result=await studioApi<{job:{status:string;message:string;progress?:PipelineProgress}|null;discussion:{status:string;message:string}|null}>(`/api/studio/workspaces/${id}/pipeline`);
     if(cancelled)return;
+    if(result.job)setBuildJob(result.job);
     const done=(buildPending&&result.job&&['review','complete','failed'].includes(result.job.status))||(discussionPending&&result.discussion&&['review','complete','failed'].includes(result.discussion.status));
     if(done&&!operation.current)await syncPipelineRef.current();
    }catch(e){if(!cancelled)setPipelineMessage(e instanceof Error?e.message:'Could not check agent progress.');}finally{inFlight=false;}
@@ -73,11 +79,11 @@ export default function StudioEditor({id}:{id:string}){
   const spec=sourceSpec(file.name);
   if(!spec||file.size<1||file.size>(spec.kind==='paper'?MAX_PAPER_BYTES:MAX_RESOURCE_BYTES)){setError('Choose a supported file under the size limit (PDF 25 MB; resources 20 MB).');return;}
   setUploading(true);setError('');operation.current=true;
-  try{await flush();const result=await studioApi<{source:StudioSource;uploadUrl:string;method:string;headers:Record<string,string>}>(`/api/studio/workspaces/${id}/sources`,{method:'POST',body:JSON.stringify({name:file.name,mimeType:spec.mimeType,size:file.size})});const uploaded=await fetch(result.uploadUrl,{method:result.method,headers:result.headers,body:file});if(!uploaded.ok)throw new Error('File upload failed. Please retry.');const latest=server.current!.document;const doc={...latest,sources:[...latest.sources,result.source],model:spec.kind==='paper'?{...latest.model,source:latest.model.source.filename?latest.model.source:{title:file.name,authors:'',filename:file.name}}:latest.model};setCurrent(doc);pending.current=doc;await flush();if(spec.kind==='paper')setPrimaryPaperId(result.source.id);setSourceId(result.source.id);}
+  try{await flush();const result=await studioApi<{source:StudioSource;uploadUrl:string;method:string;headers:Record<string,string>}>(`/api/studio/workspaces/${id}/sources`,{method:'POST',body:JSON.stringify({name:file.name,mimeType:spec.mimeType,size:file.size})});const uploaded=await fetch(result.uploadUrl,{method:result.method,headers:result.headers,body:file});if(!uploaded.ok)throw new Error('File upload failed. Please retry.');const latest=server.current!.document;const doc={...latest,sources:[...latest.sources,result.source],model:spec.kind==='paper'?{...latest.model,source:latest.model.source.filename?latest.model.source:{title:file.name,authors:'',filename:file.name}}:latest.model};setCurrent(doc);pending.current=doc;await flush();if(spec.kind==='paper'&&!primaryPaperId)setPrimaryPaperId(result.source.id);setSourceId(result.source.id);}
   catch(e){setError(e instanceof Error?e.message:'Upload failed.');}finally{setUploading(false);operation.current=false;}
  }
  async function download(source:StudioSource){try{setError('');await downloadStudioResource(id,source);}catch(e){setError(e instanceof Error?e.message:'Could not download resource.');}}
- function selectSource(nextId:string){setSourceId(nextId);if(current.current?.sources.some(source=>source.id===nextId&&isPaper(source)&&source.includeInBuild!==false))setPrimaryPaperId(nextId);}
+ function selectSource(nextId:string){setSourceId(nextId);}
  function toggleBuild(source:StudioSource){const latest=current.current;if(!latest)return;const included=source.includeInBuild===false;const next={...latest,sources:latest.sources.map(item=>item.id===source.id?{...item,includeInBuild:included}:item)};onChange(next);if(!included&&source.id===primaryPaperId){const replacement=next.sources.find(item=>item.id!==source.id&&isPaper(item)&&item.includeInBuild!==false);setPrimaryPaperId(replacement?.id||'');}}
  const transact=async(path:string,body:Record<string,unknown>)=>{
   if(operation.current)throw new Error('Wait for the current operation to finish.');
@@ -95,8 +101,14 @@ export default function StudioEditor({id}:{id:string}){
  function downloadUnsaved(){const url=URL.createObjectURL(new Blob([JSON.stringify(current.current,null,2)],{type:'application/json'}));const a=window.document.createElement('a');a.href=url;a.download='unsaved-study-draft.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
  if(!workspace||!document)return <div className={s.home}><main><Link href="/build">← Your studies</Link><p>{error||'Loading study…'}</p></main></div>;
  const paper=document.sources.find(source=>source.id===primaryPaperId&&isPaper(source)&&source.includeInBuild!==false)||document.sources.find(source=>isPaper(source)&&source.includeInBuild!==false);
+ async function startBuild(instructions=''){
+  if(!paper)return;setBuildJob(null);telemetry.track('chat',{action:'build',sourceId:paper.id});
+  try{await transact('chat',{conversationId:document!.activeConversationId||document!.conversations[0]?.id||crypto.randomUUID(),requestId:crypto.randomUUID(),intent:'build',text:['Build this study from the uploaded paper and attached resources. Extract the protocol, materials, variables and analysis; flag all decisions requiring researcher input.',instructions.trim()].filter(Boolean).join('\n\n'),sourceId:paper.id,sourceSelection:{sourceId:paper.id,page:1,rects:[],text:'',kind:'region'}});}
+  catch(e){setError(e instanceof Error?e.message:'Could not start study build.');}
+ }
  const latestApplied=document.conversations.flatMap(c=>c.messages).filter(message=>message.proposal?.status==='applied').sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0]?.proposal;
  async function recover(lane:'pipeline'|'discussion',proposalId?:string){try{await transact('pipeline',proposalId?{action:'sync-package',proposalId}:{action:'retry',lane});setPipelineMessage('');}catch(e){setError(e instanceof Error?e.message:'Could not recover the agent task.');}}
+ if(stage==='intake'||stage==='processing')return <><BuildStart id={id} document={document} stage={stage} primaryPaper={paper} onPaper={nextId=>{setPrimaryPaperId(nextId);setSourceId(nextId);}} busy={busy||uploading} message={pipelineMessage} error={error||telemetry.deliveryError||undefined} job={buildJob} resources={<ResourceControls sources={document.sources} selectedId={sourceId} disabled={busy||uploading} uploading={uploading} onSelect={selectSource} onUpload={upload} onDownload={source=>void download(source)} onToggleBuild={toggleBuild}/>} onBuild={instructions=>void startBuild(instructions)} onRetry={()=>{if(document.pipeline?.status==='failed')void startBuild();else void recover('pipeline');}} onCheck={()=>void syncPipelineRef.current()} onNavigate={href=>{void (async()=>{try{if(operation.current)throw new Error("Wait for the current operation to finish.");await flush();window.location.assign(href);}catch(e){setError(e instanceof Error?e.message:"Could not save before leaving.");}})();}}/></>;
  const connected:ConnectedStudio={
   workspaceId:id,initialDocument:document,pages,sourceId,loading,status,busy:busy||uploading,
   syncVersion:refreshVersion,agentRunning:Boolean(document.discussion&&['preparing','queued','running'].includes(document.discussion.status)),buildRunning:Boolean(document.pipeline&&['preparing','queued','running'].includes(document.pipeline.status)),packageStatus:packageStatus(document),
@@ -106,13 +118,13 @@ export default function StudioEditor({id}:{id:string}){
    <ResourceControls sources={document.sources} selectedId={sourceId} disabled={busy||uploading} uploading={uploading} onSelect={selectSource} onUpload={upload} onDownload={source=>void download(source)} onToggleBuild={toggleBuild}/>
    {paper&&<PrimaryPaperHint name={paper.name}/>}
 
-   {!document.pipeline&&paper&&<button disabled={busy||uploading} onClick={async()=>{try{await transact('chat',{conversationId:document.activeConversationId||document.conversations[0]?.id||crypto.randomUUID(),requestId:crypto.randomUUID(),intent:'build',text:'Build this study from the uploaded paper and attached resources. Extract the protocol, materials, variables and analysis; flag all decisions requiring researcher input.',sourceId:paper.id,sourceSelection:{sourceId:paper.id,page:1,rects:[],text:'',kind:'region'}});setRefreshVersion(v=>v+1);}catch(e){setError(e instanceof Error?e.message:'Could not start study build.');}}}>Build study ↗</button>}
+   {!document.pipeline&&paper&&<button disabled={busy||uploading} onClick={()=>void startBuild()}>Build study ↗</button>}
    {loading&&pages.length>0&&<small title={loading}>OCR needed</small>}
   </div>,
   sourceContent:selectedSource&&!isPaper(selectedSource)?<ResourceViewer key={selectedSource.id} workspaceId={id} source={selectedSource} onDownload={()=>void download(selectedSource)}/>:undefined,
   onSelection:metadata=>telemetry.track("selection",metadata),onLayout:metadata=>telemetry.track("layout",metadata),
-  onChange,onChat:async request=>{telemetry.track('chat',{action:'send'});return transact('chat',{...request,sourceId:paper?.id});},
-  onProposal:async(proposalId,decision)=>{telemetry.track('review',{action:decision});return transact('proposals',{proposalId,decision});},
+  onChange,onChat:async request=>{telemetry.track('chat',{action:'send',conversationId:request.conversationId,...(request.modelAnchor?.entityIds[0]?{entityId:request.modelAnchor.entityIds[0]}:{}),...(request.sourceSelection?.sourceId?{sourceId:request.sourceSelection.sourceId}:{})});return transact('chat',{...request,sourceId:paper?.id});},
+  onProposal:async(proposalId,decision)=>{telemetry.track('review',{action:decision,reviewId:proposalId});return transact('proposals',{proposalId,decision});},
   onSave:flush,onExport:()=>void exportWorkspace(),onManage:flush,onNavigate:async href=>{await flush();window.location.assign(href);},
   onLeave:async()=>{await flush();window.location.assign("/build");},onSource:setSourceId,
  };

@@ -1,4 +1,5 @@
 "use client";
+import { firstBuildPreview } from '@/lib/studio/build-stage';
 import { importLegacyModel } from "@/lib/studio/human-program";
 
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
@@ -86,7 +87,7 @@ export default function Workspace({studio}:{studio?:ConnectedStudio}){
  const [mergedFrom,setMergedFrom]=useState<StudioMessage["mergedFrom"]>();
  const [agentOpen,setAgentOpen]=useState(true);
  const [sourceOpen,setSourceOpen]=useState(false),[modelOpen,setModelOpen]=useState(true);
- const [previewId,setPreviewId]=useState<string>();
+ const [previewId,setPreviewId]=useState<string|undefined>(()=>firstBuildPreview(initial));
  const [previewAnchor,setPreviewAnchor]=useState<ModelAnchor|null>(null),[previewSelected,setPreviewSelected]=useState("");
  const [answeringIssueId,setAnsweringIssueId]=useState<string>();
  const [paneWeights,setPaneWeights]=useState<PaneWeights>(defaultPaneWeights);

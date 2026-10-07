@@ -530,3 +530,15 @@ test('autosave omits repeated server snapshots while PATCH retains proposal deci
  const result=await h.workspaceRoute.PATCH(patch,routeContext);assert.equal(result.status,200);
  assert.deepEqual(h.workspace.document.programVersions,doc.programVersions);assert.deepEqual(h.workspace.document.conversations[0].messages.at(-1).proposal,doc.conversations[0].messages.at(-1).proposal);
 });
+
+test('initial extraction uses the original agent and opens a pending first-build preview after processing',async()=>{
+ const initial=document();initial.model={...initial.model,entities:[],relations:[],procedure:[],variables:[]};const flow=load('lib/studio/build-stage.ts');const h=harness(initial);
+ assert.equal(flow.workspaceBuildStage(initial),'intake');
+ await h.chat.POST(request('chat',input()),routeContext);assert.equal(flow.workspaceBuildStage(h.workspace.document),'processing');
+ h.job.status='review';h.job.packageReady=true;await h.sync.POST(request('pipeline',{revision:h.workspace.revision}),routeContext);
+ assert.equal(flow.workspaceBuildStage(h.workspace.document),'editor');assert.equal(flow.firstBuildPreview(h.workspace.document),h.workspace.document.pipeline.proposalId);
+ assert.equal(h.workspace.document.model.entities.length,0,'generated program is reviewable before acceptance');
+ const proposal=h.workspace.document.conversations[0].messages.at(-1).proposal;
+ const applied=await h.proposals.POST(request('proposals',{revision:h.workspace.revision,proposalId:proposal.id,decision:'apply'}),routeContext);
+ assert.equal(applied.status,200);assert.equal(h.workspace.document.model.title,'Pipeline study');assert.equal(flow.workspaceBuildStage(h.workspace.document),'editor');
+});

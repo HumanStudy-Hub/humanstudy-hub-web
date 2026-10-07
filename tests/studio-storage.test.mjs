@@ -272,3 +272,21 @@ test("download signer returns only the owned PDF's Supabase signed URL", async (
   assert.equal(sent.options.headers.Authorization, "Bearer verified-access");
   assert.deepEqual(JSON.parse(sent.options.body), { expiresIn: 3600 });
 }));
+
+test('events preserve an observed display revision distinct from the server revision',async()=>withService(async()=>{
+ let rows;global.fetch=async(_,options)=>{rows=JSON.parse(options.body);return new Response(null,{status:201});};
+ const result=await eventRoute.POST(jsonRequest({events:[{...validEvent(),displayRevision:3}]}),eventContext);
+ assert.equal(result.status,200);assert.equal(rows[0].display_revision,3);assert.equal(rows[0].workspace_revision,7);
+ assert.equal((await eventRoute.POST(jsonRequest({events:[{...validEvent(),displayRevision:8}]}),eventContext)).status,400);
+}));
+
+const researchRoute=load('app/api/studio/workspaces/[id]/research-data/route.ts',{'next/server':nextServer,'@/lib/studio/auth':{requireStudioUser:async()=>ctx},'@/lib/studio/http':http,'@/lib/studio/store':{getWorkspace:async()=>({id:workspaceId,revision:7})}});
+test('research exports paginate by scientific revision and stable event cursor with ownership filters',async()=>withService(async()=>{
+ let queried;global.fetch=async(url)=>{queried=new URL(url);const isHistory=queried.pathname.endsWith('studio_research_history');return new Response(JSON.stringify(Array.from({length:101},(_,i)=>isHistory?{revision:i+1,knowledge:{}}:{id:eventId,created_at:'2026-10-07T00:00:00.123456+00:00'})),{headers:{'content-type':'application/json'}});};
+ const request=(query)=>new Request(`https://studio.test/api/studio/workspaces/${workspaceId}/research-data?${query}`);
+ const h=await researchRoute.GET(request('dataset=knowledge'),eventContext);assert.equal(h.status,200);assert.equal(h.body.records.length,100);assert.equal(h.body.nextCursor,'100');assert.equal(queried.searchParams.get('owner_id'),`eq.${userId}`);
+ await researchRoute.GET(request('dataset=knowledge&after=100'),eventContext);assert.equal(queried.searchParams.get('revision'),'gt.100');
+ const e=await researchRoute.GET(request('dataset=use'),eventContext);assert(e.body.nextCursor);await researchRoute.GET(request(`dataset=use&after=${e.body.nextCursor}`),eventContext);assert.match(queried.searchParams.get('or'),/123456/);assert.match(queried.searchParams.get('or'),new RegExp(eventId));
+ assert.equal((await researchRoute.GET(request('dataset=use&after=not-json'),eventContext)).status,400);
+ assert.equal((await researchRoute.GET(request('dataset=knowledge&after=1,owner_id.eq.other'),eventContext)).status,400);
+}));

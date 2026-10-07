@@ -47,7 +47,7 @@ function normalized(value: number, start: number, size: number): number {
   return Math.round(Math.max(0, Math.min(1, (value - start) / size)) * 1000) / 1000;
 }
 
-export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion }: { workspaceId?: string; enabled: boolean; surfaceVersion?: number }): {
+export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, workspaceRevision }: { workspaceId?: string; enabled: boolean; surfaceVersion?: number | string; workspaceRevision?: number }): {
   track: (type: ExplicitEvent, metadata?: Metadata) => void;
   droppedEvents: number;
   deliveryError: string | null;
@@ -55,6 +55,8 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion }: { w
   const [state, setState] = useState<TelemetryState>({ droppedEvents: 0, deliveryError: null });
   const enqueueRef = useRef<((type: StudioEvent["type"], fields?: Partial<StudioEvent>) => void) | null>(null);
   const sessionIdRef = useRef("");
+  const revisionRef = useRef(workspaceRevision);
+  useEffect(() => { revisionRef.current = workspaceRevision; }, [workspaceRevision]);
 
   const track = useCallback((type: ExplicitEvent, metadata?: Metadata) => {
     enqueueRef.current?.(type, { metadata: cleanMetadata(metadata) });
@@ -92,6 +94,7 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion }: { w
         id: crypto.randomUUID(),
         sessionId: sessionIdRef.current,
         type,
+        ...(revisionRef.current === undefined ? {} : { displayRevision: revisionRef.current }),
         at: new Date().toISOString(),
         ...fields,
       });
@@ -158,6 +161,7 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion }: { w
       lastPointerAt = Date.now();
       const rect = root.getBoundingClientRect();
       enqueue("pointer", {
+        target: semanticTarget(event.target, root),
         x: normalized(event.clientX, rect.left, rect.width),
         y: normalized(event.clientY, rect.top, rect.height),
       });

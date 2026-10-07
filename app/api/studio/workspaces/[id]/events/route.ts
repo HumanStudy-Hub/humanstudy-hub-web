@@ -13,6 +13,7 @@ function validateEvent(input: unknown, workspaceId: string, ownerId: string, wor
   const event = input as Partial<StudioEvent>;
   if (!isUuid(event.id) || typeof event.sessionId !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(event.sessionId) ||
       !eventTypes.has(event.type || "") || typeof event.at !== "string") throw new StudioError(400, "invalid_event");
+  if(event.displayRevision !== undefined && (!Number.isSafeInteger(event.displayRevision) || event.displayRevision < 1 || event.displayRevision > workspaceRevision)) throw new StudioError(400,"invalid_event");
   const at = Date.parse(event.at);
   if (!Number.isFinite(at) || at < Date.now() - 30 * 86400_000 || at > Date.now() + 300_000) throw new StudioError(400, "invalid_event");
   if (event.target !== undefined && (typeof event.target !== "string" || !/^[a-zA-Z0-9_.:/#\[\]-]{1,160}$/.test(event.target))) {
@@ -37,6 +38,7 @@ function validateEvent(input: unknown, workspaceId: string, ownerId: string, wor
   }
   return {
     id: event.id, workspace_id: workspaceId, owner_id: ownerId, workspace_revision: workspaceRevision,
+    ...(event.displayRevision === undefined ? {} : { display_revision:event.displayRevision }),
     session_id: event.sessionId, event_type: event.type, occurred_at: new Date(at).toISOString(),
     ...(event.target === undefined ? {} : { target: event.target }),
     ...(event.x === undefined ? {} : { x: event.x }),
