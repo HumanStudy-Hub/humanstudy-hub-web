@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
-import { Analytics } from "@vercel/analytics/react";
+import SiteMetrics from "@/components/SiteMetrics";
 import "./globals.css";
 import "highlight.js/styles/github.min.css";
 import Navbar from "@/components/Navbar";
@@ -29,8 +28,7 @@ export default function RootLayout({
         <Navbar />
         <main className="flex-grow">{children}</main>
         <Footer />
-        <SpeedInsights />
-        <Analytics />
+        <SiteMetrics />
       </body>
     </html>
   );

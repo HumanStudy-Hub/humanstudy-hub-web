@@ -20,11 +20,9 @@ the public navigation/footer, while `/build` retains the original site styling. 
    MIME types and extend the same owner/workspace storage policies. Apply
    `supabase/migrations/20261006065000_studio_layout_telemetry.sql` for semantic
    layout events and server-assigned event revision stamps.
-3. Enable email/password authentication. Set the Auth Site URL to the deployment
-   origin and configure confirmation email delivery. Confirmation returns to the
-   site; the user signs in at `/build` after confirming. Configure SMTP and rate
-   limits before opening registration to a cohort. Password reset and social
-   sign-in are not implemented in this version.
+3. Enable email/password authentication and retain **Confirm email**. Follow the
+   registration configuration below. Password reset and social sign-in are not
+   implemented in this version.
 4. Connect the original GitHub workflow: `GITHUB_TOKEN` needs Actions write on
    `HumanStudy-Hub/HumanStudy-Bench`; `GITHUB_JOBS_TOKEN` (or its fallback
    `GITHUB_TOKEN`) needs Contents read/write on `HumanStudy-Hub/humanstudy-hub-jobs`.
@@ -48,7 +46,7 @@ cross-owner workspace/event/file visibility and cross-owner event insertion
 denial. Fixtures were rolled back. These tests exercise database roles and
 policies, not the complete browser signup/upload journey.
 
-Remaining configuration: Auth Site URL/redirects and cohort email delivery.
+Remaining hosted configuration (not verified): Auth Site URL/redirects and cohort email delivery.
 The connected MCP does not expose Auth configuration; the browser dashboard
 is signed out and the CLI has no management access token. Existing default
 email confirmation was preserved. The local development server now uses the
@@ -64,6 +62,58 @@ The [branch Preview](https://humanstudy-hub-web-git-codex-build-stu-0b1c60-xuanl
 is Ready, and `/api/studio/auth` returns `configured: true`. Production was not
 changed. This configuration check does not verify signup, email delivery or a
 signed-in end-to-end agent run.
+
+## Registration email configuration (2026-10-08)
+
+Signup and resend now explicitly return to `/auth/confirm`. `STUDIO_AUTH_ORIGIN`
+fixes the return origin to a stable deployment alias; unset locally, it uses the
+checked same-origin request. Use an HTTPS origin with no path/query/fragment.
+Local HTTP is allowed for localhost and 127.0.0.1 only.
+
+In Supabase Auth URL Configuration for this dedicated development project:
+
+- Site URL: `https://humanstudy-hub-web-git-codex-build-stu-0b1c60-xuanl17s-projects.vercel.app/auth/confirm`.
+  This is also the default landing page if no valid return URL is supplied.
+- Exact Redirect URLs: the Site URL above,
+  `http://127.0.0.1:3100/auth/confirm`, and `http://localhost:3100/auth/confirm`.
+  Do not allow all Vercel project URLs with a broad wildcard.
+- Vercel branch Preview `STUDIO_AUTH_ORIGIN`:
+  `https://humanstudy-hub-web-git-codex-build-stu-0b1c60-xuanl17s-projects.vercel.app`.
+  Leave it unset locally.
+
+Default templates remain compatible: Supabase verifies the link and returns to
+the app confirmation page, which discards fragment tokens and asks for password
+sign-in. An unverified fragment never creates a session.
+
+After enabling custom SMTP, optional subject: `Confirm your HumanStudy Hub email`;
+optional template: `supabase/templates/confirmation.html`. This lands with a token
+hash. Opening the app page alone does not consume it. **Confirm and continue**
+performs a same-origin verification POST, verifies the Supabase user and sets
+HttpOnly cookies before entering `/build`. This prevents passive previews on our
+page from consuming the credential; it is not a guarantee against all mail scanners.
+Expired links offer sign-in/resend. The resend UI waits 60 seconds and respects
+provider limits. The confirmation page has no website metrics, clears query/hash
+from the address bar after loading, and sets no-referrer and private/no-store.
+
+The default Supabase mailer only delivers to organization team addresses and
+currently allows two emails/hour. External researchers require **custom SMTP**.
+New Free projects after 2026-06-03 also require custom SMTP (or a paid plan) for
+template customization. See [SMTP restrictions](https://supabase.com/docs/guides/auth/auth-smtp)
+and [template changes](https://supabase.com/changelog/46599-changes-to-email-template-customisation-on-free-tier).
+Keep email confirmation enabled; do not grant participants project admin access
+to bypass delivery restrictions.
+
+Configure the provider's SMTP host, port, username, password and verified sender
+directly in Supabase; disable auth-link tracking at the email provider. SMTP secrets
+do not belong in the frontend or repository. Hosted configuration and real receipt
+acceptance are **pending**, requiring dashboard login, an SMTP service and the
+user's test inbox. MCP does not expose Auth settings and no management/SMTP
+credential is configured locally.
+
+Receipt acceptance: signup → real email received → confirmation → session/sign-in
+→ new study → sign out/in. Check `auth.users.email_confirmed_at` without exposing
+tokens. Also verify expired/reused links, resend and opening the email in another
+browser. Unit tests check API boundaries, not delivery to a real inbox.
 
 ## Workflow and persisted data
 

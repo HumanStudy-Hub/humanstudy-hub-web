@@ -3,6 +3,12 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  async headers() {
+    return [{ source: "/auth/confirm", headers: [
+      { key: "Referrer-Policy", value: "no-referrer" },
+      { key: "Cache-Control", value: "private, no-store" },
+    ] }];
+  },
   async redirects() {
     return [
       // Serve our custom icon when browser requests favicon.ico (avoids Vercel default)

@@ -7,6 +7,26 @@ const REFRESH_COOKIE = "studio_refresh";
 type AuthSession = { access_token: string; refresh_token: string; expires_in: number; user?: StudioUser };
 export type StudioContext = { user: StudioUser; accessToken: string };
 
+// Use a stable hosted origin when configured, so preview-deployment URLs do not
+// need a broad redirect allowlist. Otherwise use the already checked POST origin.
+export function studioConfirmationUrl(request: Request): string {
+  const raw = process.env.STUDIO_AUTH_ORIGIN || request.headers.get("origin");
+  try {
+    const url = new URL(raw || "");
+    const local = ["localhost", "127.0.0.1"].includes(url.hostname);
+    if ((url.protocol !== "https:" && !(local && url.protocol === "http:")) || url.username || url.password || url.search || url.hash || url.pathname !== "/") throw new Error("Invalid origin");
+    return `${url.origin}/auth/confirm`;
+  } catch { throw new StudioError(503, "auth_redirect_setup_required"); }
+}
+
+export async function establishStudioSession(session: AuthSession): Promise<StudioUser> {
+  if (typeof session.access_token !== "string" || typeof session.refresh_token !== "string" || !session.access_token || !session.refresh_token) throw new StudioError(502, "invalid_service_response");
+  const user = await verifiedUser(session.access_token);
+  if (!user) throw new StudioError(401, "authentication_failed");
+  await setStudioSession(session);
+  return user;
+}
+
 function cookieOptions(maxAge: number) {
   return { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" as const, path: "/", maxAge };
 }

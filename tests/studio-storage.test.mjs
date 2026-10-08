@@ -113,13 +113,86 @@ test("signup without a Supabase session asks for confirmation without setting co
     "@/lib/studio/auth": auth, "@/lib/studio/http": http,
   });
   global.fetch = async url => {
-    assert.equal(url, "https://db.example.test/auth/v1/signup");
+    assert.equal(new URL(url).pathname, "/auth/v1/signup");
+    assert.equal(new URL(url).searchParams.get("redirect_to"), "https://app.example.test/auth/confirm");
     return Response.json({ user: { id: userId, email: "owner@example.test" }, session: null });
   };
   const response = await route.POST(jsonRequest({ action: "signup", email: "owner@example.test", password: "correct-horse" }));
   assert.equal(response.status, 200);
   assert.deepEqual(response.body, { user: null, requiresEmailConfirmation: true });
   assert.equal(jarValues.size, 0);
+}));
+
+const authRoute = load("app/api/studio/auth/route.ts", {
+  "next/server": nextServer, "next/headers": { cookies: async () => jar },
+  "@/lib/studio/auth": auth, "@/lib/studio/http": http,
+});
+const confirmation = { action: "confirm", tokenHash: "a".repeat(64), type: "email" };
+
+test("email confirmation verifies the session owner before setting HttpOnly cookies", async () => withService(async () => {
+  const requests = [];
+  global.fetch = async (url, options) => {
+    requests.push({ url, options });
+    if (url.endsWith("/verify")) return Response.json({ access_token: "confirmed-access", refresh_token: "confirmed-refresh", expires_in: 3600, user: { id: "untrusted" } });
+    assert.equal(options.headers.Authorization, "Bearer confirmed-access");
+    return Response.json({ id: userId, email: ctx.user.email });
+  };
+  const response = await authRoute.POST(jsonRequest(confirmation));
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { user: ctx.user });
+  assert.equal(requests[0].url, "https://db.example.test/auth/v1/verify");
+  assert.deepEqual(JSON.parse(requests[0].options.body), { token_hash: confirmation.tokenHash, type: "email" });
+  assert.equal(jarValues.get("studio_access"), "confirmed-access");
+  assert.equal(jarValues.get("studio_refresh"), "confirmed-refresh");
+  assert.ok(cookieWrites.every(write => write.options.httpOnly && write.options.sameSite === "lax"));
+  assert.equal(response.headers["Cache-Control"], "no-store");
+  assert.ok(!JSON.stringify(response.body).includes("confirmed-access"));
+}));
+
+test("invalid, recovery and cross-origin confirmations never call the provider", async () => withService(async () => {
+  global.fetch = () => { throw new Error("must not fetch"); };
+  for (const payload of [{ ...confirmation, tokenHash: "short" }, { ...confirmation, type: "recovery" }, { ...confirmation, type: "email_change" }]) {
+    assert.equal((await authRoute.POST(jsonRequest(payload))).status, 400);
+  }
+  assert.equal((await authRoute.POST(jsonRequest(confirmation, "https://evil.example.test"))).status, 403);
+  assert.equal(jarValues.size, 0);
+}));
+
+test("expired or unverifiable confirmations never create a session", async () => withService(async () => {
+  global.fetch = async () => Response.json({ code: "otp_expired" }, { status: 403 });
+  const expired = await authRoute.POST(jsonRequest(confirmation));
+  assert.equal(expired.body.error, "confirmation_expired");
+  assert.equal(jarValues.size, 0);
+  global.fetch = async url => url.endsWith("/verify") ? Response.json({ access_token: "bad", refresh_token: "bad", expires_in: 3600 }) : new Response(null, { status: 401 });
+  assert.equal((await authRoute.POST(jsonRequest(confirmation))).status, 401);
+  assert.equal(jarValues.size, 0);
+}));
+
+test("resend uses the fixed return URL without requiring a password or revealing account existence", async () => withService(async () => {
+  const prior = process.env.STUDIO_AUTH_ORIGIN;
+  process.env.STUDIO_AUTH_ORIGIN = "https://stable.example.test";
+  try {
+    let request;
+    global.fetch = async (url, options) => { request = { url: new URL(url), options }; return Response.json({}); };
+    assert.equal((await authRoute.POST(jsonRequest({ action: "resend", email: "owner@example.test" }))).status, 200);
+    assert.equal(request.url.pathname, "/auth/v1/resend");
+    assert.equal(request.url.searchParams.get("redirect_to"), "https://stable.example.test/auth/confirm");
+    assert.deepEqual(JSON.parse(request.options.body), { email: "owner@example.test", type: "signup" });
+    global.fetch = async () => Response.json({ code: "user_not_found" }, { status: 404 });
+    assert.equal((await authRoute.POST(jsonRequest({ action: "resend", email: "unknown@example.test" }))).status, 200);
+    assert.equal(jarValues.size, 0);
+    process.env.STUDIO_AUTH_ORIGIN = "https://stable.example.test/unsafe?next=other";
+    assert.equal((await authRoute.POST(jsonRequest({ action: "resend", email: "owner@example.test" }))).body.error, "auth_redirect_setup_required");
+  } finally { if (prior === undefined) delete process.env.STUDIO_AUTH_ORIGIN; else process.env.STUDIO_AUTH_ORIGIN = prior; }
+}));
+
+test("auth distinguishes pending confirmation, email delivery setup and send rate limits", async () => withService(async () => {
+  for (const [code, expected] of [["email_not_confirmed", "email_not_confirmed"], ["email_address_not_authorized", "email_delivery_setup_required"], ["over_email_send_rate_limit", "rate_limited"]]) {
+    global.fetch = async () => Response.json({ code }, { status: 400 });
+    const response = await authRoute.POST(jsonRequest({ action: "signin", email: "owner@example.test", password: "correct-horse" }));
+    assert.equal(response.body.error, expected);
+    assert.equal(jarValues.size, 0);
+  }
 }));
 
 test("mutation origin accepts public proxy origin and rejects unrelated or absent origins", () => {
