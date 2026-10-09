@@ -46,10 +46,11 @@ cross-owner workspace/event/file visibility and cross-owner event insertion
 denial. Fixtures were rolled back. These tests exercise database roles and
 policies, not the complete browser signup/upload journey.
 
-Remaining hosted configuration (not verified): Auth Site URL/redirects and cohort email delivery.
-The connected MCP does not expose Auth configuration; the browser dashboard
-is signed out and the CLI has no management access token. Existing default
-email confirmation was preserved. The local development server now uses the
+On 2026-10-08, dashboard login and the development Auth Site URL/three exact
+redirect URLs were configured and verified in the Supabase UI. Custom SMTP and
+real receipt acceptance remain pending. The connected MCP does not expose Auth
+configuration and the CLI has no management access token. Existing email
+confirmation was preserved. The local development server uses the
 existing GitHub login token in ignored `.env.local`; do not copy that personal
 credential to a shared deployment.
 
@@ -105,10 +106,20 @@ to bypass delivery restrictions.
 
 Configure the provider's SMTP host, port, username, password and verified sender
 directly in Supabase; disable auth-link tracking at the email provider. SMTP secrets
-do not belong in the frontend or repository. Hosted configuration and real receipt
-acceptance are **pending**, requiring dashboard login, an SMTP service and the
-user's test inbox. MCP does not expose Auth settings and no management/SMTP
-credential is configured locally.
+do not belong in the frontend or repository. Development return URLs are saved
+and verified; the SMTP page still shows custom SMTP disabled. SMTP configuration
+and real receipt acceptance are **pending**, requiring an email service/verified
+sender domain and the user's ordinary inbox. MCP does not expose Auth settings
+and no management/SMTP credential is configured locally.
+
+The user requested a public launch. Vercel aliases identify the existing formal
+site as `hs-bench.clawder.ai` (also `www.hs-bench.clawder.ai`); it still points to
+the earlier production deployment. The new workspace remains on the development
+branch. Before promoting it, establish domain/DNS access and SMTP, verify real
+registration mail, and configure the production website origin/redirects and
+server environment. The preview return URL above must not be mistaken for a
+completed production launch. Resend is a suggested provider, not configured yet;
+its official integration requires an API key and a verified sender domain.
 
 Receipt acceptance: signup → real email received → confirmation → session/sign-in
 → new study → sign out/in. Check `auth.users.email_confirmed_at` without exposing
