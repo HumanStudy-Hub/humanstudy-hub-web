@@ -121,6 +121,18 @@ server environment. The preview return URL above must not be mistaken for a
 completed production launch. Resend is a suggested provider, not configured yet;
 its official integration requires an API key and a verified sender domain.
 
+Production environment preparation (2026-10-08): Vercel now has
+`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
+`STUDIO_AUTH_ORIGIN=https://hs-bench.clawder.ai` and
+`STUDIO_PIPELINE_REF=codex/build-study-platform` in Production. The keys remain
+server-side; existing project GitHub credentials are reused. This prepares a
+future deployment and does not promote the new workspace to the production site.
+The user confirmed domain/DNS ownership and supplied a private receipt-test inbox;
+the address is intentionally not recorded in this repository. Resend was used
+previously, but its browser session is signed out. The next required action is
+logging into that existing account to inspect verified sender domains and SMTP
+credentials. No email was sent and no mail delivery was verified yet.
+
 Receipt acceptance: signup → real email received → confirmation → session/sign-in
 → new study → sign out/in. Check `auth.users.email_confirmed_at` without exposing
 tokens. Also verify expired/reused links, resend and opening the email in another
