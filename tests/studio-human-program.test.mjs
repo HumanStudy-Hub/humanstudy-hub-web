@@ -85,6 +85,19 @@ test('projection truncation never truncates the canonical value or exported data
  assert.equal(validation.validateStudyModel(JSON.parse(JSON.stringify(m))).program.nodes[0].fields[0].value.length,10000);
 });
 
+test('action overview exposes the rule or input/output context without changing the canonical flow',()=>{
+ const p=sample('study_012'),step=p.steps.find(s=>s.kind==='action');
+ step.rule={id:'rule',label:'Procedure',value:'Measure sustained attention at baseline and after the intervention. '.repeat(10),origin:'reported',state:'confirmed',evidenceIds:[]};
+ const before=structuredClone(p),m=validation.validateStudyModel(p),id=`flow:${step.id}`;
+ assert.match(review.modelOverview(m).cards[id].text,/Measure sustained attention/);
+ assert.equal([...m.entities.find(e=>e.id===id).subtitle].length,240);
+ assert.deepEqual(m.program,before);
+ delete step.rule;
+ const fallback=validation.validateStudyModel(p).entities.find(e=>e.id===id).subtitle;
+ assert(fallback.includes(p.nodes.find(n=>n.id===step.actorIds[0]).title));
+ assert.deepEqual(validation.validateStudyModel(p).program,p);
+});
+
 test('canonical Unicode, long verified evidence and typed variable metadata fit the preview without data loss',()=>{
  const p=sample('exploratory-extension');p.title='🧪'.repeat(300);p.nodes[0].title='🧪'.repeat(200);
  p.evidence=[{id:'long-quote',sourceId:'paper',locator:{page:1},quote:'🧪'.repeat(9000),verification:'verified'}];p.nodes[0].evidenceIds=['long-quote'];

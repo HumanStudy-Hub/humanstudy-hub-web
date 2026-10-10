@@ -36,3 +36,17 @@ test('locating long evidence sends a bounded source selection while retaining th
  const walk=element=>{if(!element||typeof element!=='object')return;if(element.props?.['aria-label']==='Locate evidence for Categories')element.props.onClick();React.Children.forEach(element.props?.children,walk);};walk(tree);
  assert.equal([...evidence.quote].length,8000);assert.equal([...p.evidence[0].quote].length,9000);
 });
+
+test('an unmatched PDF quote can be reviewed on its page without claiming a verified highlight',()=>{
+ const p=sample('exploratory-extension');
+ p.evidence=[{id:'e1',sourceId:'paper',locator:{page:2},quote:"participants' smartphones",verification:'unverified'}];
+ p.nodes[0].fields[0].evidenceIds=['e1'];let evidence;
+ const tree=details({program:p,id:'coding',onDiscuss:noop,onInspect:noop,onSource:(_,e)=>evidence=e});
+ const walk=element=>{if(!element||typeof element!=='object')return;if(element.props?.['aria-label']==='Review source for Categories')element.props.onClick();React.Children.forEach(element.props?.children,walk);};walk(tree);
+ assert.deepEqual(evidence,{sourceId:'paper',page:2,quote:"participants' smartphones",rects:[]});
+ assert.match(renderToStaticMarkup(tree),/Review source/);
+ assert.equal(p.evidence[0].verification,'unverified');
+ p.evidence.push({id:'e2',path:'supplement.docx',locator:{pointer:'/paragraph/5'},quote:'Supplement'});
+ p.nodes[0].fields[0].evidenceIds=['e2'];evidence=undefined;walk(details({program:p,id:'coding',onDiscuss:noop,onInspect:noop,onSource:(_,e)=>evidence=e}));
+ assert.equal(evidence,undefined);
+});
