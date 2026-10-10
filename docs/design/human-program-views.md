@@ -31,6 +31,11 @@ on every click or repeating an agent composer inside the program panel.
   Strongly connected components keep feedback-loop layout finite.
 - Branch comparison uses referenced branch alternatives and graph reachability.
   The visual layout is not interpreted as timing or duration.
+- A comparison stops at a later decision. It does not incorrectly classify
+  later condition-specific activities as common execution merely because both
+  earlier paths reach the next branch. Comparing persistent arm trajectories
+  across crossover phases needs explicit condition mappings; title matching
+  must not invent them.
 - When no branches exist, empirical study scopes can be compared as studies;
   they are not silently reclassified as conditions. Missing flow/condition
   mappings are explicit and can be discussed with the real agent.

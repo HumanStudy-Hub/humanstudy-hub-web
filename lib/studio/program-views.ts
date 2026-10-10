@@ -71,14 +71,21 @@ export function branchPaths(program: HumanProgram, branchId: string) {
   if (!branch) return { branch: undefined, paths: [], shared: new Set<string>(), before: new Set<string>() };
   const steps = new Map(program.steps.filter(s => s.studyId === branch.studyId).map(s => [s.id, s]));
   const next = (id: string) => { const s = steps.get(id); return s ? [...s.next.map(e => e.to), ...(s.kind === 'branch' ? s.children : [])] : []; };
-  const reachable = (start: string) => {
+  const reachable = (start: string, stopAtDecision=true) => {
     const result = new Set<string>(), pending = [start];
-    while (pending.length) { const id = pending.shift()!; if (id === branch.id || result.has(id) || !steps.has(id)) continue; result.add(id); pending.push(...next(id)); }
+    while (pending.length) {
+      const id = pending.shift()!;
+      if (id === branch.id || result.has(id) || !steps.has(id)) continue;
+      result.add(id);
+      // A later decision requires its own condition mapping. Reachability alone
+      // cannot establish that both alternatives execute all later branches.
+      if(!stopAtDecision||steps.get(id)!.kind!=='branch')pending.push(...next(id));
+    }
     return result;
   };
   const paths = branch.children.filter(id => steps.has(id)).map(id => ({ id, title: steps.get(id)!.title, ids: reachable(id) }));
   const shared = new Set(paths[0] ? [...paths[0].ids].filter(id => paths.every(p => p.ids.has(id))) : []);
-  const downstream = new Set(paths.flatMap(p=>[...p.ids]));
+  const downstream = new Set(branch.children.flatMap(id=>[...reachable(id,false)]));
   // Reverse reachability gives common earlier steps without imposing array order.
   const before = new Set<string>(), pending = [branch.id];
   while (pending.length) {

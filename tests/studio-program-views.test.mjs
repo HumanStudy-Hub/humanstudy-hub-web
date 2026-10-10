@@ -26,7 +26,8 @@ test('condition comparison shows the two distinct interventions and only one com
  assert.equal(result.paths.length,2);
  assert.deepEqual([...result.paths[0].unique],['step_phase1_intervention_block']);
  assert.deepEqual([...result.paths[1].unique],['step_phase1_delayed_normal']);
- assert(result.shared.has('step_phase1_sms_loop'));assert(result.shared.has('step_t3_survey'));
+ assert(result.shared.has('step_phase1_sms_loop'));assert(result.shared.has('step_phase2_branch'));
+ assert(!result.shared.has('step_t3_survey'));assert(!result.shared.has('step_phase2_delayed_block'));
  assert(result.before.has('step_randomize'));assert(result.before.has('step_t1_baseline'));
  assert(!result.shared.has('step_randomize'));
 });
