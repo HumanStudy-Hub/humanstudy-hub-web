@@ -13,6 +13,7 @@ export type StudioAcceptedPackage = { jobId:string; modelFingerprint:string; acc
 // Retained for compatibility with existing saved metadata; no new version entries are created.
 export type ProgramVersion = { id:string; parentId?:string; createdAt:string; label:string; fingerprint:string; proposalId?:string; model?:StudySchema };
 export type StudioDocument = {
+ project?: { archived?:boolean; sampleId?:string; forkedFrom?:{workspaceId:string;revision:number}; copyState?:"preparing"|"ready"|"failed" };
  programVersions?:ProgramVersion[];
  pipeline?:StudioPipeline;
  discussion?:StudioPipeline;
@@ -23,5 +24,6 @@ export type StudioDocument = {
  reviewResponses:Record<string,ReviewResponse>; activeConversationId?:string;
 };
 export type StudioWorkspace = { id:string; title:string; revision:number; document:StudioDocument; created_at:string; updated_at:string };
+export type StudioProjectSummary = Omit<StudioWorkspace,"document"> & { project?:StudioDocument["project"] };
 export type StudioUser = { id:string; email?:string };
 export type StudioEvent = { id:string; sessionId:string; displayRevision?:number; type:"click"|"pointer"|"scroll"|"selection"|"visibility"|"chat"|"review"|"layout"; at:string; target?:string; x?:number; y?:number; durationMs?:number; metadata?:Record<string,string|number|boolean> };

@@ -1,4 +1,4 @@
-import type { StudioDocument, StudioSource, StudioWorkspace } from "./types";
+import type { StudioDocument, StudioSource, StudioWorkspace, StudioProjectSummary } from "./types";
 import type { StudioContext } from "./auth";
 import { isUuid, StudioError, studioFetch, upstreamJson } from "./http";
 import { validStoredSource } from "./resources";
@@ -27,9 +27,9 @@ function assertDocument(ctx: StudioContext, id: string, document: StudioDocument
   assertSources(ctx, id, document.sources);
 }
 
-export async function listWorkspaces(ctx: StudioContext): Promise<StudioWorkspace[]> {
-  const response = await studioFetch(`/rest/v1/studio_workspaces?owner_id=eq.${ctx.user.id}&select=id,title,revision,document,created_at,updated_at&order=updated_at.desc&limit=100`, { token: ctx.accessToken });
-  const rows = await upstreamJson<StudioWorkspace[]>(response);
+export async function listWorkspaces(ctx: StudioContext): Promise<StudioProjectSummary[]> {
+  const response = await studioFetch(`/rest/v1/studio_workspaces?owner_id=eq.${ctx.user.id}&select=id,title,revision,project:document->project,created_at,updated_at&order=updated_at.desc&limit=100`, { token: ctx.accessToken });
+  const rows = await upstreamJson<StudioProjectSummary[]>(response);
   if (!Array.isArray(rows)) throw new StudioError(502, "invalid_service_response");
   return rows;
 }
@@ -51,8 +51,8 @@ export async function getWorkspaceMetadata(ctx: StudioContext, id: string): Prom
   return rows[0] || null;
 }
 
-export async function createWorkspace(ctx: StudioContext, document: StudioDocument): Promise<StudioWorkspace> {
-  const id = crypto.randomUUID();
+export async function createWorkspace(ctx: StudioContext, document: StudioDocument, id = crypto.randomUUID()): Promise<StudioWorkspace> {
+  assertId(id);
   assertDocument(ctx, id, document);
   const response = await studioFetch("/rest/v1/studio_workspaces?select=id,title,revision,document,created_at,updated_at", {
     method: "POST", token: ctx.accessToken,

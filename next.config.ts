@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  outputFileTracingIncludes: { '/api/studio/workspaces': ['./data/studio-samples/**/*'], '/api/studio/workspaces/[id]/project': ['./data/studio-samples/**/*'] },
   images: {
     unoptimized: true,
   },

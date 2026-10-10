@@ -1,11 +1,14 @@
 # Build Study workspace
 
-`/build` is the site-styled introduction with account access and saved studies.
-`/build/example` opens a full-window editor in the same workspace used by
-`/build/[id]`. The example is stored locally with the agent offline; saved
-studies use authenticated storage and the configured live agent. The old
-`/build-preview` address redirects to `/build/example`. Studies / Account remains available in the workspace menu. Editor routes hide
-the public navigation/footer, while `/build` retains the original site styling. Existing `/pipeline` jobs are unchanged.
+`/build` is the full-window sign-in and project directory, using the site's fonts and colors. `/build/[id]` opens an authenticated editable project with the live Study agent. `/build/example` redirects to `/build?sample=intentional-action`; `/build-preview` follows the same route. There is no separate public offline demo editor. Existing `/pipeline` jobs are unchanged.
+
+After signing in, **Load sample** creates a normal project from the benchmark's Intentional Action case: canonical Human Program v2, original Knobe PDF, and four vignette JSON resources/materials. Its files are copied into the owner's private workspace bucket. Annotation, discussion, proposals, saving and export use the same routes as any other project. This is an editable reconstruction, not an accepted executable package; agent changes still require review and package sync.
+
+Projects support search, rename, fork, archive/restore and export. The editor explorer lists the active project's Human Program, resources, materials and conversations. Fork keeps scientific IDs/comments/history, copies originals into independent storage paths, records its source revision and removes remote job/package authority; pending proposals become historical rejections. Failed file copies retain a discoverable project with a retry action; timed-out copies can be retried after two minutes. A copy is limited to 50 MB and the directory currently shows the latest 100 projects.
+
+Autosave and Cmd/Ctrl-S retain revision conflict protection. Project navigation waits for pending saves. Cmd/Ctrl-B toggles the explorer, Cmd/Ctrl-P finds projects, and Cmd/Ctrl-Shift-P opens workspace commands. Settings share local appearance, text size, density and message-send preferences across the directory and editor. Circle drawing has been removed; PDF text/box annotations and program field comments remain. Language switching and version DAGs are not enabled. Collaborative sharing, custom folders, full undo/redo history and account password recovery are not implemented by this change.
+
+Apply `supabase/migrations/20261010001813_studio_project_origin.sql` after the existing research-history migration. Scientific snapshots now retain `origin.sampleId` and `origin.forkedFrom`; archive/copy state remain excluded. Analysts must treat seeded/forked initial knowledge separately from subsequent researcher decisions. The migration was applied to the development project; the transaction test exercises origin capture, draft/UI exclusion and cross-owner isolation without leaving test rows.
 
 ## Configure a development service
 
@@ -47,8 +50,8 @@ denial. Fixtures were rolled back. These tests exercise database roles and
 policies, not the complete browser signup/upload journey.
 
 On 2026-10-08, dashboard login and the development Auth Site URL/three exact
-redirect URLs were configured and verified in the Supabase UI. Custom SMTP and
-real receipt acceptance remain pending. The connected MCP does not expose Auth
+redirect URLs were configured and verified in the Supabase UI. On 2026-10-09,
+custom SMTP and the confirmation template were saved. Two confirmation requests returned HTTP 200; Resend showed Delivered for both. Receipt in the mailbox and clicking the confirmation link remain unverified. The connected MCP does not expose Auth
 configuration and the CLI has no management access token. Existing email
 confirmation was preserved. The local development server uses the
 existing GitHub login token in ignored `.env.local`; do not copy that personal
@@ -64,7 +67,7 @@ is Ready, and `/api/studio/auth` returns `configured: true`. Production was not
 changed. This configuration check does not verify signup, email delivery or a
 signed-in end-to-end agent run.
 
-## Registration email configuration (2026-10-08)
+## Registration email configuration (2026-10-09)
 
 Signup and resend now explicitly return to `/auth/confirm`. `STUDIO_AUTH_ORIGIN`
 fixes the return origin to a stable deployment alias; unset locally, it uses the
@@ -86,8 +89,8 @@ Default templates remain compatible: Supabase verifies the link and returns to
 the app confirmation page, which discards fragment tokens and asks for password
 sign-in. An unverified fragment never creates a session.
 
-After enabling custom SMTP, optional subject: `Confirm your HumanStudy Hub email`;
-optional template: `supabase/templates/confirmation.html`. This lands with a token
+The saved subject is `Confirm your HumanStudy Hub email`; the saved template is
+`supabase/templates/confirmation.html`. This lands with a token
 hash. Opening the app page alone does not consume it. **Confirm and continue**
 performs a same-origin verification POST, verifies the Supabase user and sets
 HttpOnly cookies before entering `/build`. This prevents passive previews on our
@@ -107,10 +110,12 @@ to bypass delivery restrictions.
 Configure the provider's SMTP host, port, username, password and verified sender
 directly in Supabase; disable auth-link tracking at the email provider. SMTP secrets
 do not belong in the frontend or repository. Development return URLs are saved
-and verified; the SMTP page still shows custom SMTP disabled. SMTP configuration
-and real receipt acceptance are **pending**, requiring an email service/verified
-sender domain and the user's ordinary inbox. MCP does not expose Auth settings
-and no management/SMTP credential is configured locally.
+and verified. On 2026-10-09 the SMTP page showed custom SMTP enabled and a stored
+password after the user pasted and saved their Resend key. Host is
+`smtp.resend.com`, port `465`, username `resend`, sender
+`HumanStudy Hub <no-reply@clawder.ai>`. The confirmation template was saved and
+its preview verified. Two real confirmation requests returned HTTP 200 and Resend showed Delivered for both. This verifies SMTP dispatch and acceptance by the receiving mail server; mailbox receipt and link confirmation remain **pending**. MCP does not
+expose Auth settings and no management/SMTP credential is configured locally.
 
 The user requested a public launch. Vercel aliases identify the existing formal
 site as `hs-bench.clawder.ai` (also `www.hs-bench.clawder.ai`); it still points to
@@ -118,8 +123,8 @@ the earlier production deployment. The new workspace remains on the development
 branch. Before promoting it, establish domain/DNS access and SMTP, verify real
 registration mail, and configure the production website origin/redirects and
 server environment. The preview return URL above must not be mistaken for a
-completed production launch. Resend is a suggested provider, not configured yet;
-its official integration requires an API key and a verified sender domain.
+completed production launch. Resend's existing `clawder.ai` domain was visibly
+verified, and its SMTP settings are now saved in Supabase.
 
 Production environment preparation (2026-10-08): Vercel now has
 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`,
@@ -128,10 +133,10 @@ Production environment preparation (2026-10-08): Vercel now has
 server-side; existing project GitHub credentials are reused. This prepares a
 future deployment and does not promote the new workspace to the production site.
 The user confirmed domain/DNS ownership and supplied a private receipt-test inbox;
-the address is intentionally not recorded in this repository. Resend was used
-previously, but its browser session is signed out. The next required action is
-logging into that existing account to inspect verified sender domains and SMTP
-credentials. No email was sent and no mail delivery was verified yet.
+the address is intentionally not recorded in this repository. Confirmation emails have since been sent and receiving-server delivery verified in Resend. On 2026-10-09 the registration preview
+redirected to Vercel's "You Need Access" page for the current browser account.
+Use a project-authorized Vercel account to complete registration acceptance;
+deployment protection was not changed. The latest read-only Auth query showed one registered account and zero confirmed accounts; the owner must still receive and follow the confirmation link.
 
 Receipt acceptance: signup → real email received → confirmation → session/sign-in
 → new study → sign out/in. Check `auth.users.email_confirmed_at` without exposing
@@ -153,7 +158,7 @@ PDF.js renders original pages and extracts selectable text in the browser.
 Zoom is relative to the available viewer width, from 75% to 300%. Select text
 or drag a region, save a highlight without a comment, add a comment, or send
 that reference to the agent. Highlights and comments survive a saved-study
-reload. Scanned pages support region marks; text requires OCR. Select or circle
+reload. Scanned pages support region marks; text requires OCR. Select
 model objects to attach them to the left Agent composer. Need input discussions
 use that same composer; there is no separate model-side prompt form. Panels can
 be resized with the separators (keyboard arrows also work), independently
@@ -163,7 +168,7 @@ one active pane. PDF and study contents stay mounted while collapsed.
 
 The editor auto-saves changes to the signed-in account after a 900 ms debounce;
 Save or Cmd/Ctrl+S immediately flushes the same revision-checked save queue.
-The example saves locally. The status bar distinguishes account/local saves and
+Loaded samples save to the same authenticated store. The status bar
 reports conflicts or failures; saving does not run the agent. The interface uses
 English with no language switch. Theme and account access are in the header menu.
 Human Program and Resources switch artifact views, Compare opens both, and

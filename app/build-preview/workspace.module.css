@@ -2128,3 +2128,11 @@ fieldset.workspace {
  .shell .statusBar { flex-wrap:nowrap; min-height:30px; }
  .shell .paneSwitcher button { padding:9px 10px; }
 }
+
+/* A single explorer beside the existing agent/artifact workbench. */
+.workbenchFrame{display:flex;flex:1;min-height:0;position:relative}
+.workbenchContent{display:flex;flex:1;min-width:0;min-height:0;flex-direction:column}
+.shell[data-density="compact"] .messages{padding:10px 12px}
+.shell[data-density="compact"] .agentMessage,.shell[data-density="compact"] .userMessage{margin-top:10px;margin-bottom:10px}
+.shell .settingsDialog input{padding:10px;border:1px solid var(--line);background:var(--surface);color:var(--text);margin-bottom:16px;width:100%;font:inherit}
+@media(max-width:800px){.workbenchFrame>aside{position:absolute;inset:0 auto 0 0;z-index:20;box-shadow:5px 0 16px #0002}.shell .header>strong{display:none}}

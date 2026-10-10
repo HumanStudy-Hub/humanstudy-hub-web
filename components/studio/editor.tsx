@@ -34,7 +34,7 @@ export default function StudioEditor({id}:{id:string}){
  useEffect(()=>{let cancelled=false;studioApi<{workspace:StudioWorkspace}>(`/api/studio/workspaces/${id}`).then(({workspace:w})=>{if(cancelled)return;server.current=w;setWorkspace(w);setCurrent(w.document);const firstPaper=w.document.sources.find(isPaper);setPrimaryPaperId(w.document.pipeline?.sourceId||firstPaper?.id||'');setSourceId(w.document.pipeline?.sourceId||firstPaper?.id||w.document.sources[0]?.id||'');}).catch(e=>{if(!cancelled)setError(e instanceof Error?e.message:'Could not load workspace.');});return()=>{cancelled=true;if(timer.current)clearTimeout(timer.current);};},[id,setCurrent]);
  useEffect(()=>{const unload=(event:BeforeUnloadEvent)=>{if(pending.current||saving.current){event.preventDefault();event.returnValue='';}};window.addEventListener('beforeunload',unload);return()=>window.removeEventListener('beforeunload',unload);},[]);
  const selectedSource=document?.sources.find(v=>v.id===sourceId);
- const sourcePath=selectedSource&&isPaper(selectedSource)?selectedSource.path:undefined;
+ const sourcePath=selectedSource&&isPaper(selectedSource)&&(!document?.project?.copyState||document.project.copyState==='ready')?selectedSource.path:undefined;
  useEffect(()=>{
   if(!sourceId||!sourcePath){setPages([]);setLoading('');return;}
   const controller=new AbortController();let cleanup:(()=>void)|undefined;
@@ -100,6 +100,7 @@ export default function StudioEditor({id}:{id:string}){
  }
  function downloadUnsaved(){const url=URL.createObjectURL(new Blob([JSON.stringify(current.current,null,2)],{type:'application/json'}));const a=window.document.createElement('a');a.href=url;a.download='unsaved-study-draft.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
  if(!workspace||!document)return <div className={s.home}><main><Link href="/build">← Your studies</Link><p>{error||'Loading study…'}</p></main></div>;
+ if(document.project?.copyState&&document.project.copyState!=='ready')return <div className={s.home}><main><Link href="/build">← Projects</Link><p>{document.project.copyState==='failed'?'The project was saved, but its files need another copy attempt. Retry from Projects.':'Copying project files. Return to Projects to check progress or retry.'}</p></main></div>;
  const paper=document.sources.find(source=>source.id===primaryPaperId&&isPaper(source)&&source.includeInBuild!==false)||document.sources.find(source=>isPaper(source)&&source.includeInBuild!==false);
  async function startBuild(instructions=''){
   if(!paper)return;setBuildJob(null);telemetry.track('chat',{action:'build',sourceId:paper.id});
@@ -127,6 +128,19 @@ export default function StudioEditor({id}:{id:string}){
   onProposal:async(proposalId,decision)=>{telemetry.track('review',{action:decision,reviewId:proposalId});return transact('proposals',{proposalId,decision});},
   onSave:flush,onExport:()=>void exportWorkspace(),onManage:flush,onNavigate:async href=>{await flush();window.location.assign(href);},
   onLeave:async()=>{await flush();window.location.assign("/build");},onSource:setSourceId,
+  onProjectAction:async(action,title)=>{
+   if(operation.current)throw new Error('Wait for the current operation to finish.');
+   operation.current=true;setBusy(true);setError('');
+   try{
+    await flush();
+    const result=await studioApi<{workspace:StudioWorkspace}>(`/api/studio/workspaces/${id}/project`,{method:'POST',body:JSON.stringify({action,title,revision:server.current!.revision})});
+    if(action==='fork'){await flush();window.location.assign(`/build/${result.workspace.id}`);return;}
+    const late=pending.current;
+    const next=late?{...mergeStudioUpdate(result.workspace.document,late),title:result.workspace.title,project:result.workspace.document.project}:result.workspace.document;
+    server.current=result.workspace;setWorkspace(result.workspace);setCurrent(next);pending.current=late?next:null;setStatus(late?'Unsaved changes':'Saved');
+    if(late)await flush();
+   }finally{operation.current=false;setBusy(false);}
+  },
  };
  return <div className={s.editor}><Workspace studio={connected}/>{(error||telemetry.deliveryError)&&<div className={s.noticeBar} role="alert">{error||telemetry.deliveryError}<button onClick={downloadUnsaved}>Download local draft</button>{conflict?<><button onClick={()=>window.location.reload()}>Reload server version</button></>:error&&<button onClick={()=>{setError('');if(pending.current)void flush().catch(()=>{});}}>{pending.current?'Retry save':'Dismiss'}</button>}</div>}</div>;
 }

@@ -296,5 +296,14 @@ export function validateStudioDocument(input: unknown): StudioDocument {
   const pipeline=value.pipeline===undefined?undefined:validatePipeline(value.pipeline,"pipeline");
   const discussion=value.discussion===undefined?undefined:validatePipeline(value.discussion,"discussion");
   const acceptedPackage=value.acceptedPackage===undefined?undefined:(()=>{const p=object(value.acceptedPackage,"acceptedPackage");const fingerprint=string(p.modelFingerprint,"acceptedPackage.modelFingerprint",64,true);if(!/^[a-f0-9]{64}$/.test(fingerprint))fail("Invalid accepted package model fingerprint.");const jobId=string(p.jobId,"acceptedPackage.jobId",80,true);if(!/^studio-[0-9a-f-]{73}$/i.test(jobId))fail("Invalid accepted package job ID.");if(p.approvalPending!==undefined&&typeof p.approvalPending!=='boolean')fail("Invalid accepted package approval state.");return {jobId,modelFingerprint:fingerprint,acceptedAt:timestamp(p.acceptedAt,"acceptedPackage.acceptedAt"),...(p.approvalPending?{approvalPending:true}:{})};})();
-  return { ...(programVersions ? {programVersions} : {}), ...(pipeline ? {pipeline} : {}),...(discussion?{discussion}:{}),...(acceptedPackage?{acceptedPackage}:{}), version: 1, title: string(value.title, "document.title", 300, true), model, sources, annotations, conversations, reviewResponses, ...(artifacts ? { artifacts } : {}), ...(activeConversationId ? { activeConversationId } : {}) };
+  const project = value.project === undefined ? undefined : (() => {
+    const p=object(value.project,"project");
+    if(p.archived!==undefined&&typeof p.archived!=="boolean")fail("Invalid archive state.");
+    const fork=p.forkedFrom===undefined?undefined:object(p.forkedFrom,"project.forkedFrom");
+    return { ...(p.archived===undefined?{}:{archived:p.archived as boolean}),
+      ...(p.sampleId===undefined?{}:{sampleId:id(p.sampleId,"project.sampleId")}),
+      ...(p.copyState===undefined?{}:{copyState:oneOf(p.copyState,"project.copyState",["preparing","ready","failed"] as const)}),
+      ...(fork?{forkedFrom:{workspaceId:id(fork.workspaceId,"fork.workspaceId"),revision:integer(fork.revision,"fork.revision",1,Number.MAX_SAFE_INTEGER)}}:{}) };
+  })();
+  return { ...(project?{project}:{}), ...(programVersions ? {programVersions} : {}), ...(pipeline ? {pipeline} : {}),...(discussion?{discussion}:{}),...(acceptedPackage?{acceptedPackage}:{}), version: 1, title: string(value.title, "document.title", 300, true), model, sources, annotations, conversations, reviewResponses, ...(artifacts ? { artifacts } : {}), ...(activeConversationId ? { activeConversationId } : {}) };
 }

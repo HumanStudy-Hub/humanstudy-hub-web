@@ -1,6 +1,9 @@
 import type { StudioDocument } from "@/lib/studio/types";
 
 const messages:Record<string,string>={
+ project_copy_failed:'The project was saved, but its file copy failed. Open Projects and choose Retry file copy.',
+ project_copy_pending:'Finish copying the project files before continuing. Open Projects to retry.',
+ project_copy_too_large:'This project exceeds the 50 MB fork file limit. Export it to keep a complete copy.',
  discussion_busy:'The agent is answering your previous message. Your draft is saved.',
  discussion_not_found:'Could not retrieve this response. Retry the message after the failed launch.',
  proposal_stale_model:'The study changed after this proposal was made. Continue discussing it to get an updated proposal, or set it aside.',

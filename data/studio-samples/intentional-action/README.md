@@ -1,0 +1,3 @@
+Sample: Intentional Action and Side-Effects in Ordinary Language
+
+Source: HumanStudy-Bench/studies/study_005, source commit 50086798df2606ceb0c651b58e4d5ddef523b2b5. Original paper and material files are copied unchanged. Human Program v2 reorganizes the benchmark specification and ground truth into background, hypothesis, participants, conditions, variables, materials, flow, analysis and reported results. Imported scientific claims are marked for checking; vignette quotations are verified against the bundled JSON. Assignment and conflicting question order remain researcher decisions. This is an editable reconstruction, not a newly executed study or an accepted agent build package.

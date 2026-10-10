@@ -1,2 +1,2 @@
-import Workspace from "@/app/build-preview/workspace";
-export default function ExampleStudyPage(){return <Workspace/>;}
+import { redirect } from 'next/navigation';
+export default function ExampleStudyPage(){redirect('/build?sample=intentional-action');}

@@ -50,6 +50,7 @@ type StartInput={sourceId?:string;conversationId:string;requestId:string;text:st
 const promptDocument=(document:StudioDocument)=>{const {programVersions,...current}=document;void programVersions;return current;};
 const promptConversations=(items:StudioDocument['conversations'])=>items.map(c=>({...c,messages:c.messages.map(({proposal,...message})=>{void proposal;return message;})}));
 export async function startPipeline(ctx:StudioContext,w:StudioWorkspace,input:StartInput) {
+ if(w.document.project?.copyState&&w.document.project.copyState!=='ready')throw new StudioError(409,'project_copy_pending');
  if(!studioPipelineConfigured())throw new StudioError(503,'pipeline_setup_required','Configure the original GitHub pipeline token and STUDIO_PIPELINE_REF.');
  const document=validateStudioDocument(w.document),mode=input.intent==='build'?'build':'discuss';
  if(document.conversations.some(c=>c.messages.some(m=>m.id===input.requestId)))return w;
@@ -90,6 +91,7 @@ export async function startPipeline(ctx:StudioContext,w:StudioWorkspace,input:St
 }
 
 export async function startPackageSync(ctx:StudioContext,w:StudioWorkspace,proposalId:string){
+ if(w.document.project?.copyState&&w.document.project.copyState!=='ready')throw new StudioError(409,'project_copy_pending');
  const document=validateStudioDocument(w.document);
  if(active(document.pipeline))throw new StudioError(409,'pipeline_busy');
  const source=choosePaper(ctx,w,document.pipeline?.sourceId);

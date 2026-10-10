@@ -27,8 +27,10 @@ export async function PATCH(request: Request, context: Context) {
     const validated = validateStudioDocument(document);
     const existing = await getWorkspace(ctx,id);
     if(!existing)throw new StudioError(404,"not_found");
+    if(existing.document.project?.copyState&&existing.document.project.copyState!=='ready')throw new StudioError(409,'project_copy_pending');
     // Autosave cannot replace server-owned jobs, accepted package, or proposal
     // decisions. Model edits remain allowed and will stale pending proposals.
+    validated.project=existing.document.project;
     validated.pipeline=existing.document.pipeline;
     validated.discussion=existing.document.discussion;
     validated.acceptedPackage=existing.document.acceptedPackage;

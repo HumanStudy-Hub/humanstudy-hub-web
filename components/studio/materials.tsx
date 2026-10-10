@@ -6,8 +6,8 @@ import type { StudioArtifact } from '@/lib/studio/types';
 import { useT } from '@/app/build-preview/ui';
 import s from './materials.module.css';
 
-export default function Materials({artifacts,onDiscuss}:{artifacts:StudioArtifact[];onDiscuss:(artifact:StudioArtifact)=>void}){
- const t=useT(),[active,setActive]=useState('');
+export default function Materials({artifacts,onDiscuss,activeId}:{activeId?:string;artifacts:StudioArtifact[];onDiscuss:(artifact:StudioArtifact)=>void}){
+ const t=useT(),[active,setActive]=useState(activeId||'');
  const artifact=artifacts.find(item=>item.id===active)||artifacts[0];
  function download(item:StudioArtifact){
   const url=URL.createObjectURL(new Blob([item.content],{type:'text/plain;charset=utf-8'}));

@@ -1,2 +1,2 @@
-/** Saved and example workspaces use the editor chrome; the introduction remains a site page. */
-export const isStudioEditorRoute = (pathname: string) => /^\/build\/[^/]+\/?$/.test(pathname);
+/** The authenticated project directory and study editor use full-window workspace chrome. */
+export const isStudioEditorRoute = (pathname: string) => /^\/build(?:\/[^/]+)?\/?$/.test(pathname);

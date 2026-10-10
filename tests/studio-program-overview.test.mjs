@@ -35,5 +35,5 @@ test('the program overview covers the full scientific arc and routes every examp
  const other={...schema.study,id:'other'};
  assert.equal(overview.modelOverview(other).stages.flatMap(s=>s.nodes).length,other.entities.length);
  assert.equal(route.isStudioEditorRoute('/build/example'),true);assert.equal(route.isStudioEditorRoute('/build/abc'),true);
- assert.equal(route.isStudioEditorRoute('/build'),false);assert.equal(route.isStudioEditorRoute('/dataset'),false);
+ assert.equal(route.isStudioEditorRoute('/build'),true);assert.equal(route.isStudioEditorRoute('/dataset'),false);
 });

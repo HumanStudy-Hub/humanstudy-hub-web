@@ -17,7 +17,7 @@ const noop=()=>{};
 test('actual React renderer shows scoped study choices and repeat/interaction objects',()=>{
  const p=sample('study_012'),model=hp.projectHumanProgram(p);
  const html=renderToStaticMarkup(React.createElement(modelView,{model,selected:'',anchor:null,responses:{},onSelect:noop,onSource:noop,onDiscuss:noop,onRespond:noop}));
- assert.match(html,/Study scope/);assert.match(html,/No History Treatment/);assert.match(html,/Social History Treatment/);assert.match(html,/Send money/);assert.match(html,/Return money/);
+ assert.doesNotMatch(html,/Circle to ask|aria-label="Circle"|Circle selection/);assert.match(html,/Study scope/);assert.match(html,/No History Treatment/);assert.match(html,/Social History Treatment/);assert.match(html,/Send money/);assert.match(html,/Return money/);
  const game=hp.projectHumanProgram(sample('study_009'));
  const gameHtml=renderToStaticMarkup(React.createElement(modelView,{model:game,selected:'',anchor:null,responses:{},onSelect:noop,onSource:noop,onDiscuss:noop,onRespond:noop}));
  assert.match(gameHtml,/Four rounds/);assert.match(gameHtml,/repeat/);assert.match(gameHtml,/Submit a number/);
