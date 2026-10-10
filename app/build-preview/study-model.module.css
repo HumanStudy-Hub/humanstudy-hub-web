@@ -979,3 +979,14 @@
 .programExtensions {margin:18px 24px;font-size:13px;}
 .programExtensions summary {cursor:pointer;}
 .programExtensions pre {white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;}
+
+.viewSwitch {display:inline-flex;gap:0 !important;border:1px solid var(--line);border-radius:6px;overflow:hidden;flex-shrink:0;}
+.viewSwitch button {border-radius:0 !important;padding:4px 10px !important;color:var(--muted);}
+.viewSwitch button+button {border-left:1px solid var(--line);}
+.viewSwitch button[aria-selected="true"] {background:var(--accent-bg);color:var(--accent);font-weight:600;}
+.studyTabs {display:flex;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none;}
+.studyTabs button {max-width:190px;overflow:hidden;text-overflow:ellipsis;color:var(--muted);border-bottom:2px solid transparent;border-radius:0 !important;}
+.studyTabs button[aria-selected="true"] {color:var(--text);border-bottom-color:var(--accent);font-weight:600;}
+.studyTabs button {white-space:nowrap;text-align:left;flex-shrink:0;}
+.compactHeading {padding-bottom:0 !important;}
+.compactHeading h1 {font-size:1.05rem !important;line-height:1.35 !important;margin:0 !important;}

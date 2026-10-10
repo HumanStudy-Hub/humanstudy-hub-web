@@ -1160,6 +1160,73 @@
           "combined_r": 0.53
         }
       }
+    },
+    "presentation": {
+      "conditions": [
+        {
+          "id": "harm",
+          "label": "Harm",
+          "studyIds": [
+            "exp-1",
+            "exp-2"
+          ],
+          "nodeIds": [
+            "material-1-harm",
+            "material-2-harm"
+          ]
+        },
+        {
+          "id": "help",
+          "label": "Help",
+          "studyIds": [
+            "exp-1",
+            "exp-2"
+          ],
+          "nodeIds": [
+            "material-1-help",
+            "material-2-help"
+          ]
+        }
+      ],
+      "screens": [
+        {
+          "stepId": "exp-1-read",
+          "blocks": [
+            {
+              "field": "vignette"
+            }
+          ]
+        },
+        {
+          "stepId": "exp-1-answer",
+          "blocks": [
+            {
+              "field": "questions",
+              "item": 0
+            },
+            {
+              "field": "questions",
+              "item": 1
+            }
+          ]
+        },
+        {
+          "stepId": "exp-2-read",
+          "blocks": [
+            {
+              "field": "vignette"
+            }
+          ]
+        },
+        {
+          "stepId": "exp-2-answer",
+          "blocks": [
+            {
+              "field": "questions"
+            }
+          ]
+        }
+      ]
     }
   }
 }

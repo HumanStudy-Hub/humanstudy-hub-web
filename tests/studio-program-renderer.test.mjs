@@ -12,7 +12,9 @@ const sample=id=>structuredClone(fixtures.cases.find(c=>c.id===id).program);
 const css={default:new Proxy({},{get:(_,key)=>String(key)})};
 const details=load('components/studio/program-details.tsx',{'@/lib/studio/human-program':hp,'./program-details.module.css':css}).default;
 const schema=load('app/build-preview/study-schema.ts'),review=load('app/build-preview/model-review.ts',{'./study-schema':schema}),diff=load('lib/studio/model-diff.ts'),ui=load('app/build-preview/ui.tsx');
-const modelView=load('app/build-preview/study-model.tsx',{'./study-schema':schema,'./model-review':review,'./study-model.module.css':css,'./ui':ui,'@/components/studio/program-details':{default:details},'@/lib/studio/human-program':hp,'@/lib/studio/model-diff':diff,'@/components/studio/materials':{default:()=>null}}).default;
+const programView=load('lib/studio/program-view.ts',{'./human-program':hp});
+const views=load('components/studio/program-views.tsx',{'@/lib/studio/human-program':hp,'@/lib/studio/program-view':programView,'./program-views.module.css':css});
+const modelView=load('app/build-preview/study-model.tsx',{'@/components/studio/program-views':views,'@/lib/studio/program-view':programView,'./study-schema':schema,'./model-review':review,'./study-model.module.css':css,'./ui':ui,'@/components/studio/program-details':{default:details},'@/lib/studio/human-program':hp,'@/lib/studio/model-diff':diff,'@/components/studio/materials':{default:()=>null}}).default;
 const noop=()=>{};
 test('actual React renderer shows scoped study choices and repeat/interaction objects',()=>{
  const p=sample('study_012'),model=hp.projectHumanProgram(p);
