@@ -12,7 +12,9 @@ const sample=id=>structuredClone(fixtures.cases.find(c=>c.id===id).program);
 const css={default:new Proxy({},{get:(_,key)=>String(key)})};
 const details=load('components/studio/program-details.tsx',{'@/lib/studio/human-program':hp,'./program-details.module.css':css}).default;
 const schema=load('app/build-preview/study-schema.ts'),review=load('app/build-preview/model-review.ts',{'./study-schema':schema}),diff=load('lib/studio/model-diff.ts'),ui=load('app/build-preview/ui.tsx');
-const modelView=load('app/build-preview/study-model.tsx',{'./study-schema':schema,'./model-review':review,'./study-model.module.css':css,'./ui':ui,'@/components/studio/program-details':{default:details},'@/lib/studio/human-program':hp,'@/lib/studio/model-diff':diff,'@/components/studio/materials':{default:()=>null}}).default;
+const views=load('lib/studio/program-views.ts');
+const visuals=load('components/studio/program-visuals.tsx',{'@/lib/studio/program-views':views,'./program-visuals.module.css':css}).default;
+const modelView=load('app/build-preview/study-model.tsx',{'./study-schema':schema,'./model-review':review,'./study-model.module.css':css,'./ui':ui,'@/components/studio/program-details':{default:details},'@/lib/studio/human-program':hp,'@/lib/studio/model-diff':diff,'@/components/studio/materials':{default:()=>null},'@/components/studio/program-visuals':{default:visuals}}).default;
 const noop=()=>{};
 test('actual React renderer shows scoped study choices and repeat/interaction objects',()=>{
  const p=sample('study_012'),model=hp.projectHumanProgram(p);
@@ -49,4 +51,22 @@ test('an unmatched PDF quote can be reviewed on its page without claiming a veri
  p.evidence.push({id:'e2',path:'supplement.docx',locator:{pointer:'/paragraph/5'},quote:'Supplement'});
  p.nodes[0].fields[0].evidenceIds=['e2'];evidence=undefined;walk(details({program:p,id:'coding',onDiscuss:noop,onInspect:noop,onSource:(_,e)=>evidence=e}));
  assert.equal(evidence,undefined);
+});
+
+test('all three views render the live audit program with preserved anchors and shared paths',()=>{
+ const p=JSON.parse(fs.readFileSync(new URL('../components/studio/design-cases/mobile-internet.json',import.meta.url),'utf8'));
+ const model=hp.projectHumanProgram(p),base={model,selected:'',anchor:null,responses:{},onSelect:noop,onSource:noop,onDiscuss:noop,onRespond:noop};
+ const flow=renderToStaticMarkup(React.createElement(modelView,{...base,initialView:'flow'}));
+ for(const step of p.steps)assert.equal(flow.split(`data-model-id="flow:${step.id}"`).length-1,1);
+ for(const node of p.nodes)assert(flow.includes(`data-model-id="${node.id}"`));
+ assert.match(flow,/data-flow-from="step_phase1_intervention_block" data-flow-to="step_phase1_sms_loop"/);
+ assert.match(flow,/Experimental flow/);
+ const paths=renderToStaticMarkup(React.createElement(modelView,{...base,initialView:'paths'}));
+ assert.match(paths,/Condition branch/);assert.match(paths,/aria-pressed="true"/);
+ const compare=renderToStaticMarkup(React.createElement(modelView,{...base,initialView:'compare'}));
+ assert.match(compare,/First condition/);assert.match(compare,/Second condition/);assert.match(compare,/Shared start/);assert.match(compare,/Shared continuation/);
+ assert.equal((compare.match(/data-model-id="flow:step_t2_survey"/g)||[]).length,1);
+ const unknown=hp.projectHumanProgram(sample('exploratory-extension'));
+ const html=renderToStaticMarkup(React.createElement(modelView,{...base,model:unknown,initialView:'compare'}));
+ assert.match(html,/execution flow has not been mapped/);assert.match(html,/Other details/);
 });

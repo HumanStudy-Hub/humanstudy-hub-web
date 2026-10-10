@@ -979,3 +979,9 @@
 .programExtensions {margin:18px 24px;font-size:13px;}
 .programExtensions summary {cursor:pointer;}
 .programExtensions pre {white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;}
+
+.viewSwitch{display:flex;gap:3px;background:var(--surface-subtle,#f4f7f8);padding:3px;border-radius:6px}
+.toolbar .viewSwitch button{padding:5px 14px;min-width:70px;font-size:var(--text-xs,.75rem);color:var(--muted);border-radius:4px}
+.toolbar .viewSwitch button[aria-pressed=true]{color:var(--accent);background:var(--surface);box-shadow:0 1px 3px #00000008}
+.overviewHeading h1{font-size:var(--text-lg,1.125rem);line-height:1.45}
+.overviewHeading{padding:16px 20px 10px}
