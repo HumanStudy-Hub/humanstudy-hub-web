@@ -339,6 +339,27 @@
   color: var(--muted);
   min-width: 48px;
 }
+.branch {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.alternatives {
+  display: grid;
+  gap: 8px;
+  position: relative;
+}
+.alternative {
+  border-top: 3px solid var(--tone, var(--line));
+  background: var(--tone-bg, transparent);
+  border-radius: 8px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  transition: opacity 0.15s;
+}
 .container {
   position: relative;
   border: 1.5px dashed var(--accent-line);

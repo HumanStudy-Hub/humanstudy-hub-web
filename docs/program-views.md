@@ -5,7 +5,7 @@ to compare them on real programs without signing in. Nothing is saved there.
 
 | View | Question it answers | Built from |
 |---|---|---|
-| Flow | In what order do things happen, who does each step, and where do conditions split? | `steps` (order from `next`, nesting from `children`), actors as swimlanes, condition materials as coloured lanes |
+| Flow | In what order do things happen, who does each step, and where do conditions split? | `steps` (order from `next`, nesting from `children`), actors as swimlanes, `branch` alternatives as side-by-side arm columns, condition materials as coloured lanes |
 | Compare | What actually differs between conditions (or between studies)? | Aligned rows per arm. Identical rows collapse and differing words are marked |
 | Screens | What does one participant see, screen by screen? | Only `verbatim` fields and transcribed questions. Unresolved step rules show as amber gaps |
 | Outline | The previous card overview | unchanged |
@@ -15,8 +15,10 @@ write new scientific text.
 
 ## `extensions.presentation` (written by the build agent)
 
-The views work without this block: conditions are inferred from a design or manipulation
-field that lists condition labels, and screens are inferred from each step's visible inputs.
+The views work without this block. Conditions come, in order of preference, from this block,
+from `branch` steps (each alternative is an arm; a later branch, such as a crossover's second
+phase, joins the arms only when every alternative carries exactly one arm's label before the
+colon), or from a design or manipulation field that lists condition labels, and screens are inferred from each step's visible inputs.
 That inference is fragile, though. In the Knobe sample it puts the vignette and both questions
 on one screen. The build agent already reads the paper, so it can state the presentation
 directly:

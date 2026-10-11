@@ -60,3 +60,16 @@ test('every view renders the fixture programs without throwing',()=>{
  assert.match(render(knobe(),'flow','exp-1'),/splits into/);
  assert.match(render(sample('study_012'),'compare','exp-1'),/No History Treatment/);
 });
+
+test('branch steps become arms, a crossover branch joins them by label, and manipulation checks do not split',()=>{
+ const p=JSON.parse(fs.readFileSync(new URL('../components/studio/design-cases/mobile-internet.json',import.meta.url),'utf8'));
+ const arms=pv.conditionArms(p,'study1_rct');
+ assert.deepEqual(arms.map(a=>[a.label,a.source,a.stepIds]),[['Intervention arm','branch',['step_phase1_intervention_block','step_phase2_intervention_release']],['Delayed Intervention arm','branch',['step_phase1_delayed_normal','step_phase2_delayed_block']]]);
+ const flow=pv.flatFlow(pv.studyFlow(p,'study1_rct')).map(f=>f.item);
+ assert.deepEqual(flow.filter(i=>i.splits).map(i=>i.step.id),['step_randomize','step_phase1_branch','step_phase2_branch']);
+ const ids=pv.studyScreens(p,'study1_rct',arms[1]).map(s=>s.step.id);
+ assert.ok(ids.includes('step_phase2_delayed_block')&&!ids.includes('step_phase1_intervention_block'));
+ const rows=pv.compareRows(p,arms).filter(r=>!r.same);
+ assert.deepEqual(rows.map(r=>r.label),['Phase 1 (weeks 1-2) condition branch','Phase 2 (weeks 3-4) condition branch (roles swap)']);
+ assert.doesNotThrow(()=>render(p,'flow','study1_rct'));
+});

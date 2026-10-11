@@ -5,6 +5,7 @@ import type { ModelAnchor, ReviewResponse } from "../model-review";
 import { projectHumanProgram, type HumanProgram } from "@/lib/studio/human-program";
 import sample from "@/data/studio-samples/intentional-action/program.json";
 import fixtures from "@/tests/fixtures/human-program-v2.json";
+import mobile from "@/components/studio/design-cases/mobile-internet.json";
 import w from "../workspace.module.css";
 import s from "./views.module.css";
 
@@ -15,6 +16,7 @@ const fixture=(id:string)=>(fixtures as unknown as {cases:{id:string;program:Hum
 const cases:{id:string;label:string;note:string;program:()=>HumanProgram}[]=[
  {id:"knobe",label:"Knobe 2003 · agent presentation",note:"Two experiments × harm/help. The build agent declared the conditions and which verbatim fields appear on each screen.",program:()=>knobe},
  {id:"knobe-inferred",label:"Knobe 2003 · inferred only",note:"Same program with extensions.presentation removed: conditions and screens are inferred from field names. Compare against the agent version.",program:withoutPresentation},
+ {id:"mobile",label:"Castelo et al. 2025 · crossover RCT",note:"A real Build Study output (also in Codex's review). Conditions are branch steps; the second branch swaps the arms. Unreviewed agent output, not an approved study.",program:()=>mobile as unknown as HumanProgram},
  {id:"trust",label:"Berg et al. 1995 · two roles",note:"Two actors (Room A, Room B) with sequential visibility; the treatments are separate studies, so Compare switches to studies.",program:()=>fixture("study_012")},
  {id:"beauty",label:"Nagel 1995 · repeated game",note:"A repeat container with a nested interaction step.",program:()=>fixture("study_009")},
 ];

@@ -6,8 +6,8 @@ import { programText } from './human-program';
  * An agent may author `extensions.presentation` to state conditions and screens explicitly;
  * without it, conditions and screens are inferred conservatively from the program. */
 
-export type Arm = { id:string; label:string; nodeIds:string[]; studyId?:string; tone:number; source:'agent'|'design'|'study' };
-export type FlowItem = { step:ProgramStep; children:FlowItem[]; lanes:{arm:Arm;nodeIds:string[]}[]; shared:string[]; splits:boolean };
+export type Arm = { id:string; label:string; nodeIds:string[]; stepIds?:string[]; studyId?:string; tone:number; source:'agent'|'branch'|'design'|'study' };
+export type FlowItem = { step:ProgramStep; children:FlowItem[]; lanes:{arm:Arm;nodeIds:string[]}[]; shared:string[]; splits:boolean; arm?:Arm };
 export type ScreenBlock =
  | { type:'text'; nodeId:string; fieldId:string; text:string; origin:ProgramField['origin'] }
  | { type:'question'; nodeId:string; fieldId:string; text:string; options:string[]; scale:boolean; origin:ProgramField['origin'] }
@@ -25,6 +25,8 @@ export type ProgramPresentation = {
 const isRecord=(v:unknown):v is Record<string,JsonValue>=>Boolean(v)&&typeof v==='object'&&!Array.isArray(v);
 const tokens=(s:string)=>s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 const inStudy=(n:{studyIds:string[]},studyId:string)=>!n.studyIds.length||n.studyIds.includes(studyId);
+/** A variable whose role is the assigned condition. A "manipulation check" is an outcome, not a manipulation. */
+const isManipulation=(n:ProgramNode)=>n.kind==='variable'&&n.fields.some(f=>{const role=programText(f.value);return f.id==='role'&&/manipulat|assignment factor|independent variable|between[- ]subjects (factor|condition)/i.test(role)&&!/check/i.test(role);});
 
 export function presentation(program:HumanProgram):ProgramPresentation {
  const raw=program.extensions?.presentation;
@@ -36,12 +38,35 @@ export function presentation(program:HumanProgram):ProgramPresentation {
  return {...(conditions?.length?{conditions}:{}),...(screens?.length?{screens}:{})};
 }
 
-/** Between-condition arms of one study. Agent-declared conditions win; otherwise the arms come
- * from a design/manipulation field listing condition labels, matched to nodes by name. */
+const armLabel=(title:string)=>{const i=title.indexOf(':');return i>0&&i<=40?title.slice(0,i).trim():title;};
+/** Arms from `branch` steps. The first branch's alternatives are the arms. A later branch joins
+ * them only when each of its alternatives carries exactly one arm's label (a crossover's
+ * "Intervention arm: …" in both phases); otherwise it stays unmapped rather than guessed. */
+function branchArms(program:HumanProgram,studyId:string):Arm[] {
+ const steps=new Map(program.steps.map(s=>[s.id,s]));
+ const alternatives=(b:ProgramStep)=>b.children.map(id=>steps.get(id)).filter((x):x is ProgramStep=>Boolean(x));
+ const branches=flatFlow(studyFlow(program,studyId,[])).map(f=>f.item.step).filter(s=>s.kind==='branch'&&alternatives(s).length>=2);
+ if(!branches.length)return [];
+ const first=alternatives(branches[0]),labels=first.map(s=>armLabel(s.title));
+ const unique=new Set(labels.map(l=>l.toLowerCase())).size===labels.length;
+ const arms:Arm[]=first.map((alt,tone)=>({id:alt.id,label:unique?labels[tone]:alt.title,studyId,tone,source:'branch',stepIds:[alt.id],nodeIds:[]}));
+ for(const b of branches.slice(1)){
+  const later=alternatives(b),match=later.map(s=>arms.filter(a=>a.label.toLowerCase()===armLabel(s.title).toLowerCase()));
+  if(later.length===arms.length&&match.every(m=>m.length===1)&&new Set(match.map(m=>m[0].id)).size===arms.length)later.forEach((s,i)=>match[i][0].stepIds!.push(s.id));
+ }
+ // An arm's own nodes are the ones only its alternatives use.
+ const used=arms.map(a=>new Set(a.stepIds!.flatMap(id=>{const s=steps.get(id)!;return [...s.inputIds,...s.visibleIds];})));
+ return arms.map((a,i)=>({...a,nodeIds:[...used[i]].filter(id=>used.every((o,j)=>j===i||!o.has(id)))}));
+}
+
+/** Between-condition arms of one study. Agent-declared conditions win, then `branch` steps;
+ * otherwise the arms come from a design/manipulation field listing condition labels, matched to nodes by name. */
 export function conditionArms(program:HumanProgram,studyId:string):Arm[] {
  const declared=presentation(program).conditions;
  if(declared)return declared.filter(c=>!c.studyIds?.length||c.studyIds.includes(studyId)).map((c,tone)=>({id:c.id,label:c.label,nodeIds:c.nodeIds.filter(id=>{const n=program.nodes.find(n=>n.id===id);return n&&inStudy(n,studyId);}),studyId,tone,source:'agent'}));
- const listed=program.nodes.filter(n=>inStudy(n,studyId)&&(n.kind==='design'||n.kind==='variable')).flatMap(n=>n.fields.filter(f=>Array.isArray(f.value)&&(/condition|arm|treatment|level/i.test(`${f.id} ${f.label}`)||n.kind==='variable'&&n.fields.some(r=>r.id==='role'&&/manipulat/i.test(programText(r.value))))).map(f=>(f.value as JsonValue[]).filter((v):v is string=>typeof v==='string')))
+ const branched=branchArms(program,studyId);
+ if(branched.length)return branched;
+ const listed=program.nodes.filter(n=>inStudy(n,studyId)&&(n.kind==='design'||n.kind==='variable')).flatMap(n=>n.fields.filter(f=>Array.isArray(f.value)&&(/condition|arm|treatment|level/i.test(`${f.id} ${f.label}`)||isManipulation(n))).map(f=>(f.value as JsonValue[]).filter((v):v is string=>typeof v==='string')))
   .find(labels=>labels.length>=2&&labels.length<=8);
  if(!listed)return [];
  const specific=program.nodes.filter(n=>inStudy(n,studyId)&&!['design','variable','background','hypothesis','analysis','result'].includes(n.kind));
@@ -61,14 +86,20 @@ export function studyFlow(program:HumanProgram,studyId:string,arms:Arm[]=conditi
  const queue=[...top.filter(s=>!targets.has(s.id)),...top];
  while(queue.length){const s=queue.shift()!;if(seen.has(s.id)||nested.has(s.id))continue;seen.add(s.id);order.push(s);queue.unshift(...s.next.map(e=>byId.get(e.to)).filter((x):x is ProgramStep=>Boolean(x)));}
  const armNodes=new Set(arms.flatMap(a=>a.nodeIds));
- const manipulations=new Set(program.nodes.filter(n=>n.kind==='variable'&&n.fields.some(f=>f.id==='role'&&/manipulat/i.test(programText(f.value)))).map(n=>n.id));
+ const manipulations=new Set(program.nodes.filter(isManipulation).map(n=>n.id));
+ const armOf=new Map(arms.flatMap(a=>(a.stepIds??[]).map(id=>[id,a] as const)));
  const item=(step:ProgramStep,path:Set<string>):FlowItem=>{
   const shown=[...new Set([...step.inputIds,...step.visibleIds])];
   const lanes=arms.map(arm=>({arm,nodeIds:shown.filter(id=>arm.nodeIds.includes(id))}));
-  return {step,lanes:lanes.filter(l=>l.nodeIds.length).length>=2?lanes:[],shared:shown.filter(id=>!armNodes.has(id)&&!manipulations.has(id)),splits:arms.length>=2&&step.outputIds.some(id=>manipulations.has(id)),
+  return {step,lanes:lanes.filter(l=>l.nodeIds.length).length>=2?lanes:[],shared:shown.filter(id=>!armNodes.has(id)&&!manipulations.has(id)),splits:arms.length>=2&&(step.outputIds.some(id=>manipulations.has(id))||step.kind==='branch'&&step.children.some(id=>armOf.has(id))),...(armOf.has(step.id)?{arm:armOf.get(step.id)}:{}),
    children:step.children.filter(id=>!path.has(id)).map(id=>byId.get(id)).filter((x):x is ProgramStep=>Boolean(x)).map(child=>item(child,new Set([...path,step.id])))};
  };
  return order.map(step=>item(step,new Set([step.id])));
+}
+/** One arm's path: the other arms' branch alternatives are dropped. */
+export function armPath(items:FlowItem[],arm?:Arm):FlowItem[] {
+ if(!arm?.stepIds)return items;
+ return items.filter(i=>!i.arm||arm.stepIds!.includes(i.step.id)).map(i=>({...i,children:armPath(i.children,arm)}));
 }
 export function flatFlow(items:FlowItem[],depth=0):{item:FlowItem;depth:number}[] { return items.flatMap(item=>[{item,depth},...flatFlow(item.children,depth+1)]); }
 
@@ -94,7 +125,7 @@ function blocksFor(node:ProgramNode,field:ProgramField,item?:number):ScreenBlock
 /** What one participant in `arm` sees, step by step. Only verbatim text and transcribed
  * questions are shown; unresolved step rules become visible gaps, never filler text. */
 export function studyScreens(program:HumanProgram,studyId:string,arm?:Arm):Screen[] {
- const arms=conditionArms(program,studyId),flow=flatFlow(studyFlow(program,studyId,arms));
+ const arms=conditionArms(program,studyId),flow=flatFlow(armPath(studyFlow(program,studyId,arms),arm));
  const authored=new Map((presentation(program).screens??[]).map(s=>[s.stepId,s.blocks]));
  const otherArms=new Set(arms.filter(a=>a.id!==arm?.id).flatMap(a=>a.nodeIds));
  const nodes=new Map(program.nodes.map(n=>[n.id,n])),shown=new Set<string>();
@@ -131,9 +162,10 @@ export function compareRows(program:HumanProgram,arms:Arm[]):CompareRow[] {
  const rows=new Map<string,CompareRow>();
  const put=(key:string,group:string,label:string,armId:string,text:string,nodeId?:string)=>{const row=rows.get(key)??{key,group,label,cells:[],same:false};row.cells.push({armId,text,...(nodeId?{nodeId}:{})});rows.set(key,row);};
  const names=(ids:string[])=>ids.map(id=>program.nodes.find(n=>n.id===id)?.title??id).join(', ');
+ const branchOf=(id:string)=>program.steps.find(s=>s.kind==='branch'&&s.children.includes(id));
  for(const arm of arms){
   const studyId=arm.studyId??program.studies[0]?.id;
-  if(studyId)flatFlow(studyFlow(program,studyId)).forEach(({item},i)=>put(`step:${i}`,'Procedure',`Step ${i+1}`,arm.id,[item.step.title,item.step.actorIds.length?`by ${names(item.step.actorIds)}`:'',item.step.rule&&item.step.rule.value!==null?`${item.step.rule.label}: ${programText(item.step.rule.value)}`:''].filter(Boolean).join(' · '),`flow:${item.step.id}`));
+  if(studyId)flatFlow(armPath(studyFlow(program,studyId),arm)).forEach(({item},i)=>put(`step:${i}`,'Procedure',item.arm?branchOf(item.step.id)?.title??`Step ${i+1}`:`Step ${i+1}`,arm.id,[item.step.title,item.step.actorIds.length?`by ${names(item.step.actorIds)}`:'',item.step.rule&&item.step.rule.value!==null?`${item.step.rule.label}: ${programText(item.step.rule.value)}`:''].filter(Boolean).join(' · '),`flow:${item.step.id}`));
   for(const id of arm.nodeIds){
    const n=program.nodes.find(n=>n.id===id);if(!n)continue;
    const base=baseTitle(n,arm);

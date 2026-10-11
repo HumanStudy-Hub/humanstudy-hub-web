@@ -26,7 +26,7 @@ export default function ProgramViews(props:Props){
    <span className={s.barLabel}>{view==='screens'?'Show as':'Conditions'}</span>
    {view==='flow'&&<button aria-pressed={!arm} onClick={()=>setFocusArm('')}>All</button>}
    {arms.map(a=><button key={a.id} className={s.armChip} data-tone={a.tone} aria-pressed={view==='screens'?(arm??arms[0]).id===a.id:arm?.id===a.id} onClick={()=>setFocusArm(view==='flow'&&focusArm===a.id?'':a.id)}><i/>{a.label}</button>)}
-   <small className={s.provenance} title={arms[0].source==='agent'?'Declared by the build agent in extensions.presentation':'Inferred from the design fields; ask the agent to declare conditions explicitly'}>{arms[0].source==='agent'?'declared':'inferred'}</small>
+   <small className={s.provenance} title={{agent:'Declared by the build agent in extensions.presentation',branch:'Read from the branch steps in the procedure',design:'Inferred from the design fields; ask the agent to declare conditions explicitly',study:''}[arms[0].source]}>{{agent:'declared',branch:'from branch steps',design:'inferred',study:''}[arms[0].source]}</small>
   </div>}
   {view==='flow'&&<FlowView {...props} arms={arms} focus={arm}/>}
   {view==='compare'&&<CompareView {...props} arms={arms}/>}
@@ -91,12 +91,14 @@ function FlowStep({item,props,focus,node,depth,render}:{item:FlowItem;props:Prop
   <Issue ids={props.issuesFor(id)} onIssue={props.onIssue}/>
   {rule&&<p className={s.rule}>{rule}</p>}
   {step.rule&&step.rule.value===null&&<p className={s.gapLine}>{step.rule.label}: not specified</p>}
-  {item.splits&&<ArmHeads arms={conditionArms(props.program,props.studyId)} focus={focus}/>}
+  {item.splits&&step.kind!=='branch'&&<ArmHeads arms={conditionArms(props.program,props.studyId)} focus={focus}/>}
   {item.lanes.length>0&&<div className={s.lanes} style={{gridTemplateColumns:`repeat(${item.lanes.length},minmax(0,1fr))`}}>{item.lanes.map(l=><div key={l.arm.id} className={`${s.lane} ${focus&&focus.id!==l.arm.id?s.dim:''}`} data-tone={l.arm.tone}><span className={s.laneLabel}><i/>{l.arm.label}</span>{l.nodeIds.map(nid=><Chip key={nid} node={node(nid)} props={props} tone={l.arm.tone}/>)}</div>)}</div>}
   {item.shared.length>0&&<div className={s.io}><span>{step.visibleIds.length?'Sees':'Uses'}</span>{item.shared.map(nid=><Chip key={nid} node={node(nid)} props={props}/>)}</div>}
   {records.length>0&&<div className={s.io}><span>Records</span>{records.map(n=><Chip key={n.id} node={n} props={props}/>)}</div>}
  </div>;
  if(!item.children.length)return card;
+ // Branch alternatives run side by side, one column per arm; the shared continuation follows below.
+ if(step.kind==='branch'&&item.children.length>=2)return <div className={s.branch}>{card}<div className={s.alternatives} style={{gridTemplateColumns:`repeat(${item.children.length},minmax(0,1fr))`}}>{item.children.map(child=><div key={child.step.id} className={`${s.alternative} ${focus&&child.arm&&focus.id!==child.arm.id?s.dim:''}`} data-tone={child.arm?.tone}>{child.arm&&<span className={s.laneLabel}><i/>{child.arm.label}</span>}{render([child],depth+1)}</div>)}</div></div>;
  return <div className={s.container} data-kind={step.kind}>{card}<div className={s.nested}>{render(item.children,depth+1)}</div>{step.kind==='repeat'&&<span className={s.loopBack} aria-hidden>↻ repeat</span>}</div>;
 }
 const kindMark:Record<string,string>={action:'▸',sequence:'⋯',repeat:'↻',branch:'⑂',parallel:'⫴',interaction:'⇄',custom:'◆'};
@@ -161,7 +163,7 @@ function ScreensView(props:Props&{arms:Arm[];arm?:Arm}){
    const step=screen.step,id=`flow:${step.id}`,issues=props.issuesFor(id);
    const flow=flatFlow(studyFlow(program,studyId,arms)).find(f=>f.item.step.id===step.id)?.item;
    if(flow?.splits)return <div key={step.id} className={s.assignment}><button onClick={e=>props.onPick(id,e.shiftKey)}>{step.title}</button>{arm?<b data-tone={arm.tone}><i/>{arm.label}</b>:null}<small>not shown to participant</small><Issue ids={[...issues,...program.nodes.filter(n=>n.kind==='design'&&(!n.studyIds.length||n.studyIds.includes(studyId))).flatMap(n=>props.issuesFor(n.id))]} onIssue={props.onIssue}/></div>;
-   if(step.children.length&&!screen.blocks.some(b=>b.type!=='records'))return <div key={step.id} className={s.loopHead} style={{marginLeft:screen.depth*14}}><button onClick={e=>props.onPick(id,e.shiftKey)}>↻ {step.title}{step.rule&&step.rule.value!==null?` · ${step.rule.label} ${programText(step.rule.value)}`:''}</button></div>;
+   if(step.children.length&&!screen.blocks.some(b=>b.type!=='records'))return <div key={step.id} className={s.loopHead} style={{marginLeft:screen.depth*14}}><button onClick={e=>props.onPick(id,e.shiftKey)}>{kindMark[step.kind]??'•'} {step.title}{step.rule&&step.rule.value!==null?` · ${step.rule.label} ${programText(step.rule.value)}`:''}</button></div>;
    number++;
    const peer=other[i];
    return <article key={step.id} className={`${s.screen} ${props.selectedIds.includes(id)?s.picked:''}`} style={{marginLeft:screen.depth*14}} data-model-id={id}>
