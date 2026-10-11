@@ -8,12 +8,15 @@ import { useT } from "./ui";
 import { programText } from "@/lib/studio/human-program";
 import ProgramDetails from "@/components/studio/program-details";
 import Materials from "@/components/studio/materials";
-import ProgramViews,{viewStudies,type ProgramViewKind} from "@/components/studio/program-views";
+import ProgramViews,{viewStudies} from "@/components/studio/program-views";
 import { conditionArms } from "@/lib/studio/program-view";
+import { programView as parseView, type ProgramView } from "@/lib/studio/program-views";
 import type { StudioArtifact } from "@/lib/studio/types";
 import { modelChanges } from "@/lib/studio/model-diff";
 
 type Props = {
+  initialView?: ProgramView;
+  onViewChange?: (view: ProgramView) => void;
   workspaceActions?:ReactNode;
   focusArtifactId?:string;
   onClearArtifactFocus?:()=>void;
@@ -31,7 +34,7 @@ type Props = {
   onRespond: (id: string, text: string) => void;
 };
 
-export default function StudyModel({ focusArtifactId, onClearArtifactFocus, workspaceActions, model, previewModel, artifacts=[], onDiscussArtifact, selected, anchor, responses, onSelect, onSource, onDiscuss }: Props) {
+export default function StudyModel({ initialView, onViewChange, focusArtifactId, onClearArtifactFocus, workspaceActions, model, previewModel, artifacts=[], onDiscussArtifact, selected, anchor, responses, onSelect, onSource, onDiscuss }: Props) {
   const approvedModel=model||exampleStudy;
   const study=previewModel||approvedModel;
   const preview=previewModel?modelChanges(approvedModel,previewModel):null;
@@ -47,11 +50,12 @@ export default function StudyModel({ focusArtifactId, onClearArtifactFocus, work
   const showingMaterials=Boolean(focusArtifactId)||materialsOpen;
   const [reviewOpen, setReviewOpen] = useState(false);
   const [inspect, setInspect] = useState(false);
-  const [view,setView]=useState<ProgramViewKind|"outline">("flow");
-  useEffect(()=>{let saved:string|null=null;try{saved=localStorage.getItem("studio-program-view");}catch{}if(saved==="flow"||saved==="compare"||saved==="screens"||saved==="outline"){const next:ProgramViewKind|"outline"=saved;Promise.resolve().then(()=>setView(next));}},[]);
-  const chooseView=(next:ProgramViewKind|"outline")=>{setView(next);try{localStorage.setItem("studio-program-view",next);}catch{}};
+  // A linked view (initialView) wins; otherwise the reader's last choice is restored.
+  const [view,setView]=useState<ProgramView>(initialView??"flow");
+  useEffect(()=>{if(initialView)return;let saved:string|null=null;try{saved=localStorage.getItem("studio-program-view");}catch{}if(saved){const next=parseView(saved);Promise.resolve().then(()=>setView(next));}},[initialView]);
+  const chooseView=(next:ProgramView)=>{setView(next);onViewChange?.(next);try{localStorage.setItem("studio-program-view",next);}catch{}};
   const drawable=study.program?viewStudies(study.program):[];
-  const programView=study.program&&view!=="outline"&&study.program.steps.length>0?view:null;
+  const programView=study.program&&view!=="outline"?view:null;
   const viewStudy=drawable.find(item=>item.id===studyScope)?.id??drawable[0]?.id??"";
   const t=useT();
   const canvas = useRef<HTMLDivElement>(null);
@@ -62,14 +66,19 @@ export default function StudyModel({ focusArtifactId, onClearArtifactFocus, work
 
   useEffect(()=>{
     if(!anchor?.entityIds[0])return;
-    const frame=requestAnimationFrame(()=>scroll.current?.querySelector<HTMLElement>(`[data-model-id="${anchor.entityIds[0]}"]`)?.scrollIntoView({block:"nearest",behavior:"smooth"}));
+    const frame=requestAnimationFrame(()=>{
+      const target=scroll.current?.querySelector<HTMLElement>(`[data-model-id="${anchor.entityIds[0]}"]`);
+      let parent=target?.parentElement;
+      while(parent&&parent!==scroll.current){if(parent instanceof HTMLDetailsElement)parent.open=true;parent=parent.parentElement;}
+      target?.scrollIntoView({block:"nearest",behavior:"smooth"});
+    });
     return()=>cancelAnimationFrame(frame);
   },[anchor,study.entities]);
 
-  function pick(id: string, extend = false) {
+  function pick(id: string, extend = false, showDetails = false) {
     const ids = extend ? selectedIds.includes(id) ? selectedIds.filter(v => v !== id) : [...selectedIds, id] : [id];
     onSelect(ids.length ? { kind: "objects", entityIds: ids } : null);
-    setInspect(ids.length>0);
+    setInspect(ids.length>0&&showDetails);
   }
   function openIssue(id: string) {
     const next = reviewIssues.find(i => i.id === id)!;
@@ -85,14 +94,14 @@ export default function StudyModel({ focusArtifactId, onClearArtifactFocus, work
     <header className={s.heading}><div><strong>{t("Human Program")}</strong></div><div className={s.headerActions}>{onDiscussArtifact&&<button aria-pressed={showingMaterials} onClick={()=>{onClearArtifactFocus?.();setMaterialsOpen(!showingMaterials);}}>{t("Materials")} <span>{artifacts.length}</span></button>}<button className={s.needsInput} aria-expanded={reviewOpen} onClick={() => {onClearArtifactFocus?.();setMaterialsOpen(false);setReviewOpen(!reviewOpen);}}><span>{needsInput.length}</span> {t("Questions")}</button>{workspaceActions}</div></header>
     {showingMaterials&&onDiscussArtifact?<Materials key={focusArtifactId||'materials'} activeId={focusArtifactId} artifacts={artifacts} onDiscuss={onDiscussArtifact}/>:<>
     <div className={s.toolbar}>
-      {study.program&&study.program.steps.length>0?<div className={s.viewSwitch} role="tablist" aria-label="Program view">{([["flow","Flow"],["compare","Compare"],["screens","Screens"],["outline","Outline"]] as const).map(([id,label])=><button key={id} role="tab" aria-selected={view===id} onClick={()=>{chooseView(id);setInspect(false);onSelect(null);scroll.current?.scrollTo({top:0});}}>{t(label)}</button>)}</div>
+      {study.program?<div className={s.viewSwitch} role="tablist" aria-label="Program view">{([["flow","Flow"],["compare","Compare"],["screens","Screens"],["outline","Outline"]] as const).map(([id,label])=><button key={id} role="tab" data-event={`program.view.${id}`} aria-selected={view===id} onClick={()=>{chooseView(id);setInspect(false);onSelect(null);scroll.current?.scrollTo({top:0});}}>{t(label)}</button>)}</div>
       :<button title={t("Return to full study overview")} aria-label={t("Return to full study overview")} onClick={() => { onSelect(null); setReviewOpen(false); scroll.current?.scrollTo({ top: 0, behavior: "smooth" }); }}>{t("Overview")}</button>}
       {study.program&&(programView?drawable.length>1&&(programView!=="compare"||conditionArms(study.program,viewStudy).length>=2):study.program.studies.length>1)&&<div className={s.studyTabs} role="tablist" aria-label="Study scope">{!programView&&<button role="tab" aria-selected={!studyScope} onClick={()=>{setActiveStudy("");setInspect(false);onSelect(null);}}>{t("All studies")}</button>}{(programView?drawable:study.program.studies).map(scope=><button key={scope.id} role="tab" title={scope.title} aria-selected={(programView?viewStudy:studyScope)===scope.id} onClick={()=>{setActiveStudy(scope.id);setInspect(false);onSelect(null);}}>{scope.title}</button>)}</div>}
     </div>
     {reviewOpen && <div className={s.reviewList} aria-label="All study questions"><div><strong>{t("All study questions")}</strong><button aria-label={t("Close questions")} onClick={() => setReviewOpen(false)}>×</button></div>{reviewIssues.map(i => <button key={i.id} onClick={() => openIssue(i.id)}><span className={responses[i.id] ? s.responded : s.issueDot}>{responses[i.id] ? "✓" : "!"}</span><span><strong>{t(i.title)}</strong><small><b className={`${s.severity} ${i.severity === "blocking" ? s.blocking : ""}`}>{t(i.severity === "blocking" ? "Blocking" : i.severity === "decision" ? "Decision" : "Check")}</b> · {responses[i.id] ? t("Response saved · pending application") : i.entity ? t(overview.cards[i.entity]?.title||i.entity) : [i.study,i.field].filter(Boolean).join(" · ")}</small></span><span>↗</span></button>)}</div>}
     <div className={s.scroll} ref={scroll}>
       <div className={`${s.overviewHeading} ${programView?s.compactHeading:""}`}><h1>{t(overview.question)}</h1>{preview&&preview.hasChanges&&<div className={s.previewSummary}><strong>{t("Proposed changes")}</strong>{preview.changedEntityIds.length>0&&<span> · {preview.changedEntityIds.length} {t("affected parts")}</span>}{preview.sections.filter(section=>section!=="entities").length>0&&<span> · {preview.sections.filter(section=>section!=="entities").map(section=>t(section==="study"?"Study details":section==="reviewIssues"?"Review questions":section[0].toUpperCase()+section.slice(1))).join(", ")}</span>}{preview.removedEntityIds.length>0&&<small>{t("Removed")}: {preview.entities.filter(item=>item.kind==="removed").map(item=>t(item.title)).join(", ")}</small>}</div>}</div>
-      {programView&&study.program?<ProgramViews key={`${programView}:${viewStudy}`} program={study.program} view={programView} studyId={viewStudy} selectedIds={selectedIds} issuesFor={id=>reviewIssues.filter(i=>i.entity===id&&!responses[i.id]).map(i=>i.id)} onPick={pick} onIssue={openIssue}/>:<>
+      {programView&&study.program?<ProgramViews key={`${programView}:${viewStudy}`} program={study.program} view={programView} studyId={viewStudy} selectedIds={selectedIds} issuesFor={id=>reviewIssues.filter(i=>i.entity===id&&!responses[i.id]).map(i=>i.id)} changedIds={changedIds} onPick={pick} onIssue={openIssue} onDiscuss={(id,draft)=>onDiscuss({kind:"objects",entityIds:id?[id]:[]},draft)}/>:<>
       {study.entities.length===0&&<p className={s.gestureHint}>{t("Upload a paper, then ask the agent to build the first model.")}</p>}
       <div data-event="model.canvas" ref={canvas} className={s.canvas}>
         {overview.stages.map((stage) => <section key={stage.id} className={s.stage} aria-label={t(stage.title)}>
@@ -101,7 +110,7 @@ export default function StudyModel({ focusArtifactId, onClearArtifactFocus, work
             const card = overview.cards[id];
             const problems = reviewIssues.filter(i => i.entity === id && !responses[i.id]);
             return <div key={id} data-model-id={id} data-event={`model.object.${id}`} className={`${s.card} ${["procedure","record"].includes(study.entities.find(entity=>entity.id===id)?.kind||"") || id === "manipulation" ? s.wide : ""} ${selectedIds.includes(id) ? s.selectedCard : ""} ${problems.length ? s.flagged : ""} ${changedIds.has(id) ? s.previewCard : ""}`}>
-              <button className={s.cardBody} aria-label={`Inspect ${t(card.title)}`} aria-pressed={selectedIds.includes(id)} onClick={e => pick(id, e.shiftKey)}><span className={s.cardTitle}><strong>{t(card.title)}</strong>{changedIds.has(id)&&<em className={s.changeBadge}>{preview?.addedEntityIds.includes(id)?t("Added"):t("Changed")}</em>}</span><p>{t(card.text)}</p></button>
+              <button className={s.cardBody} aria-label={`Inspect ${t(card.title)}`} aria-pressed={selectedIds.includes(id)} onClick={e => pick(id, e.shiftKey, true)}><span className={s.cardTitle}><strong>{t(card.title)}</strong>{changedIds.has(id)&&<em className={s.changeBadge}>{preview?.addedEntityIds.includes(id)?t("Added"):t("Changed")}</em>}</span><p>{t(card.text)}</p></button>
               {problems.length>0&&<button className={s.cardIssue} onClick={() => openIssue(problems[0].id)} aria-label={`${problems.length} ${t("questions for")} ${t(card.title)}`}><span>!</span>{problems.length} {t(problems.length===1?"question":"questions")}<span>↗</span></button>}
             </div>;
           })}</div>
@@ -113,13 +122,13 @@ export default function StudyModel({ focusArtifactId, onClearArtifactFocus, work
     </div>
     {anchor && anchor.kind!=="issue" && <div className={`${s.dock} ${!inspect?s.compactDock:""}`} aria-label="Human Program selection">
       <div className={s.dockHeader}><span>{`${t("Program selection")} · ${selectedIds.length} ${t("objects")}`}</span><button aria-label={t("Clear model selection")} onClick={() => onSelect(null)}>×</button></div>
-      {inspect&&<div className={s.selectedNames}>{selectedIds.length ? selectedIds.map(id => <button key={id} disabled={!study.entities.find(e=>e.id===id)?.evidence.quote.trim()&&!study.entities.find(e=>e.id===id)?.evidence.rects.length} onClick={() => onSource(id, study.entities.find(e=>e.id===id)?.evidence)} title={t("Locate original evidence")}>{t(overview.cards[id]?.title||id)} <span>↗</span></button>) : <span>{t("Select a program object")}</span>}</div>}
-      <div className={s.selectionActions}>{selectedIds.length > 0 && <button aria-expanded={inspect} onClick={() => setInspect(!inspect)}>{inspect ? t("Hide details ↑") : t("Inspect details ↓")}</button>}<button onClick={() => { onDiscuss(anchor,t("I think there is an error here: ")); }}>{t("Flag an error")}</button></div>
+      {inspect&&selectedIds.length>1&&<div className={s.selectedNames}>{selectedIds.map(id => <button key={id} onClick={()=>pick(id,false,true)}>{t(overview.cards[id]?.title||id)}</button>)}</div>}
+      <div className={s.selectionActions}>{selectedIds.length > 0 && <button aria-expanded={inspect} onClick={() => setInspect(!inspect)}>{inspect ? t("Hide details") : t("Details")}</button>}<button onClick={() => onDiscuss(anchor)}>{t("Ask agent")}</button></div>
         {inspect && focused && <div className={s.inspector}>
           {selectedIds.length > 1 && <p>{t("Details")} · {t(overview.cards[focused.id].title)}</p>}
           <h3>{t(overview.cards[focused.id].title)}</h3><p>{t(focused.description)}</p>
           {preview?.entities.find(item=>item.id===focused.id)&&<div className={s.changeDetail}><strong>{t("Proposed change")}</strong><ul>{preview.entities.find(item=>item.id===focused.id)!.details.map(detail=><li key={detail}>{t(detail)}</li>)}</ul></div>}
-          {study.program?<ProgramDetails program={study.program} id={focused.id} fieldId={anchor?.fieldId} onDiscuss={onDiscuss} onInspect={id=>pick(id)} onSource={onSource}/>:<>
+          {study.program?<ProgramDetails program={study.program} id={focused.id} fieldId={anchor?.fieldId} onDiscuss={onDiscuss} onInspect={id=>pick(id,false,true)} onSource={onSource}/>:<>
           <dl>{focused.fields.map((f,i) => <div key={f.id||i}><dt>{t(f.name)} <button className={s.fieldComment} aria-label={`Comment on ${f.name}`} onClick={()=>onDiscuss({kind:"objects",entityIds:[focused.id],fieldId:f.id??`field-${i+1}`})}>{t("Comment")}</button></dt><dd>{f.value}<small>{f.status === "reported" ? t("Reported in source") : f.status === "implementation" ? t("Implementation proposal") : t("Needs review")}</small></dd></div>)}</dl>
           {focused.kind === "procedure" && <div className={s.stepDetails}><h4>{t("Steps")}</h4>{study.procedure.filter(step=>!step.entity||step.entity===focused.id).map((step,i) => <div key={step.id}><button disabled={!step.evidence.quote.trim()&&!step.evidence.rects.length} onClick={() => onSource(focused.id, step.evidence)}>{i+1}. {t(step.name)} ↗</button><dl><dt>{t("Input")}</dt><dd>{t(step.input)}</dd><dt>{t("Person")}</dt><dd>{t(step.actor)}</dd><dt>{t("Output")}</dt><dd>{t(step.output)}</dd></dl></div>)}</div>}
           </>}

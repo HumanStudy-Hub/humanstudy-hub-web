@@ -3,13 +3,17 @@ import { Fragment, useMemo, useState, type CSSProperties, type ReactNode } from 
 import type { HumanProgram, ProgramNode } from '@/lib/studio/human-program';
 import { programText } from '@/lib/studio/human-program';
 import { compareRows, conditionArms, flatFlow, flowActors, presentation, studyArms, studyFlow, studyScreens, wordDiff, type Arm, type FlowItem, type ScreenBlock } from '@/lib/studio/program-view';
+import { programGraph } from '@/lib/studio/program-views';
+import { ContextGroups, Diagram } from './program-visuals';
 import s from './program-views.module.css';
 
 export type ProgramViewKind = 'flow'|'compare'|'screens';
 type Props = {
  program:HumanProgram; view:ProgramViewKind; studyId:string; selectedIds:string[];
  issuesFor:(id:string)=>string[]; onPick:(id:string,extend:boolean)=>void; onIssue:(issueId:string)=>void;
+ changedIds?:ReadonlySet<string>; onDiscuss?:(id:string,draft?:string)=>void;
 };
+const designOf=(program:HumanProgram,studyId:string)=>program.nodes.find(n=>n.kind==='design'&&(!n.studyIds.length||n.studyIds.includes(studyId)))?.id??program.nodes[0]?.id??'';
 
 /** Studies that have a procedure come first; analysis-only studies have nothing to draw. */
 export function viewStudies(program:HumanProgram){ return program.studies.filter(st=>program.steps.some(step=>step.studyId===st.id)); }
@@ -20,13 +24,14 @@ export default function ProgramViews(props:Props){
  const [focusArm,setFocusArm]=useState('');
  const arm=arms.find(a=>a.id===focusArm);
  const hasSteps=program.steps.some(step=>step.studyId===studyId);
- if(!hasSteps&&view!=='compare')return <p className={s.empty}>This study has no procedure steps yet. Ask the agent to add the participant flow, or use the Outline view.</p>;
+ if(!hasSteps&&view!=='compare')return <div className={s.views}><ContextGroups program={program} studyId={studyId||undefined} selectedIds={props.selectedIds} issueIds={new Set(program.nodes.map(n=>n.id).filter(id=>props.issuesFor(id).length))} onPick={(id,extend)=>props.onPick(id,Boolean(extend))}/><div className={s.empty}><p>The participant flow has not been mapped yet.</p>{props.onDiscuss&&<button onClick={()=>props.onDiscuss!(designOf(program,studyId),'Map the documented participant procedure into explicit steps and connections. Preserve unknown order and conditions as questions rather than inventing them.')}>Ask agent to map the flow ↗</button>}</div></div>;
  return <div className={s.views}>
   {arms.length>=2&&view!=='compare'&&<div className={s.armBar} role="group" aria-label="Conditions">
    <span className={s.barLabel}>{view==='screens'?'Show as':'Conditions'}</span>
    {view==='flow'&&<button aria-pressed={!arm} onClick={()=>setFocusArm('')}>All</button>}
    {arms.map(a=><button key={a.id} className={s.armChip} data-tone={a.tone} aria-pressed={view==='screens'?(arm??arms[0]).id===a.id:arm?.id===a.id} onClick={()=>setFocusArm(view==='flow'&&focusArm===a.id?'':a.id)}><i/>{a.label}</button>)}
-   <small className={s.provenance} title={{agent:'Declared by the build agent in extensions.presentation',branch:'Read from the branch steps in the procedure',design:'Inferred from the design fields; ask the agent to declare conditions explicitly',study:''}[arms[0].source]}>{{agent:'declared',branch:'from branch steps',design:'inferred',study:''}[arms[0].source]}</small>
+   {arms[0].source==='design'&&props.onDiscuss?<button className={s.provenance} title="Inferred from condition labels in the design fields, not from the procedure" onClick={()=>props.onDiscuss!(designOf(program,studyId),`These conditions were inferred from the design fields: ${arms.map(a=>a.label).join(', ')}. Check them against the paper and map each condition to its steps and materials explicitly; flag anything the paper does not state.`)}>inferred · confirm ↗</button>
+   :<small className={s.provenance} title={{agent:'Declared by the build agent in extensions.presentation',branch:'Read from the branch steps in the procedure',design:'Inferred from condition labels in the design fields, not from the procedure',study:''}[arms[0].source]}>{{agent:'declared',branch:'from branch steps',design:'inferred',study:''}[arms[0].source]}</small>}
   </div>}
   {view==='flow'&&<FlowView {...props} arms={arms} focus={arm}/>}
   {view==='compare'&&<CompareView {...props} arms={arms}/>}
@@ -61,14 +66,25 @@ function FlowView(props:Props&{arms:Arm[];focus?:Arm}){
    </div>
   </Fragment>;
  });
- const before=scoped(['background','hypothesis']),who=scoped(['participants']),after=[scoped(['record']),scoped(['analysis']),program.nodes.filter(n=>n.kind==='result'&&(n.studyIds.includes(studyId)||!n.studyIds.length))];
+ const who=scoped(['participants']);
+ const [layout,setLayout]=useState<'cards'|'graph'>('cards');
+ const issueIds=new Set(program.nodes.map(n=>n.id).concat(program.steps.map(st=>`flow:${st.id}`)).filter(id=>props.issuesFor(id).length));
+ const toggle=<div className={s.segment} role="group" aria-label="Flow layout"><button aria-pressed={layout==='cards'} onClick={()=>setLayout('cards')} title="Steps with their materials, rules and records">Steps</button><button aria-pressed={layout==='graph'} onClick={()=>setLayout('graph')} title="The step graph: splits, joins and loops">Graph</button></div>;
+ const context=<ContextGroups program={program} studyId={studyId} selectedIds={props.selectedIds} issueIds={issueIds} onPick={(id,extend)=>props.onPick(id,Boolean(extend))}/>;
+ if(layout==='graph'){
+  const graph=programGraph(program,studyId);
+  // Focusing a condition keeps its own alternatives and everything outside the arms prominent.
+  const others=new Set(arms.filter(a=>a.id!==focus?.id).flatMap(a=>a.stepIds??[]));
+  const emphasis=focus?.stepIds?new Set(graph.steps.map(st=>st.id).filter(id=>!others.has(id))):undefined;
+  return <div className={s.flow}>{context}<div className={s.layoutBar}>{toggle}{graph.wrappers.map(w=><button key={w.id} className={s.wrapperLabel} onClick={e=>props.onPick(`flow:${w.id}`,e.shiftKey)}>{w.kind} · {w.title}</button>)}</div><Diagram graph={graph} program={program} selectedIds={props.selectedIds} changedIds={props.changedIds} issueIds={issueIds} onPick={(id,extend)=>props.onPick(id,Boolean(extend))} emphasis={emphasis}/></div>;
+ }
  return <div className={s.flow}>
-  {before.length>0&&<div className={s.context}><span className={s.barLabel}>Why</span>{before.map(n=><Chip key={n.id} node={n} props={props}/>)}</div>}
+  {context}
+  <div className={s.layoutBar}>{toggle}</div>
   {lanes.length>0&&<div className={s.laneHeads} style={{gridTemplateColumns:`repeat(${lanes.length},minmax(0,1fr))`}}>{lanes.map(a=><button key={a.id} onClick={e=>props.onPick(a.id,e.shiftKey)}><span className={s.avatar}>{a.title.slice(0,1)}</span>{a.title}</button>)}</div>}
   <div className={`${s.flowBody} ${lanes.length?s.swim:''}`} style={{'--lanes':Math.max(1,lanes.length)} as CSSProperties}>
    {who.length>0&&<><div className={s.terminal}><span className={s.barLabel}>Who</span>{who.map(n=><Chip key={n.id} node={n} props={props}/>)}</div><Connector from={0} to={0} lanes={1}/></>}
    {steps(items,0)}
-   {after.some(list=>list.length)&&<><Connector from={0} to={0} lanes={1}/><div className={s.terminal}><span className={s.barLabel}>Then</span>{after.map((list,i)=>list.length>0&&<span key={i} className={s.afterGroup}>{i>0&&<b aria-hidden>→</b>}{list.map((n,k)=><Chip key={n.id} node={n} props={props} prefix={k===0?['Data','Analysis','Result'][i]:undefined}/>)}</span>)}</div></>}
   </div>
  </div>;
 }
@@ -94,7 +110,8 @@ function FlowStep({item,props,focus,node,depth,render}:{item:FlowItem;props:Prop
   {item.splits&&step.kind!=='branch'&&<ArmHeads arms={conditionArms(props.program,props.studyId)} focus={focus}/>}
   {item.lanes.length>0&&<div className={s.lanes} style={{gridTemplateColumns:`repeat(${item.lanes.length},minmax(0,1fr))`}}>{item.lanes.map(l=><div key={l.arm.id} className={`${s.lane} ${focus&&focus.id!==l.arm.id?s.dim:''}`} data-tone={l.arm.tone}><span className={s.laneLabel}><i/>{l.arm.label}</span>{l.nodeIds.map(nid=><Chip key={nid} node={node(nid)} props={props} tone={l.arm.tone}/>)}</div>)}</div>}
   {item.shared.length>0&&<div className={s.io}><span>{step.visibleIds.length?'Sees':'Uses'}</span>{item.shared.map(nid=><Chip key={nid} node={node(nid)} props={props}/>)}</div>}
-  {records.length>0&&<div className={s.io}><span>Records</span>{records.map(n=><Chip key={n.id} node={n} props={props}/>)}</div>}
+  {records.length>0&&records.length<=4&&<div className={s.io}><span>Records</span>{records.map(n=><Chip key={n.id} node={n} props={props}/>)}</div>}
+  {records.length>4&&<details className={s.ioMore} open={records.some(n=>props.selectedIds.includes(n.id))}><summary><span>Records</span>{records.length} measures</summary><div className={s.io}>{records.map(n=><Chip key={n.id} node={n} props={props}/>)}</div></details>}
  </div>;
  if(!item.children.length)return card;
  // Branch alternatives run side by side, one column per arm; the shared continuation follows below.
@@ -117,7 +134,7 @@ function CompareView(props:Props&{arms:Arm[]}){
  const [hidden,setHidden]=useState<string[]>([]);
  const shown=columns.filter(c=>!hidden.includes(c.id));
  const rows=useMemo(()=>compareRows(program,shown),[program,shown]);
- if(columns.length<2)return <p className={s.empty}>Nothing to compare yet: this program has one condition and one study. When the agent records conditions or a second study, their differences appear here.</p>;
+ if(columns.length<2)return <div className={s.empty}><p>No conditions are mapped in this study, and there is no second study to compare.</p>{props.onDiscuss&&<button onClick={()=>props.onDiscuss!(designOf(program,props.studyId),'Check whether this study has different conditions. Map only the documented conditions and their step paths, and flag missing assignments.')}>Check with agent ↗</button>}</div>;
  const differing=rows.filter(r=>!r.same),same=rows.filter(r=>r.same);
  const groups=[...new Set((all?rows:differing).map(r=>r.group))];
  return <div className={s.compare}>

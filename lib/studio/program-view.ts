@@ -7,14 +7,14 @@ import { programText } from './human-program';
  * without it, conditions and screens are inferred conservatively from the program. */
 
 export type Arm = { id:string; label:string; nodeIds:string[]; stepIds?:string[]; studyId?:string; tone:number; source:'agent'|'branch'|'design'|'study' };
-export type FlowItem = { step:ProgramStep; children:FlowItem[]; lanes:{arm:Arm;nodeIds:string[]}[]; shared:string[]; splits:boolean; arm?:Arm };
+export type FlowItem = { step:ProgramStep; children:FlowItem[]; lanes:{arm:Arm;nodeIds:string[]}[]; shared:string[]; splits:boolean; arm?:Arm; unmapped?:boolean };
 export type ScreenBlock =
  | { type:'text'; nodeId:string; fieldId:string; text:string; origin:ProgramField['origin'] }
  | { type:'question'; nodeId:string; fieldId:string; text:string; options:string[]; scale:boolean; origin:ProgramField['origin'] }
  | { type:'gap'; text:string; issueId?:string }
  | { type:'records'; nodeIds:string[] };
 export type Screen = { step:ProgramStep; depth:number; blocks:ScreenBlock[]; continues:boolean };
-export type CompareRow = { key:string; group:string; label:string; cells:{armId:string;text:string;nodeId?:string}[]; same:boolean };
+export type CompareRow = { key:string; group:string; label:string; cells:{armId:string;text:string;nodeId?:string}[]; same:boolean; unmapped?:boolean };
 
 type PresentationBlock = { node?:string; field?:string; item?:number; gap?:string };
 export type ProgramPresentation = {
@@ -92,14 +92,17 @@ export function studyFlow(program:HumanProgram,studyId:string,arms:Arm[]=conditi
   const shown=[...new Set([...step.inputIds,...step.visibleIds])];
   const lanes=arms.map(arm=>({arm,nodeIds:shown.filter(id=>arm.nodeIds.includes(id))}));
   return {step,lanes:lanes.filter(l=>l.nodeIds.length).length>=2?lanes:[],shared:shown.filter(id=>!armNodes.has(id)&&!manipulations.has(id)),splits:arms.length>=2&&(step.outputIds.some(id=>manipulations.has(id))||step.kind==='branch'&&step.children.some(id=>armOf.has(id))),...(armOf.has(step.id)?{arm:armOf.get(step.id)}:{}),
+   // A later branch whose alternatives are not tied to the arms: neither arm can be said to take either path.
+   ...(armOf.size&&step.kind==='branch'&&step.children.length>=2&&!step.children.some(id=>armOf.has(id))?{unmapped:true}:{}),
    children:step.children.filter(id=>!path.has(id)).map(id=>byId.get(id)).filter((x):x is ProgramStep=>Boolean(x)).map(child=>item(child,new Set([...path,step.id])))};
  };
  return order.map(step=>item(step,new Set([step.id])));
 }
-/** One arm's path: the other arms' branch alternatives are dropped. */
+/** One arm's path: the other arms' branch alternatives are dropped, and an unmapped branch keeps
+ * no alternative at all, since the program does not say which one this arm takes. */
 export function armPath(items:FlowItem[],arm?:Arm):FlowItem[] {
  if(!arm?.stepIds)return items;
- return items.filter(i=>!i.arm||arm.stepIds!.includes(i.step.id)).map(i=>({...i,children:armPath(i.children,arm)}));
+ return items.filter(i=>!i.arm||arm.stepIds!.includes(i.step.id)).map(i=>({...i,children:i.unmapped?[]:armPath(i.children,arm)}));
 }
 export function flatFlow(items:FlowItem[],depth=0):{item:FlowItem;depth:number}[] { return items.flatMap(item=>[{item,depth},...flatFlow(item.children,depth+1)]); }
 
@@ -140,6 +143,7 @@ export function studyScreens(program:HumanProgram,studyId:string,arm?:Arm):Scree
    for(const n of candidates){const f=n.fields.find(f=>f.id===b.field);if(f){blocks.push(...blocksFor(n,f,b.item));break;}}
   }
   else for(const n of visible)for(const f of n.fields){const key=`${n.id}.${f.id}`;if(shown.has(key))continue;const next=blocksFor(n,f);if(next.length){shown.add(key);blocks.push(...next);}}
+  if(item.unmapped&&arm)blocks.push({type:'gap',text:`Which alternative of “${step.title}” this condition follows is not stated`});
   if(step.rule&&['missing','decision'].includes(step.rule.state)){const issue=program.issues.find(i=>i.stepId===step.id);blocks.push({type:'gap',text:`${step.rule.label}: ${issue?.title??'not reported'}`,...(issue?{issueId:issue.id}:{})});}
   const records=step.outputIds.filter(id=>nodes.get(id)?.kind==='variable'||nodes.get(id)?.kind==='record');
   if(records.length)blocks.push({type:'records',nodeIds:records});
@@ -160,12 +164,12 @@ const cellText=(v:JsonValue)=>{const q=questionOf(v);return q?[q.text,q.options.
 /** Aligned facts per arm. Identical rows collapse, so the reader sees what actually differs. */
 export function compareRows(program:HumanProgram,arms:Arm[]):CompareRow[] {
  const rows=new Map<string,CompareRow>();
- const put=(key:string,group:string,label:string,armId:string,text:string,nodeId?:string)=>{const row=rows.get(key)??{key,group,label,cells:[],same:false};row.cells.push({armId,text,...(nodeId?{nodeId}:{})});rows.set(key,row);};
+ const put=(key:string,group:string,label:string,armId:string,text:string,nodeId?:string,unmapped?:boolean)=>{const row=rows.get(key)??{key,group,label,cells:[],same:false,...(unmapped?{unmapped}:{})};row.cells.push({armId,text,...(nodeId?{nodeId}:{})});rows.set(key,row);};
  const names=(ids:string[])=>ids.map(id=>program.nodes.find(n=>n.id===id)?.title??id).join(', ');
  const branchOf=(id:string)=>program.steps.find(s=>s.kind==='branch'&&s.children.includes(id));
  for(const arm of arms){
   const studyId=arm.studyId??program.studies[0]?.id;
-  if(studyId)flatFlow(armPath(studyFlow(program,studyId),arm)).forEach(({item},i)=>put(`step:${i}`,'Procedure',item.arm?branchOf(item.step.id)?.title??`Step ${i+1}`:`Step ${i+1}`,arm.id,[item.step.title,item.step.actorIds.length?`by ${names(item.step.actorIds)}`:'',item.step.rule&&item.step.rule.value!==null?`${item.step.rule.label}: ${programText(item.step.rule.value)}`:''].filter(Boolean).join(' · '),`flow:${item.step.id}`));
+  if(studyId)flatFlow(armPath(studyFlow(program,studyId),arm)).forEach(({item},i)=>put(`step:${i}`,'Procedure',item.arm?branchOf(item.step.id)?.title??`Step ${i+1}`:item.unmapped?item.step.title:`Step ${i+1}`,arm.id,item.unmapped?'Not stated which alternative this condition follows':[item.step.title,item.step.actorIds.length?`by ${names(item.step.actorIds)}`:'',item.step.rule&&item.step.rule.value!==null?`${item.step.rule.label}: ${programText(item.step.rule.value)}`:''].filter(Boolean).join(' · '),`flow:${item.step.id}`,item.unmapped));
   for(const id of arm.nodeIds){
    const n=program.nodes.find(n=>n.id===id);if(!n)continue;
    const base=baseTitle(n,arm);
@@ -175,7 +179,7 @@ export function compareRows(program:HumanProgram,arms:Arm[]):CompareRow[] {
    }
   }
  }
- return [...rows.values()].map(row=>({...row,same:row.cells.length===arms.length&&row.cells.every(c=>c.text===row.cells[0].text)}));
+ return [...rows.values()].map(row=>({...row,same:!row.unmapped&&row.cells.length===arms.length&&row.cells.every(c=>c.text===row.cells[0].text)}));
 }
 
 /** Word-level diff against a reference text, marking the words that are not shared.

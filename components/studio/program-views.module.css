@@ -37,9 +37,17 @@
   flex-shrink: 0;
 }
 .empty {
-  margin: 28px 20px;
+  margin: 20px 0;
+  padding: 28px 20px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  text-align: center;
   color: var(--muted);
   line-height: 1.5;
+}
+.empty button {
+  margin-top: 8px;
+  color: var(--accent);
 }
 .barLabel {
   font-size: var(--text-xs, 0.75rem);
@@ -139,7 +147,6 @@
   flex-direction: column;
   gap: 10px;
 }
-.context,
 .terminal {
   display: flex;
   align-items: center;
@@ -152,15 +159,31 @@
   border-radius: 8px;
   background: var(--surface-soft);
 }
-.afterGroup {
-  display: inline-flex;
+.layoutBar {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   flex-wrap: wrap;
 }
-.afterGroup b {
+.wrapperLabel {
   color: var(--muted);
-  font-weight: 400;
+  font-size: var(--text-xs, 0.75rem);
+  text-align: left;
+  line-height: 1.5;
+}
+.ioMore summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--muted);
+}
+.ioMore summary > span {
+  min-width: 48px;
+}
+.ioMore[open] summary {
+  margin-bottom: 5px;
 }
 .laneHeads {
   display: grid;
@@ -642,4 +665,9 @@
   margin: 0;
   color: var(--muted);
   font-style: italic;
+}
+
+button.provenance {
+  color: var(--accent);
+  cursor: pointer;
 }
