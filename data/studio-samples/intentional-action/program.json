@@ -131,6 +131,46 @@
       "evidenceIds": []
     },
     {
+      "id": "condition-harm",
+      "kind": "condition",
+      "title": "Harm",
+      "studyIds": [
+        "exp-1",
+        "exp-2"
+      ],
+      "fields": [
+        {
+          "id": "level",
+          "label": "Level",
+          "value": "harm",
+          "origin": "reported",
+          "state": "check",
+          "evidenceIds": []
+        }
+      ],
+      "evidenceIds": []
+    },
+    {
+      "id": "condition-help",
+      "kind": "condition",
+      "title": "Help",
+      "studyIds": [
+        "exp-1",
+        "exp-2"
+      ],
+      "fields": [
+        {
+          "id": "level",
+          "label": "Level",
+          "value": "help",
+          "origin": "reported",
+          "state": "check",
+          "evidenceIds": []
+        }
+      ],
+      "evidenceIds": []
+    },
+    {
       "id": "intentionality",
       "kind": "variable",
       "title": "Intentionality judgment",
@@ -495,6 +535,9 @@
       ],
       "evidenceIds": [
         "material-e-1-harm"
+      ],
+      "conditionIds": [
+        "condition-harm"
       ]
     },
     {
@@ -558,6 +601,9 @@
       ],
       "evidenceIds": [
         "material-e-1-help"
+      ],
+      "conditionIds": [
+        "condition-help"
       ]
     },
     {
@@ -603,6 +649,9 @@
       ],
       "evidenceIds": [
         "material-e-2-harm"
+      ],
+      "conditionIds": [
+        "condition-harm"
       ]
     },
     {
@@ -648,6 +697,9 @@
       ],
       "evidenceIds": [
         "material-e-2-help"
+      ],
+      "conditionIds": [
+        "condition-help"
       ]
     }
   ],
@@ -1160,6 +1212,11 @@
           "combined_r": 0.53
         }
       }
+    },
+    "presentation": {
+      "open": [
+        "exp-1-read"
+      ]
     }
   }
 }
