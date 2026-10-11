@@ -12,10 +12,9 @@ const sample=id=>structuredClone(fixtures.cases.find(c=>c.id===id).program);
 const css={default:new Proxy({},{get:(_,key)=>String(key)})};
 const details=load('components/studio/program-details.tsx',{'@/lib/studio/human-program':hp,'./program-details.module.css':css}).default;
 const schema=load('app/build-preview/study-schema.ts'),review=load('app/build-preview/model-review.ts',{'./study-schema':schema}),diff=load('lib/studio/model-diff.ts'),ui=load('app/build-preview/ui.tsx');
-const programView=load('lib/studio/program-view.ts',{'./human-program':hp}),graphs=load('lib/studio/program-views.ts');
-const visuals=load('components/studio/program-visuals.tsx',{'@/lib/studio/program-views':graphs,'./program-visuals.module.css':css});
-const views=load('components/studio/program-views.tsx',{'@/lib/studio/human-program':hp,'@/lib/studio/program-view':programView,'@/lib/studio/program-views':graphs,'./program-visuals':visuals,'./program-views.module.css':css});
-const modelView=load('app/build-preview/study-model.tsx',{'@/components/studio/program-views':views,'@/lib/studio/program-view':programView,'@/lib/studio/program-views':graphs,'./study-schema':schema,'./model-review':review,'./study-model.module.css':css,'./ui':ui,'@/components/studio/program-details':{default:details},'@/lib/studio/human-program':hp,'@/lib/studio/model-diff':diff,'@/components/studio/materials':{default:()=>null}}).default;
+const programView=load('lib/studio/program-view.ts',{'./human-program':hp});
+const views=load('components/studio/program-views.tsx',{'@/lib/studio/human-program':hp,'@/lib/studio/program-view':programView,'./program-views.module.css':css});
+const modelView=load('app/build-preview/study-model.tsx',{'@/components/studio/program-views':views,'@/lib/studio/program-view':programView,'./study-schema':schema,'./model-review':review,'./study-model.module.css':css,'./ui':ui,'@/components/studio/program-details':{default:details},'@/lib/studio/human-program':hp,'@/lib/studio/model-diff':diff,'@/components/studio/materials':{default:()=>null}}).default;
 const noop=()=>{};
 test('actual React renderer shows scoped study choices and repeat/interaction objects',()=>{
  const p=sample('study_012'),model=hp.projectHumanProgram(p);
@@ -54,18 +53,18 @@ test('an unmatched PDF quote can be reviewed on its page without claiming a veri
  assert.equal(evidence,undefined);
 });
 
-test('every view renders the live audit program with each step anchored once and every node inspectable',()=>{
+test('the program panel renders the live audit program with each step anchored once, every node inspectable, and cited passages marked',()=>{
  const p=JSON.parse(fs.readFileSync(new URL('../components/studio/design-cases/mobile-internet.json',import.meta.url),'utf8'));
  const model=hp.projectHumanProgram(p),base={model,selected:'',anchor:null,responses:{},onSelect:noop,onSource:noop,onDiscuss:noop,onRespond:noop};
- const flow=renderToStaticMarkup(React.createElement(modelView,{...base,initialView:'flow'}));
- for(const step of p.steps)assert.equal(flow.split(`data-model-id="flow:${step.id}"`).length-1,1);
- for(const node of p.nodes)assert(flow.includes(`data-model-id="${node.id}"`));
- assert.match(flow,/from branch steps/);assert.match(flow,/Background &amp; hypotheses/);
- const compare=renderToStaticMarkup(React.createElement(modelView,{...base,initialView:'compare'}));
- assert.match(compare,/Phase 1 \(weeks 1-2\) condition branch/);assert.match(compare,/Delayed Intervention arm/);
- const screens=renderToStaticMarkup(React.createElement(modelView,{...base,initialView:'screens'}));
- assert.match(screens,/not shown to participant/);
+ const html=renderToStaticMarkup(React.createElement(modelView,base));
+ for(const step of p.steps)assert.equal(html.split(`data-model-id="flow:${step.id}"`).length-1,1);
+ for(const node of p.nodes)assert(html.includes(`data-model-id="${node.id}"`));
+ assert.doesNotMatch(html,/role="tablist" aria-label="Program view"/);
+ assert.match(html,/Conditions not stated/);
+ const cited=renderToStaticMarkup(React.createElement(modelView,{...base,support:{page:3,ids:['flow:step_randomize']}}));
+ assert.match(cited,/Selected passage · p\. 3 supports/);
+ assert.match(renderToStaticMarkup(React.createElement(modelView,{...base,support:{page:3,ids:[]}})),/No program item cites this passage/);
  const unknown=hp.projectHumanProgram(sample('exploratory-extension'));
- const html=renderToStaticMarkup(React.createElement(modelView,{...base,model:unknown,initialView:'flow'}));
- assert.match(html,/participant flow has not been mapped/);assert.match(html,/Other details/);
+ const empty=renderToStaticMarkup(React.createElement(modelView,{...base,model:unknown}));
+ assert.match(empty,/participant flow has not been mapped/);assert.match(empty,/Other details/);
 });

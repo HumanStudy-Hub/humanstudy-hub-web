@@ -1,203 +1,157 @@
 'use client';
-import { Fragment, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import type { HumanProgram, ProgramNode } from '@/lib/studio/human-program';
+import { Fragment, useState } from 'react';
+import type { HumanProgram, ProgramField, ProgramNode } from '@/lib/studio/human-program';
 import { programText } from '@/lib/studio/human-program';
-import { compareRows, conditionArms, flatFlow, flowActors, presentation, studyArms, studyFlow, studyScreens, wordDiff, type Arm, type FlowItem, type ScreenBlock } from '@/lib/studio/program-view';
-import { programGraph } from '@/lib/studio/program-views';
-import { ContextGroups, Diagram } from './program-visuals';
+import { conditionSuggestion, fieldText, flowActors, itemSources, presentationPlan, sourceRefs, studyConditions, studyFlow, wordDiff, type Condition, type FlowItem, type SourceRef } from '@/lib/studio/program-view';
 import s from './program-views.module.css';
 
-export type ProgramViewKind = 'flow'|'compare'|'screens';
 type Props = {
- program:HumanProgram; view:ProgramViewKind; studyId:string; selectedIds:string[];
+ program:HumanProgram; studyId:string; selectedIds:string[];
+ /** Items cited by the passage currently selected in the source. */
+ highlightIds?:ReadonlySet<string>; changedIds?:ReadonlySet<string>;
  issuesFor:(id:string)=>string[]; onPick:(id:string,extend:boolean)=>void; onIssue:(issueId:string)=>void;
- changedIds?:ReadonlySet<string>; onDiscuss?:(id:string,draft?:string)=>void;
+ onSource:(id:string,source:SourceRef)=>void; onDiscuss?:(id:string,draft?:string)=>void;
 };
-const designOf=(program:HumanProgram,studyId:string)=>program.nodes.find(n=>n.kind==='design'&&(!n.studyIds.length||n.studyIds.includes(studyId)))?.id??program.nodes[0]?.id??'';
 
-/** Studies that have a procedure come first; analysis-only studies have nothing to draw. */
+/** Studies that have a procedure. Analysis-only studies have nothing to draw. */
 export function viewStudies(program:HumanProgram){ return program.studies.filter(st=>program.steps.some(step=>step.studyId===st.id)); }
 
-export default function ProgramViews(props:Props){
- const {program,view,studyId}=props;
- const arms=useMemo(()=>conditionArms(program,studyId),[program,studyId]);
- const [focusArm,setFocusArm]=useState('');
- const arm=arms.find(a=>a.id===focusArm);
- const hasSteps=program.steps.some(step=>step.studyId===studyId);
- if(!hasSteps&&view!=='compare')return <div className={s.views}><ContextGroups program={program} studyId={studyId||undefined} selectedIds={props.selectedIds} issueIds={new Set(program.nodes.map(n=>n.id).filter(id=>props.issuesFor(id).length))} onPick={(id,extend)=>props.onPick(id,Boolean(extend))}/><div className={s.empty}><p>The participant flow has not been mapped yet.</p>{props.onDiscuss&&<button onClick={()=>props.onDiscuss!(designOf(program,studyId),'Map the documented participant procedure into explicit steps and connections. Preserve unknown order and conditions as questions rather than inventing them.')}>Ask agent to map the flow ↗</button>}</div></div>;
- return <div className={s.views}>
-  {arms.length>=2&&view!=='compare'&&<div className={s.armBar} role="group" aria-label="Conditions">
-   <span className={s.barLabel}>{view==='screens'?'Show as':'Conditions'}</span>
-   {view==='flow'&&<button aria-pressed={!arm} onClick={()=>setFocusArm('')}>All</button>}
-   {arms.map(a=><button key={a.id} className={s.armChip} data-tone={a.tone} aria-pressed={view==='screens'?(arm??arms[0]).id===a.id:arm?.id===a.id} onClick={()=>setFocusArm(view==='flow'&&focusArm===a.id?'':a.id)}><i/>{a.label}</button>)}
-   {arms[0].source==='design'&&props.onDiscuss?<button className={s.provenance} title="Inferred from condition labels in the design fields, not from the procedure" onClick={()=>props.onDiscuss!(designOf(program,studyId),`These conditions were inferred from the design fields: ${arms.map(a=>a.label).join(', ')}. Check them against the paper and map each condition to its steps and materials explicitly; flag anything the paper does not state.`)}>inferred · confirm ↗</button>
-   :<small className={s.provenance} title={{agent:'Declared by the build agent in extensions.presentation',branch:'Read from the branch steps in the procedure',design:'Inferred from condition labels in the design fields, not from the procedure',study:''}[arms[0].source]}>{{agent:'declared',branch:'from branch steps',design:'inferred',study:''}[arms[0].source]}</small>}
-  </div>}
-  {view==='flow'&&<FlowView {...props} arms={arms} focus={arm}/>}
-  {view==='compare'&&<CompareView {...props} arms={arms}/>}
-  {view==='screens'&&<ScreensView {...props} arms={arms} arm={arm??arms[0]}/>}
+/** The Human Program as one flow that adapts to the experiment: a single line for a simple
+ * procedure, side-by-side columns where it branches, swimlanes when several people act, and a
+ * container for repetition. Steps open in place; every item links to its source. */
+export default function ProgramFlow(props:Props){
+ const {program,studyId}=props;
+ const conditions=studyConditions(program,studyId),suggestion=conditionSuggestion(program,studyId);
+ const plan=presentationPlan(program);
+ const [open,setOpen]=useState(()=>new Set(plan.open)),[folded,setFolded]=useState(()=>new Set(plan.collapsed));
+ const [focus,setFocus]=useState('');
+ const items=studyFlow(program,studyId),actors=flowActors(program,items);
+ const design=program.nodes.find(n=>n.kind==='design'&&(!n.studyIds.length||n.studyIds.includes(studyId)))?.id??'';
+ const flip=(id:string)=>(prev:Set<string>)=>{const next=new Set(prev);if(next.has(id))next.delete(id);else next.add(id);return next;};
+ const ctx:Ctx={...props,conditions,focus,open,folded,lanes:actors.length>=2?actors:[],toggleOpen:id=>setOpen(flip(id)),toggleFold:id=>setFolded(flip(id))};
+ return <div className={s.program}>
+  {conditions.length>=2&&<div className={s.legend} role="group" aria-label="Conditions"><span className={s.label}>Conditions</span>{conditions.map(c=><button key={c.id} data-tone={c.tone} aria-pressed={focus===c.id} title="Show only this condition's path" onClick={()=>setFocus(focus===c.id?'':c.id)}><i/>{c.label}</button>)}</div>}
+  {suggestion&&<p className={s.suggestion}><b>Conditions not stated.</b> Possibly {suggestion.labels.join(' / ')}, from {suggestion.basis}. {props.onDiscuss&&<button onClick={()=>props.onDiscuss!(design,`The program does not state its experimental conditions. They may be ${suggestion.labels.join(', ')} (from ${suggestion.basis}). Check the paper, add a condition node for each, and set conditionIds on the steps and materials that belong to it. Mark anything the paper does not state as missing.`)}>Confirm with agent ↗</button>}</p>}
+  <Context {...props}/>
+  {!items.length?<div className={s.empty}><p>The participant flow has not been mapped yet.</p>{props.onDiscuss&&<button onClick={()=>props.onDiscuss!(design,'Map the documented participant procedure into explicit steps and next connections. Preserve unknown order and conditions as questions rather than inventing them.')}>Ask agent to map the flow ↗</button>}</div>
+  :<>{ctx.lanes.length>0&&<div className={s.laneHeads} style={{gridTemplateColumns:`repeat(${ctx.lanes.length},minmax(0,1fr))`}}>{ctx.lanes.map(a=><button key={a.id} onClick={e=>props.onPick(a.id,e.shiftKey)}>{a.title}</button>)}</div>}
+   <Steps items={items} ctx={ctx} top/></>}
  </div>;
 }
 
-function Issue({ids,onIssue}:{ids:string[];onIssue:(id:string)=>void}){
- if(!ids.length)return null;
- return <button className={s.issue} onClick={e=>{e.stopPropagation();onIssue(ids[0]);}} aria-label={`${ids.length} open ${ids.length===1?'question':'questions'}`} title="Open question">!{ids.length>1?` ${ids.length}`:''}</button>;
-}
-function Chip({node,props,tone,prefix}:{node?:ProgramNode;props:Props;tone?:number;prefix?:string}){
- if(!node)return null;
- return <span className={`${s.chip} ${props.selectedIds.includes(node.id)?s.picked:''}`} data-tone={tone}><button onClick={e=>props.onPick(node.id,e.shiftKey)} title={node.summary||node.title}>{prefix&&<em>{prefix}</em>}{node.title}</button><Issue ids={props.issuesFor(node.id)} onIssue={props.onIssue}/></span>;
-}
+type Ctx = Props & { conditions:Condition[]; focus:string; open:Set<string>; folded:Set<string>; lanes:ProgramNode[]; toggleOpen:(id:string)=>void; toggleFold:(id:string)=>void };
 
-/* ---------- Version A · Flow: execution order, actors as lanes, conditions as forks ---------- */
-
-function FlowView(props:Props&{arms:Arm[];focus?:Arm}){
- const {program,studyId,arms,focus}=props;
- const items=studyFlow(program,studyId,arms),actors=flowActors(program,items);
- const node=(id:string)=>program.nodes.find(n=>n.id===id);
- const scoped=(kinds:string[])=>program.nodes.filter(n=>kinds.includes(n.kind)&&(!n.studyIds.length||n.studyIds.includes(studyId)));
- const lanes=actors.length>=2?actors:[];
- const column=(item:FlowItem)=>lanes.length?Math.max(0,lanes.findIndex(a=>item.step.actorIds.includes(a.id))):0;
- const steps=(list:FlowItem[],depth:number):ReactNode=>list.map((item,i)=>{
-  const prev=i>0?list[i-1]:undefined;
-  return <Fragment key={item.step.id}>
-   {prev&&<Connector from={column(prev)} to={column(item)} lanes={Math.max(1,lanes.length)} label={item.step.next.length?undefined:prev.step.next.find(e=>e.to===item.step.id)?.when}/>}
-   <div className={s.flowRow} style={{gridTemplateColumns:`repeat(${Math.max(1,lanes.length)},minmax(0,1fr))`}}>
-    <div style={{gridColumn:column(item)+1}}><FlowStep item={item} props={props} focus={focus} node={node} depth={depth} render={steps}/></div>
-   </div>
-  </Fragment>;
- });
- const who=scoped(['participants']);
- const [layout,setLayout]=useState<'cards'|'graph'>('cards');
- const issueIds=new Set(program.nodes.map(n=>n.id).concat(program.steps.map(st=>`flow:${st.id}`)).filter(id=>props.issuesFor(id).length));
- const toggle=<div className={s.segment} role="group" aria-label="Flow layout"><button aria-pressed={layout==='cards'} onClick={()=>setLayout('cards')} title="Steps with their materials, rules and records">Steps</button><button aria-pressed={layout==='graph'} onClick={()=>setLayout('graph')} title="The step graph: splits, joins and loops">Graph</button></div>;
- const context=<ContextGroups program={program} studyId={studyId} selectedIds={props.selectedIds} issueIds={issueIds} onPick={(id,extend)=>props.onPick(id,Boolean(extend))}/>;
- if(layout==='graph'){
-  const graph=programGraph(program,studyId);
-  // Focusing a condition keeps its own alternatives and everything outside the arms prominent.
-  const others=new Set(arms.filter(a=>a.id!==focus?.id).flatMap(a=>a.stepIds??[]));
-  const emphasis=focus?.stepIds?new Set(graph.steps.map(st=>st.id).filter(id=>!others.has(id))):undefined;
-  return <div className={s.flow}>{context}<div className={s.layoutBar}>{toggle}{graph.wrappers.map(w=><button key={w.id} className={s.wrapperLabel} onClick={e=>props.onPick(`flow:${w.id}`,e.shiftKey)}>{w.kind} · {w.title}</button>)}</div><Diagram graph={graph} program={program} selectedIds={props.selectedIds} changedIds={props.changedIds} issueIds={issueIds} onPick={(id,extend)=>props.onPick(id,Boolean(extend))} emphasis={emphasis}/></div>;
- }
- return <div className={s.flow}>
-  {context}
-  <div className={s.layoutBar}>{toggle}</div>
-  {lanes.length>0&&<div className={s.laneHeads} style={{gridTemplateColumns:`repeat(${lanes.length},minmax(0,1fr))`}}>{lanes.map(a=><button key={a.id} onClick={e=>props.onPick(a.id,e.shiftKey)}><span className={s.avatar}>{a.title.slice(0,1)}</span>{a.title}</button>)}</div>}
-  <div className={`${s.flowBody} ${lanes.length?s.swim:''}`} style={{'--lanes':Math.max(1,lanes.length)} as CSSProperties}>
-   {who.length>0&&<><div className={s.terminal}><span className={s.barLabel}>Who</span>{who.map(n=><Chip key={n.id} node={n} props={props}/>)}</div><Connector from={0} to={0} lanes={1}/></>}
-   {steps(items,0)}
-  </div>
- </div>;
+function Steps({items,ctx,top}:{items:FlowItem[];ctx:Ctx;top?:boolean}){
+ const lane=(item:FlowItem)=>Math.max(0,ctx.lanes.findIndex(a=>item.step.actorIds.includes(a.id)));
+ return <ol className={s.steps}>{items.map((item,i)=><li key={item.step.id} className={s.item}>
+  {i>0&&(item.linked?<span className={s.arrow} aria-label="then"/>:<span className={s.unordered}>order not stated</span>)}
+  {top&&ctx.lanes.length?<div className={s.laneRow} style={{gridTemplateColumns:`repeat(${ctx.lanes.length},minmax(0,1fr))`}}><div style={{gridColumn:lane(item)+1}}><Step item={item} ctx={ctx}/></div></div>:<Step item={item} ctx={ctx}/>}
+ </li>)}</ol>;
 }
 
-function Connector({from,to,lanes,label}:{from:number;to:number;lanes:number;label?:string}){
- const x=(c:number)=>(c+0.5)/lanes*100;
- return <div className={s.connector} aria-hidden><svg viewBox="0 0 100 24" preserveAspectRatio="none"><path d={from===to?`M${x(from)} 0V24`:`M${x(from)} 0V8H${x(to)}V24`} vectorEffect="non-scaling-stroke"/></svg><span style={{left:`${x(to)}%`}}>▾</span>{label&&<em style={{left:`${x(to)}%`}}>{label}</em>}</div>;
-}
-
-function FlowStep({item,props,focus,node,depth,render}:{item:FlowItem;props:Props;focus?:Arm;node:(id:string)=>ProgramNode|undefined;depth:number;render:(items:FlowItem[],depth:number)=>ReactNode}){
- const {step}=item,id=`flow:${step.id}`;
- const rule=step.rule&&step.rule.value!==null?`${step.rule.label}: ${programText(step.rule.value)}`:'';
- const records=step.outputIds.map(node).filter((n):n is ProgramNode=>Boolean(n)&&['variable','record'].includes(n!.kind));
- const card=<div className={`${s.step} ${props.selectedIds.includes(id)?s.picked:''} ${step.rule&&['missing','decision'].includes(step.rule.state)?s.unresolved:''}`} data-model-id={id}>
-  <button className={s.stepHead} onClick={e=>props.onPick(id,e.shiftKey)}>
-   <span className={s.kind} data-kind={step.kind}>{kindMark[step.kind]??'•'}</span>
+function Step({item,ctx}:{item:FlowItem;ctx:Ctx}){
+ const {step}=item,id=`flow:${step.id}`,program=ctx.program;
+ const isOpen=ctx.open.has(step.id),isFolded=ctx.folded.has(step.id);
+ const own=step.conditionIds?.length?ctx.conditions.filter(c=>step.conditionIds!.includes(c.id)):[];
+ const offPath=Boolean(ctx.focus&&own.length&&!own.some(c=>c.id===ctx.focus));
+ const row=<div className={`${s.row} ${ctx.selectedIds.includes(id)?s.picked:''} ${ctx.highlightIds?.has(id)?s.cited:''} ${ctx.changedIds?.has(id)?s.changed:''}`} data-model-id={id}>
+  <button className={s.head} aria-expanded={isOpen} onClick={e=>{ctx.onPick(id,e.shiftKey);if(!e.shiftKey)ctx.toggleOpen(step.id);}}>
+   <span className={s.kind} data-kind={step.kind} aria-hidden>{kindMark[step.kind]??'•'}</span>
    <strong>{step.title}</strong>
-   {step.actorIds.length>0&&<small>{step.actorIds.map(a=>node(a)?.title??a).join(', ')}</small>}
+   {own.map(c=><em key={c.id} className={s.tag} data-tone={c.tone}><i/>{c.label}</em>)}
   </button>
-  <Issue ids={props.issuesFor(id)} onIssue={props.onIssue}/>
-  {rule&&<p className={s.rule}>{rule}</p>}
-  {step.rule&&step.rule.value===null&&<p className={s.gapLine}>{step.rule.label}: not specified</p>}
-  {item.splits&&step.kind!=='branch'&&<ArmHeads arms={conditionArms(props.program,props.studyId)} focus={focus}/>}
-  {item.lanes.length>0&&<div className={s.lanes} style={{gridTemplateColumns:`repeat(${item.lanes.length},minmax(0,1fr))`}}>{item.lanes.map(l=><div key={l.arm.id} className={`${s.lane} ${focus&&focus.id!==l.arm.id?s.dim:''}`} data-tone={l.arm.tone}><span className={s.laneLabel}><i/>{l.arm.label}</span>{l.nodeIds.map(nid=><Chip key={nid} node={node(nid)} props={props} tone={l.arm.tone}/>)}</div>)}</div>}
-  {item.shared.length>0&&<div className={s.io}><span>{step.visibleIds.length?'Sees':'Uses'}</span>{item.shared.map(nid=><Chip key={nid} node={node(nid)} props={props}/>)}</div>}
-  {records.length>0&&records.length<=4&&<div className={s.io}><span>Records</span>{records.map(n=><Chip key={n.id} node={n} props={props}/>)}</div>}
-  {records.length>4&&<details className={s.ioMore} open={records.some(n=>props.selectedIds.includes(n.id))}><summary><span>Records</span>{records.length} measures</summary><div className={s.io}>{records.map(n=><Chip key={n.id} node={n} props={props}/>)}</div></details>}
+  <Source id={id} refs={itemSources(program,id)} ctx={ctx}/>
+  <Issue ids={ctx.issuesFor(id)} ctx={ctx}/>
  </div>;
- if(!item.children.length)return card;
- // Branch alternatives run side by side, one column per arm; the shared continuation follows below.
- if(step.kind==='branch'&&item.children.length>=2)return <div className={s.branch}>{card}<div className={s.alternatives} style={{gridTemplateColumns:`repeat(${item.children.length},minmax(0,1fr))`}}>{item.children.map(child=><div key={child.step.id} className={`${s.alternative} ${focus&&child.arm&&focus.id!==child.arm.id?s.dim:''}`} data-tone={child.arm?.tone}>{child.arm&&<span className={s.laneLabel}><i/>{child.arm.label}</span>}{render([child],depth+1)}</div>)}</div></div>;
- return <div className={s.container} data-kind={step.kind}>{card}<div className={s.nested}>{render(item.children,depth+1)}</div>{step.kind==='repeat'&&<span className={s.loopBack} aria-hidden>↻ repeat</span>}</div>;
+ const body=isOpen&&<StepDetail item={item} ctx={ctx}/>;
+ if(!item.children.length)return <div className={offPath?s.off:''}>{row}{body}</div>;
+ return <div className={`${s.container} ${offPath?s.off:''}`} data-kind={step.kind}>
+  {row}{body}
+  {step.kind==='repeat'&&<p className={s.repeat}>↻ repeats{step.rule&&step.rule.value!==null?` · ${programText(step.rule.value)}`:''}</p>}
+  <button className={s.fold} onClick={()=>ctx.toggleFold(step.id)}>{isFolded?`Show ${item.children.length} steps`:'Fold'}</button>
+  {!isFolded&&(item.columns?<div className={s.columns} style={{gridTemplateColumns:`repeat(${item.children.length},minmax(0,1fr))`}}>{item.children.map(child=>{
+   const cs=ctx.conditions.filter(c=>child.step.conditionIds?.includes(c.id));
+   return <div key={child.step.id} className={`${s.column} ${ctx.focus&&cs.length&&!cs.some(c=>c.id===ctx.focus)?s.off:''}`} data-tone={cs[0]?.tone}><Steps items={[child]} ctx={ctx}/></div>;
+  })}</div>:<div className={s.nested}><Steps items={item.children} ctx={ctx}/></div>)}
+ </div>;
+}
+
+/** What a step involves, opened in place. Condition-specific materials sit side by side with
+ * their differing words marked, so a manipulation is checked where it happens in the flow. */
+function StepDetail({item,ctx}:{item:FlowItem;ctx:Ctx}){
+ const {step}=item,program=ctx.program;
+ const nodes=(ids:string[])=>ids.map(id=>program.nodes.find(n=>n.id===id)).filter((n):n is ProgramNode=>Boolean(n));
+ const specific=(n:ProgramNode)=>Boolean(n.conditionIds?.some(c=>ctx.conditions.some(x=>x.id===c)));
+ const seen=nodes(step.visibleIds),used=nodes(step.inputIds.filter(i=>!step.visibleIds.includes(i)));
+ const byCondition=ctx.conditions.map(c=>({c,nodes:[...seen,...used].filter(n=>n.conditionIds?.includes(c.id))})).filter(g=>g.nodes.length);
+ const records=nodes(step.outputIds);
+ return <div className={s.detail}>
+  {step.rule&&<FieldRow id={`flow:${step.id}`} field={step.rule} ctx={ctx}/>}
+  {byCondition.length>=2&&<div className={s.compare} style={{gridTemplateColumns:`repeat(${byCondition.length},minmax(0,1fr))`}}>{byCondition.map(({c,nodes:list},gi)=>{
+   const other=byCondition[gi===0?1:0].nodes;
+   return <section key={c.id} data-tone={c.tone} className={ctx.focus&&ctx.focus!==c.id?s.off:''}><header><i/>{c.label}</header>{list.map(n=><div key={n.id} data-model-id={n.id}>
+    <NodeChip node={n} ctx={ctx}/>
+    {n.fields.map(f=>{const peer=other.flatMap(o=>o.fields).find(x=>x.id===f.id);return <FieldRow key={f.id} id={n.id} field={f} against={peer&&fieldText(peer.value)} ctx={ctx}/>;})}
+   </div>)}</section>;
+  })}</div>}
+  <Chips label="Participant sees" list={seen.filter(n=>!(byCondition.length>=2&&specific(n)))} ctx={ctx}/>
+  <Chips label="Uses" list={used.filter(n=>!(byCondition.length>=2&&specific(n)))} ctx={ctx}/>
+  {records.length>4?<details className={s.more}><summary>Records · {records.length} measures</summary><Chips label="" list={records} ctx={ctx}/></details>:<Chips label="Records" list={records} ctx={ctx}/>}
+  {item.jumps.map(j=><p key={j.to} className={s.jump}>{j.back?'↩ back to':'→ continues to'} <button onClick={e=>ctx.onPick(`flow:${j.to}`,e.shiftKey)}>{j.title}</button>{j.when?` · ${j.when}`:''}</p>)}
+  {!step.rule&&!seen.length&&!used.length&&!records.length&&!item.jumps.length&&<p className={s.none}>No rule, materials or records are recorded for this step.</p>}
+ </div>;
+}
+
+const origins:Partial<Record<ProgramField['origin'],string>>={derived:'derived',researcher:'researcher',implementation:'implementation choice',unknown:'origin unknown'};
+function FieldRow({id,field,against,ctx}:{id:string;field:ProgramField;against?:string;ctx:Ctx}){
+ const text=field.value===null?'':fieldText(field.value),refs=sourceRefs(ctx.program,field.evidenceIds);
+ const unresolved=field.state==='missing'||field.state==='decision';
+ return <div className={`${s.field} ${unresolved?s.unresolved:''}`}>
+  <span className={s.fieldLabel}>{field.label}{origins[field.origin]&&<em>{origins[field.origin]}</em>}</span>
+  <span className={s.fieldValue}>{unresolved&&!text?'Not specified':against!==undefined&&text!==against?wordDiff(text,against).map((p,i)=>p.changed?<mark key={i}>{p.text}</mark>:<Fragment key={i}>{p.text}</Fragment>):text}</span>
+  {(field.origin==='verbatim'||field.origin==='reported'||refs.length>0)&&<Source id={id} refs={refs} ctx={ctx}/>}
+ </div>;
+}
+
+function Chips({label,list,ctx}:{label:string;list:ProgramNode[];ctx:Ctx}){
+ if(!list.length)return null;
+ return <div className={s.chips}>{label&&<span className={s.label}>{label}</span>}{list.map(n=><NodeChip key={n.id} node={n} ctx={ctx}/>)}</div>;
+}
+function NodeChip({node,ctx}:{node:ProgramNode;ctx:Props}){
+ return <span className={`${s.chip} ${ctx.selectedIds.includes(node.id)?s.picked:''} ${ctx.highlightIds?.has(node.id)?s.cited:''}`} data-model-id={node.id}>
+  <button onClick={e=>ctx.onPick(node.id,e.shiftKey)} title={node.summary||node.title}>{node.title}</button>
+  <Source id={node.id} refs={itemSources(ctx.program,node.id)} ctx={ctx} compact/>
+  <Issue ids={ctx.issuesFor(node.id)} ctx={ctx}/>
+ </span>;
+}
+
+/** The link back to the paper. Without a cited source the item says so, so it never reads as
+ * settled as a stated fact. */
+function Source({id,refs,ctx,compact}:{id:string;refs:SourceRef[];ctx:Props;compact?:boolean}){
+ const ref=refs[0];
+ if(!ref)return <span className={s.unsourced} title="No source is cited for this. Check it with the agent.">{compact?'?':'no source'}</span>;
+ const label=ref.page?`p. ${ref.page}`:'file';
+ return <button className={`${s.source} ${ref.verified?'':s.unverified}`} title={`${ref.verified?'Open the cited passage':'Cited passage, not yet matched on the page'}${ref.quote?`: “${ref.quote.slice(0,160)}${ref.quote.length>160?'…':''}”`:''}${ref.file?` (${ref.file})`:''}`} onClick={e=>{e.stopPropagation();ctx.onSource(id,ref);}}>{label}{ref.verified?'':'?'}</button>;
+}
+function Issue({ids,ctx}:{ids:string[];ctx:Props}){
+ if(!ids.length)return null;
+ return <button className={s.issue} onClick={e=>{e.stopPropagation();ctx.onIssue(ids[0]);}} aria-label={`${ids.length} open ${ids.length===1?'question':'questions'}`} title="Open question">!{ids.length>1?` ${ids.length}`:''}</button>;
 }
 const kindMark:Record<string,string>={action:'▸',sequence:'⋯',repeat:'↻',branch:'⑂',parallel:'⫴',interaction:'⇄',custom:'◆'};
-function ArmHeads({arms,focus}:{arms:Arm[];focus?:Arm}){
- return <div className={s.forkArms}><span>splits into</span>{arms.map(a=><b key={a.id} data-tone={a.tone} className={focus&&focus.id!==a.id?s.dim:''}><i/>{a.label}</b>)}</div>;
+
+const groups=[
+ {title:'Background & hypotheses',kinds:['background','hypothesis']},
+ {title:'Study design',kinds:['design','participants','condition','material','procedure']},
+ {title:'Data & findings',kinds:['record','variable','analysis','result']},
+];
+/** Every non-step node in scope, folded by group. Items the selected passage cites are pulled out next to their group, so the panel does not unfold. */
+function Context(props:Props){
+ const {program,studyId}=props;
+ const scoped=program.nodes.filter(n=>!studyId||!n.studyIds.length||n.studyIds.includes(studyId));
+ const known=new Set(groups.flatMap(g=>g.kinds)),other=[...new Set(scoped.filter(n=>!known.has(n.kind)).map(n=>n.kind))];
+ const all=[...groups,...(other.length?[{title:'Other details',kinds:other}]:[])].map(g=>({...g,items:scoped.filter(n=>g.kinds.includes(n.kind))})).filter(g=>g.items.length);
+ const cited=scoped.filter(n=>props.highlightIds?.has(n.id));
+ return <div className={s.context}>{all.map(g=><details key={g.title} className={g.items.some(n=>props.highlightIds?.has(n.id))?s.citedGroup:''}><summary>{g.title}<span>{g.items.length}</span></summary><div>{g.items.map(n=><NodeChip key={n.id} node={n} ctx={props}/>)}</div></details>)}
+  {cited.length>0&&<div className={s.citedList}>{cited.map(n=><NodeChip key={n.id} node={n} ctx={props}/>)}</div>}</div>;
 }
 
-/* ---------- Version B · Compare: aligned facts per condition, only differences by default ---------- */
-
-function CompareView(props:Props&{arms:Arm[]}){
- const {program,arms}=props;
- const studies=studyArms(program);
- const [mode,setMode]=useState<'conditions'|'studies'>(arms.length>=2?'conditions':'studies');
- const [all,setAll]=useState(false);
- const columns=mode==='conditions'&&arms.length>=2?arms:studies;
- const [hidden,setHidden]=useState<string[]>([]);
- const shown=columns.filter(c=>!hidden.includes(c.id));
- const rows=useMemo(()=>compareRows(program,shown),[program,shown]);
- if(columns.length<2)return <div className={s.empty}><p>No conditions are mapped in this study, and there is no second study to compare.</p>{props.onDiscuss&&<button onClick={()=>props.onDiscuss!(designOf(program,props.studyId),'Check whether this study has different conditions. Map only the documented conditions and their step paths, and flag missing assignments.')}>Check with agent ↗</button>}</div>;
- const differing=rows.filter(r=>!r.same),same=rows.filter(r=>r.same);
- const groups=[...new Set((all?rows:differing).map(r=>r.group))];
- return <div className={s.compare}>
-  <div className={s.compareBar}>
-   {arms.length>=2&&studies.length>=2&&<div className={s.segment} role="group" aria-label="Compare"><button aria-pressed={mode==='conditions'} onClick={()=>{setMode('conditions');setHidden([]);}}>Conditions</button><button aria-pressed={mode==='studies'} onClick={()=>{setMode('studies');setHidden([]);}}>Studies</button></div>}
-   {columns.length>2&&columns.map(c=><label key={c.id} className={s.armChip} data-tone={c.tone}><input type="checkbox" checked={!hidden.includes(c.id)} disabled={!hidden.includes(c.id)&&shown.length<=2} onChange={()=>setHidden(h=>h.includes(c.id)?h.filter(x=>x!==c.id):[...h,c.id])}/><i/>{c.label}</label>)}
-   <span className={s.tally}><b>{differing.length}</b> of {rows.length} differ</span>
-   <label className={s.toggle}><input type="checkbox" checked={all} onChange={e=>setAll(e.target.checked)}/>Show identical</label>
-  </div>
-  <div className={s.table} style={{gridTemplateColumns:`minmax(84px,.55fr) repeat(${shown.length},minmax(150px,1fr))`}} role="table">
-   <div className={s.th} role="columnheader"/>{shown.map(c=><div key={c.id} role="columnheader" className={s.th} data-tone={c.tone}><i/>{c.label}</div>)}
-   {groups.map(group=><Fragment key={group}>
-    <div className={s.group} role="rowheader">{group}</div>
-    {(all?rows:differing).filter(r=>r.group===group).map(row=><Fragment key={row.key}>
-     <div className={s.rowLabel} role="rowheader">{row.label}</div>
-     {row.same?<button className={`${s.cell} ${s.sameCell}`} style={{gridColumn:`span ${shown.length}`}} onClick={e=>row.cells[0].nodeId&&props.onPick(row.cells[0].nodeId,e.shiftKey)}><span><small>Same in all</small> {row.cells[0].text}</span></button>
-     :shown.map((c,i)=>{const cell=row.cells.find(x=>x.armId===c.id),other=row.cells.find(x=>x.armId===shown[i===0?1:0].id);
-      return <button key={c.id} className={`${s.cell} ${cell?.nodeId&&props.selectedIds.includes(cell.nodeId)?s.picked:''}`} data-tone={c.tone} onClick={e=>cell?.nodeId&&props.onPick(cell.nodeId,e.shiftKey)}>{cell?<span><Diff text={cell.text} against={other?.text}/></span>:<span className={s.absent}>Not present</span>}</button>;})}
-    </Fragment>)}
-   </Fragment>)}
-  </div>
-  {!all&&same.length>0&&<button className={s.sameSummary} onClick={()=>setAll(true)}><b>Identical in all {shown.length}:</b> {same.map(r=>r.group==='Procedure'?r.cells[0].text.split(' · ')[0]:`${r.group} · ${r.label}`).join(' · ')}</button>}
- </div>;
-}
-function Diff({text,against}:{text:string;against?:string}){
- if(against===undefined)return <>{text}</>;
- return <>{wordDiff(text,against).map((part,i)=>part.changed?<mark key={i}>{part.text}</mark>:<Fragment key={i}>{part.text}</Fragment>)}</>;
-}
-
-/* ---------- Version C · Screens: what one participant sees, assembled from verbatim fields ---------- */
-
-function ScreensView(props:Props&{arms:Arm[];arm?:Arm}){
- const {program,studyId,arms,arm}=props;
- const [contrast,setContrast]=useState(true);
- const screens=studyScreens(program,studyId,arm);
- const other=arms.length>=2?studyScreens(program,studyId,arms.find(a=>a.id!==arm?.id)):[];
- const authored=Boolean(presentation(program).screens?.some(sc=>program.steps.find(st=>st.id===sc.stepId)?.studyId===studyId));
- const node=(id:string)=>program.nodes.find(n=>n.id===id);
- let number=0;
- return <div className={s.screens} data-tone={arm?.tone}>
-  <div className={s.screensMeta}><small className={s.provenance} title={authored?'The build agent chose which verbatim fields appear on each screen':'Inferred from each step’s visible inputs'}>{authored?'Screen layout by build agent':'Screen layout inferred'} · text is verbatim from the program</small>{other.length>0&&<label className={s.toggle}><input type="checkbox" checked={contrast} onChange={e=>setContrast(e.target.checked)}/>Mark words that differ from {arms.find(a=>a.id!==arm?.id)?.label}</label>}</div>
-  {screens.map((screen,i)=>{
-   const step=screen.step,id=`flow:${step.id}`,issues=props.issuesFor(id);
-   const flow=flatFlow(studyFlow(program,studyId,arms)).find(f=>f.item.step.id===step.id)?.item;
-   if(flow?.splits)return <div key={step.id} className={s.assignment}><button onClick={e=>props.onPick(id,e.shiftKey)}>{step.title}</button>{arm?<b data-tone={arm.tone}><i/>{arm.label}</b>:null}<small>not shown to participant</small><Issue ids={[...issues,...program.nodes.filter(n=>n.kind==='design'&&(!n.studyIds.length||n.studyIds.includes(studyId))).flatMap(n=>props.issuesFor(n.id))]} onIssue={props.onIssue}/></div>;
-   if(step.children.length&&!screen.blocks.some(b=>b.type!=='records'))return <div key={step.id} className={s.loopHead} style={{marginLeft:screen.depth*14}}><button onClick={e=>props.onPick(id,e.shiftKey)}>{kindMark[step.kind]??'•'} {step.title}{step.rule&&step.rule.value!==null?` · ${step.rule.label} ${programText(step.rule.value)}`:''}</button></div>;
-   number++;
-   const peer=other[i];
-   return <article key={step.id} className={`${s.screen} ${props.selectedIds.includes(id)?s.picked:''}`} style={{marginLeft:screen.depth*14}} data-model-id={id}>
-    <header><button onClick={e=>props.onPick(id,e.shiftKey)}><span>{number}</span>{step.title}</button>{step.actorIds.length>0&&<small>{step.actorIds.map(a=>node(a)?.title??a).join(', ')}</small>}<Issue ids={issues} onIssue={props.onIssue}/></header>
-    <div className={s.page}>
-     {screen.continues&&<p className={s.continues}>Same screen as before; the participant responds here.</p>}
-     {screen.blocks.map((block,b)=><Block key={b} block={block} props={props} against={contrast?peer?.blocks.filter(x=>x.type===block.type)[screen.blocks.filter(x=>x.type===block.type).indexOf(block)]:undefined}/>)}
-     {!screen.blocks.length&&!screen.continues&&<p className={s.continues}>No participant-facing content recorded for this step.</p>}
-    </div>
-   </article>;
-  })}
- </div>;
-}
-function Block({block,props,against}:{block:ScreenBlock;props:Props;against?:ScreenBlock}){
- const ref=(b?:ScreenBlock)=>b&&(b.type==='text'||b.type==='question')?b.text:undefined;
- if(block.type==='text')return <button className={s.verbatim} onClick={e=>props.onPick(block.nodeId,e.shiftKey)}>{block.text.split(/\n{2,}/).map((para,i)=><p key={i}><Diff text={para} against={ref(against)!==undefined?ref(against)!.split(/\n{2,}/)[i]??'':undefined}/></p>)}</button>;
- if(block.type==='question')return <button className={s.question} onClick={e=>props.onPick(block.nodeId,e.shiftKey)}><p><Diff text={block.text} against={ref(against)}/></p><span className={block.scale?s.scale:s.options}>{block.options.map(o=><span key={o}>{block.scale?o:<><i/>{o}</>}</span>)}</span></button>;
- if(block.type==='gap')return <button className={s.gap} onClick={()=>block.issueId&&props.onIssue(block.issueId)}><b>Not specified</b> {block.text}</button>;
- return <p className={s.records}>Records → {block.nodeIds.map(id=>props.program.nodes.find(n=>n.id===id)?.title??id).join(', ')}</p>;
-}

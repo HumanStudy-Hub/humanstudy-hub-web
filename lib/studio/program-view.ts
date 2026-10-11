@@ -1,193 +1,138 @@
-import type { HumanProgram, JsonValue, ProgramField, ProgramNode, ProgramStep } from './human-program';
+import type { HumanProgram, JsonValue, ProgramNode, ProgramStep } from './human-program';
 import { programText } from './human-program';
 
-/** Display structure derived from a Human Program. Nothing here is a scientific claim:
- * the views only rearrange program objects, and every displayed value is read from a field.
- * An agent may author `extensions.presentation` to state conditions and screens explicitly;
- * without it, conditions and screens are inferred conservatively from the program. */
+/** Display structure derived from a Human Program. Nothing here is a scientific claim: every
+ * arrow comes from an explicit `next` edge, every condition from explicit `conditionIds`, and
+ * every displayed value from a field. Inference is only ever offered as a suggestion to confirm. */
 
-export type Arm = { id:string; label:string; nodeIds:string[]; stepIds?:string[]; studyId?:string; tone:number; source:'agent'|'branch'|'design'|'study' };
-export type FlowItem = { step:ProgramStep; children:FlowItem[]; lanes:{arm:Arm;nodeIds:string[]}[]; shared:string[]; splits:boolean; arm?:Arm; unmapped?:boolean };
-export type ScreenBlock =
- | { type:'text'; nodeId:string; fieldId:string; text:string; origin:ProgramField['origin'] }
- | { type:'question'; nodeId:string; fieldId:string; text:string; options:string[]; scale:boolean; origin:ProgramField['origin'] }
- | { type:'gap'; text:string; issueId?:string }
- | { type:'records'; nodeIds:string[] };
-export type Screen = { step:ProgramStep; depth:number; blocks:ScreenBlock[]; continues:boolean };
-export type CompareRow = { key:string; group:string; label:string; cells:{armId:string;text:string;nodeId?:string}[]; same:boolean; unmapped?:boolean };
-
-type PresentationBlock = { node?:string; field?:string; item?:number; gap?:string };
-export type ProgramPresentation = {
- conditions?:{ id:string; label:string; studyIds?:string[]; nodeIds:string[] }[];
- screens?:{ stepId:string; blocks:PresentationBlock[] }[];
+export type Condition = { id:string; label:string; tone:number; stepIds:string[]; nodeIds:string[] };
+export type FlowItem = {
+ step:ProgramStep;
+ children:FlowItem[];
+ /** Branch and parallel children run side by side; other containers stack them. */
+ columns:boolean;
+ /** An explicit `next` edge (or, after columns, an edge from one of them) leads here from the item above. */
+ linked:boolean;
+ /** Explicit edges that do not lead to the item directly below: joins further on and loops back. */
+ jumps:{to:string;title:string;back:boolean;when?:string}[];
 };
+export type SourceRef = { sourceId?:string; page?:number; file?:string; quote:string; verified:boolean };
+export type PresentationPlan = { open:string[]; collapsed:string[] };
 
 const isRecord=(v:unknown):v is Record<string,JsonValue>=>Boolean(v)&&typeof v==='object'&&!Array.isArray(v);
-const tokens=(s:string)=>s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 const inStudy=(n:{studyIds:string[]},studyId:string)=>!n.studyIds.length||n.studyIds.includes(studyId);
-/** A variable whose role is the assigned condition. A "manipulation check" is an outcome, not a manipulation. */
-const isManipulation=(n:ProgramNode)=>n.kind==='variable'&&n.fields.some(f=>{const role=programText(f.value);return f.id==='role'&&/manipulat|assignment factor|independent variable|between[- ]subjects (factor|condition)/i.test(role)&&!/check/i.test(role);});
 
-export function presentation(program:HumanProgram):ProgramPresentation {
- const raw=program.extensions?.presentation;
- if(!isRecord(raw))return {};
- const nodes=new Set(program.nodes.map(n=>n.id)),steps=new Set(program.steps.map(s=>s.id));
- const strings=(v:JsonValue|undefined)=>Array.isArray(v)?v.filter((x):x is string=>typeof x==='string'):[];
- const conditions=Array.isArray(raw.conditions)?raw.conditions.filter(isRecord).filter(c=>typeof c.id==='string'&&typeof c.label==='string').map(c=>({id:c.id as string,label:c.label as string,studyIds:strings(c.studyIds),nodeIds:strings(c.nodeIds).filter(id=>nodes.has(id))})):undefined;
- const screens=Array.isArray(raw.screens)?raw.screens.filter(isRecord).filter(s=>typeof s.stepId==='string'&&steps.has(s.stepId)).map(s=>({stepId:s.stepId as string,blocks:(Array.isArray(s.blocks)?s.blocks:[]).filter(isRecord).map(b=>({...(typeof b.node==='string'?{node:b.node}:{}),...(typeof b.field==='string'?{field:b.field}:{}),...(typeof b.item==='number'?{item:b.item}:{}),...(typeof b.gap==='string'?{gap:b.gap}:{})}))})):undefined;
- return {...(conditions?.length?{conditions}:{}),...(screens?.length?{screens}:{})};
+/** Conditions are nodes of kind `condition`. Steps and nodes join one through `conditionIds`;
+ * sharing an id across phases is what states that two steps run in the same condition. */
+export function studyConditions(program:HumanProgram,studyId:string):Condition[] {
+ return program.nodes.filter(n=>n.kind==='condition'&&inStudy(n,studyId)).map((c,tone)=>({id:c.id,label:c.title,tone,
+  stepIds:program.steps.filter(s=>s.studyId===studyId&&s.conditionIds?.includes(c.id)).map(s=>s.id),
+  nodeIds:program.nodes.filter(n=>n.conditionIds?.includes(c.id)&&inStudy(n,studyId)).map(n=>n.id)}));
 }
 
-const armLabel=(title:string)=>{const i=title.indexOf(':');return i>0&&i<=40?title.slice(0,i).trim():title;};
-/** Arms from `branch` steps. The first branch's alternatives are the arms. A later branch joins
- * them only when each of its alternatives carries exactly one arm's label (a crossover's
- * "Intervention arm: …" in both phases); otherwise it stays unmapped rather than guessed. */
-function branchArms(program:HumanProgram,studyId:string):Arm[] {
+/** When no conditions are stated, possible ones the agent should confirm. Never used to draw or group anything. */
+export function conditionSuggestion(program:HumanProgram,studyId:string):{labels:string[];basis:string}|null {
+ if(studyConditions(program,studyId).length)return null;
  const steps=new Map(program.steps.map(s=>[s.id,s]));
- const alternatives=(b:ProgramStep)=>b.children.map(id=>steps.get(id)).filter((x):x is ProgramStep=>Boolean(x));
- const branches=flatFlow(studyFlow(program,studyId,[])).map(f=>f.item.step).filter(s=>s.kind==='branch'&&alternatives(s).length>=2);
- if(!branches.length)return [];
- const first=alternatives(branches[0]),labels=first.map(s=>armLabel(s.title));
- const unique=new Set(labels.map(l=>l.toLowerCase())).size===labels.length;
- const arms:Arm[]=first.map((alt,tone)=>({id:alt.id,label:unique?labels[tone]:alt.title,studyId,tone,source:'branch',stepIds:[alt.id],nodeIds:[]}));
- for(const b of branches.slice(1)){
-  const later=alternatives(b),match=later.map(s=>arms.filter(a=>a.label.toLowerCase()===armLabel(s.title).toLowerCase()));
-  if(later.length===arms.length&&match.every(m=>m.length===1)&&new Set(match.map(m=>m[0].id)).size===arms.length)later.forEach((s,i)=>match[i][0].stepIds!.push(s.id));
+ const branch=program.steps.find(s=>s.studyId===studyId&&s.kind==='branch'&&s.children.length>=2);
+ if(branch){const labels=branch.children.map(id=>steps.get(id)?.title??id).map(t=>{const i=t.indexOf(':');return i>0&&i<=40?t.slice(0,i).trim():t;});return {labels,basis:`the alternatives of “${branch.title}”`};}
+ for(const n of program.nodes.filter(n=>inStudy(n,studyId)&&(n.kind==='design'||n.kind==='variable')))for(const f of n.fields){
+  const labels=Array.isArray(f.value)?f.value.filter((v):v is string=>typeof v==='string'):[];
+  if(labels.length>=2&&labels.length<=8&&/condition|arm|treatment|level/i.test(`${f.id} ${f.label}`))return {labels,basis:`${n.title} · ${f.label}`};
  }
- // An arm's own nodes are the ones only its alternatives use.
- const used=arms.map(a=>new Set(a.stepIds!.flatMap(id=>{const s=steps.get(id)!;return [...s.inputIds,...s.visibleIds];})));
- return arms.map((a,i)=>({...a,nodeIds:[...used[i]].filter(id=>used.every((o,j)=>j===i||!o.has(id)))}));
+ return null;
 }
 
-/** Between-condition arms of one study. Agent-declared conditions win, then `branch` steps;
- * otherwise the arms come from a design/manipulation field listing condition labels, matched to nodes by name. */
-export function conditionArms(program:HumanProgram,studyId:string):Arm[] {
- const declared=presentation(program).conditions;
- if(declared)return declared.filter(c=>!c.studyIds?.length||c.studyIds.includes(studyId)).map((c,tone)=>({id:c.id,label:c.label,nodeIds:c.nodeIds.filter(id=>{const n=program.nodes.find(n=>n.id===id);return n&&inStudy(n,studyId);}),studyId,tone,source:'agent'}));
- const branched=branchArms(program,studyId);
- if(branched.length)return branched;
- const listed=program.nodes.filter(n=>inStudy(n,studyId)&&(n.kind==='design'||n.kind==='variable')).flatMap(n=>n.fields.filter(f=>Array.isArray(f.value)&&(/condition|arm|treatment|level/i.test(`${f.id} ${f.label}`)||isManipulation(n))).map(f=>(f.value as JsonValue[]).filter((v):v is string=>typeof v==='string')))
-  .find(labels=>labels.length>=2&&labels.length<=8);
- if(!listed)return [];
- const specific=program.nodes.filter(n=>inStudy(n,studyId)&&!['design','variable','background','hypothesis','analysis','result'].includes(n.kind));
- return listed.map((label,tone)=>({id:label,label,studyId,tone,source:'design' as const,nodeIds:specific.filter(n=>{const words=new Set([...tokens(n.id),...tokens(n.title)]);return tokens(label).every(t=>words.has(t));}).map(n=>n.id)}));
-}
-
-/** Columns for the comparison view: conditions within a study, or sibling studies. */
-export function studyArms(program:HumanProgram):Arm[] {
- return program.studies.filter(s=>s.type!=='analysis'&&program.steps.some(step=>step.studyId===s.id)).map((s,tone)=>({id:s.id,label:s.title,studyId:s.id,tone,source:'study' as const,nodeIds:program.nodes.filter(n=>n.studyIds.length===1&&n.studyIds[0]===s.id).map(n=>n.id)}));
-}
-
-/** Top-level execution order: roots first, then `next` edges breadth-first. Nested steps stay under their container. */
-export function studyFlow(program:HumanProgram,studyId:string,arms:Arm[]=conditionArms(program,studyId)):FlowItem[] {
+/** Steps in display order. Order among siblings follows explicit `next` edges (stable by array
+ * order where none exist); an arrow is drawn only where such an edge exists. */
+export function studyFlow(program:HumanProgram,studyId:string):FlowItem[] {
  const steps=program.steps.filter(s=>s.studyId===studyId),byId=new Map(steps.map(s=>[s.id,s]));
- const nested=new Set(steps.flatMap(s=>s.children)),targets=new Set(steps.flatMap(s=>s.next.map(e=>e.to)));
- const top=steps.filter(s=>!nested.has(s.id)),order:ProgramStep[]=[],seen=new Set<string>();
- const queue=[...top.filter(s=>!targets.has(s.id)),...top];
- while(queue.length){const s=queue.shift()!;if(seen.has(s.id)||nested.has(s.id))continue;seen.add(s.id);order.push(s);queue.unshift(...s.next.map(e=>byId.get(e.to)).filter((x):x is ProgramStep=>Boolean(x)));}
- const armNodes=new Set(arms.flatMap(a=>a.nodeIds));
- const manipulations=new Set(program.nodes.filter(isManipulation).map(n=>n.id));
- const armOf=new Map(arms.flatMap(a=>(a.stepIds??[]).map(id=>[id,a] as const)));
- const item=(step:ProgramStep,path:Set<string>):FlowItem=>{
-  const shown=[...new Set([...step.inputIds,...step.visibleIds])];
-  const lanes=arms.map(arm=>({arm,nodeIds:shown.filter(id=>arm.nodeIds.includes(id))}));
-  return {step,lanes:lanes.filter(l=>l.nodeIds.length).length>=2?lanes:[],shared:shown.filter(id=>!armNodes.has(id)&&!manipulations.has(id)),splits:arms.length>=2&&(step.outputIds.some(id=>manipulations.has(id))||step.kind==='branch'&&step.children.some(id=>armOf.has(id))),...(armOf.has(step.id)?{arm:armOf.get(step.id)}:{}),
-   // A later branch whose alternatives are not tied to the arms: neither arm can be said to take either path.
-   ...(armOf.size&&step.kind==='branch'&&step.children.length>=2&&!step.children.some(id=>armOf.has(id))?{unmapped:true}:{}),
-   children:step.children.filter(id=>!path.has(id)).map(id=>byId.get(id)).filter((x):x is ProgramStep=>Boolean(x)).map(child=>item(child,new Set([...path,step.id])))};
+ const nested=new Set(steps.flatMap(s=>s.children));
+ // A container leads wherever its contents lead: a branch's alternatives continue to the step after it.
+ const exits=(step:ProgramStep,seen=new Set<string>()):string[]=>seen.has(step.id)?[]:(seen.add(step.id),[...step.next.map(e=>e.to),...step.children.flatMap(id=>byId.has(id)?exits(byId.get(id)!,seen):[])]);
+ const order=(list:ProgramStep[])=>{
+  const ids=new Set(list.map(s=>s.id)),indegree=new Map(list.map(s=>[s.id,0]));
+  const targets=new Map(list.map(s=>[s.id,[...new Set(exits(s))].filter(to=>ids.has(to)&&to!==s.id)]));
+  for(const s of list)for(const to of targets.get(s.id)!)indegree.set(to,indegree.get(to)!+1);
+  const out:ProgramStep[]=[],seen=new Set<string>();
+  while(out.length<list.length){
+   // Cycles leave no zero-indegree step; the earliest remaining one breaks them.
+   const next=list.find(s=>!seen.has(s.id)&&indegree.get(s.id)===0)??list.find(s=>!seen.has(s.id))!;
+   seen.add(next.id);out.push(next);
+   for(const to of targets.get(next.id)!)if(!seen.has(to))indegree.set(to,indegree.get(to)!-1);
+  }
+  return out;
  };
- return order.map(step=>item(step,new Set([step.id])));
+ const ends=(item:FlowItem):ProgramStep[]=>item.columns?item.children.flatMap(ends):[item.step];
+ const build=(list:ProgramStep[],path:Set<string>):FlowItem[]=>{
+  const sorted=order(list),position=new Map(sorted.map((s,i)=>[s.id,i]));
+  const items:FlowItem[]=sorted.map(step=>({step,columns:step.kind==='branch'||step.kind==='parallel',linked:false,jumps:[],
+   children:build(step.children.filter(id=>!path.has(id)).map(id=>byId.get(id)).filter((x):x is ProgramStep=>Boolean(x)),new Set([...path,step.id]))}));
+  items.forEach((item,i)=>{
+   const prev=items[i-1];
+   item.linked=Boolean(prev&&ends(prev).some(s=>s.next.some(e=>e.to===item.step.id)));
+   item.jumps=item.step.next.filter(e=>e.to!==items[i+1]?.step.id&&byId.has(e.to)).map(e=>({to:e.to,title:byId.get(e.to)!.title,back:(position.get(e.to)??Infinity)<=i,...(e.when?{when:e.when}:{})}));
+  });
+  // A column's step continues to whatever follows the branch; that edge is the join, not a jump.
+  items.forEach((item,i)=>{if(item.columns)for(const end of item.children)end.jumps=end.jumps.filter(j=>j.to!==items[i+1]?.step.id);});
+  return items;
+ };
+ return build(steps.filter(s=>!nested.has(s.id)),new Set());
 }
-/** One arm's path: the other arms' branch alternatives are dropped, and an unmapped branch keeps
- * no alternative at all, since the program does not say which one this arm takes. */
-export function armPath(items:FlowItem[],arm?:Arm):FlowItem[] {
- if(!arm?.stepIds)return items;
- return items.filter(i=>!i.arm||arm.stepIds!.includes(i.step.id)).map(i=>({...i,children:i.unmapped?[]:armPath(i.children,arm)}));
-}
-export function flatFlow(items:FlowItem[],depth=0):{item:FlowItem;depth:number}[] { return items.flatMap(item=>[{item,depth},...flatFlow(item.children,depth+1)]); }
 
+export function flatFlow(items:FlowItem[]):FlowItem[] { return items.flatMap(item=>[item,...flatFlow(item.children)]); }
 /** Actors in order of first appearance; two or more means the flow is drawn as swimlanes. */
 export function flowActors(program:HumanProgram,items:FlowItem[]):ProgramNode[] {
- const ids=[...new Set(flatFlow(items).flatMap(({item})=>item.step.actorIds))];
- return ids.map(id=>program.nodes.find(n=>n.id===id)).filter((n):n is ProgramNode=>Boolean(n));
+ return [...new Set(flatFlow(items).flatMap(i=>i.step.actorIds))].map(id=>program.nodes.find(n=>n.id===id)).filter((n):n is ProgramNode=>Boolean(n));
 }
 
-const questionOf=(v:JsonValue)=>isRecord(v)&&typeof v.question==='string'?{text:v.question,options:Array.isArray(v.options)?v.options.map(o=>programText(o)):[]}:null;
-const isScale=(options:string[])=>options.length>=3&&options.every(o=>/^-?\d+$/.test(o.trim()));
-function blocksFor(node:ProgramNode,field:ProgramField,item?:number):ScreenBlock[] {
- const values=Array.isArray(field.value)?field.value:[field.value];
- const picked=item===undefined?values:values[item]===undefined?[]:[values[item]];
- return picked.flatMap((v):ScreenBlock[]=>{
-  const q=questionOf(v);
-  if(q)return [{type:'question',nodeId:node.id,fieldId:field.id,text:q.text,options:q.options,scale:isScale(q.options),origin:field.origin}];
-  if(typeof v==='string'&&v.trim()&&field.origin==='verbatim')return [{type:'text',nodeId:node.id,fieldId:field.id,text:v,origin:field.origin}];
-  return [];
+/** Source locations for evidence ids, verified first. */
+export function sourceRefs(program:HumanProgram,ids:string[]):SourceRef[] {
+ return ids.map(id=>program.evidence.find(e=>e.id===id)).filter((e):e is HumanProgram['evidence'][number]=>Boolean(e&&(e.sourceId||e.path)))
+  .map(e=>({...(e.sourceId?{sourceId:e.sourceId}:{}),...(e.locator.page&&e.locator.page<=10000?{page:e.locator.page}:{}),...(!e.sourceId&&e.path?{file:e.path}:{}),quote:[...(e.quote??'')].slice(0,8000).join(''),verified:e.verification==='verified'}))
+  .sort((a,b)=>Number(b.verified)-Number(a.verified));
+}
+const entityEvidence=(program:HumanProgram,id:string)=>{
+ const step=id.startsWith('flow:')?program.steps.find(s=>`flow:${s.id}`===id):undefined,node=step?undefined:program.nodes.find(n=>n.id===id);
+ return [...new Set([...(step?.evidenceIds??node?.evidenceIds??[]),...(step?.rule?.evidenceIds??[]),...(node?.fields??[]).flatMap(f=>f.evidenceIds)])];
+};
+/** Where a program item (node id, or `flow:` step id) is stated in the sources. */
+export function itemSources(program:HumanProgram,id:string):SourceRef[] { return sourceRefs(program,entityEvidence(program,id)); }
+
+const words=(text:string)=>text.toLowerCase().normalize('NFKC').match(/[\p{L}\p{N}]+/gu)??[];
+/** Program items whose evidence quotes the selected passage: same source and page, and a run of
+ * shared words long enough to be the same sentence rather than a common phrase. */
+export function supportedBy(program:HumanProgram,selection:{sourceId?:string;page:number;text:string}):string[] {
+ const picked=words(selection.text);if(picked.length<3)return [];
+ const quotes=new Map<string,boolean>();
+ const cites=(evidenceIds:string[])=>evidenceIds.some(id=>{
+  if(quotes.has(id))return quotes.get(id)!;
+  const e=program.evidence.find(e=>e.id===id),quote=words(e?.quote??'');
+  const hit=Boolean(e&&quote.length&&e.locator.page===selection.page&&(!selection.sourceId||!e.sourceId||e.sourceId===selection.sourceId)&&sharedRun(quote,picked)>=Math.min(6,quote.length,picked.length));
+  quotes.set(id,hit);return hit;
  });
+ return [...program.steps.filter(s=>cites(entityEvidence(program,`flow:${s.id}`))).map(s=>`flow:${s.id}`),...program.nodes.filter(n=>cites(entityEvidence(program,n.id))).map(n=>n.id)];
+}
+function sharedRun(a:string[],b:string[]):number {
+ let best=0;const prev=new Uint16Array(b.length+1),cur=new Uint16Array(b.length+1);
+ for(let i=1;i<=a.length;i++){for(let j=1;j<=b.length;j++){cur[j]=a[i-1]===b[j-1]?prev[j-1]+1:0;if(cur[j]>best)best=cur[j];}prev.set(cur);cur.fill(0);}
+ return best;
 }
 
-/** What one participant in `arm` sees, step by step. Only verbatim text and transcribed
- * questions are shown; unresolved step rules become visible gaps, never filler text. */
-export function studyScreens(program:HumanProgram,studyId:string,arm?:Arm):Screen[] {
- const arms=conditionArms(program,studyId),flow=flatFlow(armPath(studyFlow(program,studyId,arms),arm));
- const authored=new Map((presentation(program).screens??[]).map(s=>[s.stepId,s.blocks]));
- const otherArms=new Set(arms.filter(a=>a.id!==arm?.id).flatMap(a=>a.nodeIds));
- const nodes=new Map(program.nodes.map(n=>[n.id,n])),shown=new Set<string>();
- return flow.map(({item,depth})=>{
-  const step=item.step,visible=[...new Set([...step.visibleIds,...step.inputIds])].filter(id=>!otherArms.has(id)).map(id=>nodes.get(id)).filter((n):n is ProgramNode=>Boolean(n));
-  const blocks:ScreenBlock[]=[];
-  const spec=authored.get(step.id);
-  if(spec)for(const b of spec){
-   if(b.gap){const issue=program.issues.find(i=>i.id===b.gap);blocks.push({type:'gap',text:issue?.title??b.gap,...(issue?{issueId:issue.id}:{})});continue;}
-   // A field reference without a node resolves against this arm's visible nodes, so one spec serves every condition.
-   const candidates=b.node?[nodes.get(b.node)].filter((n):n is ProgramNode=>Boolean(n)):visible;
-   for(const n of candidates){const f=n.fields.find(f=>f.id===b.field);if(f){blocks.push(...blocksFor(n,f,b.item));break;}}
-  }
-  else for(const n of visible)for(const f of n.fields){const key=`${n.id}.${f.id}`;if(shown.has(key))continue;const next=blocksFor(n,f);if(next.length){shown.add(key);blocks.push(...next);}}
-  if(item.unmapped&&arm)blocks.push({type:'gap',text:`Which alternative of “${step.title}” this condition follows is not stated`});
-  if(step.rule&&['missing','decision'].includes(step.rule.state)){const issue=program.issues.find(i=>i.stepId===step.id);blocks.push({type:'gap',text:`${step.rule.label}: ${issue?.title??'not reported'}`,...(issue?{issueId:issue.id}:{})});}
-  const records=step.outputIds.filter(id=>nodes.get(id)?.kind==='variable'||nodes.get(id)?.kind==='record');
-  if(records.length)blocks.push({type:'records',nodeIds:records});
-  return {step,depth,blocks,continues:!spec&&!blocks.some(b=>b.type==='text'||b.type==='question')&&visible.length>0};
- });
-}
-
-const baseTitle=(n:ProgramNode,arm:Arm)=>{const drop=new Set(tokens(arm.label));const words=n.title.split(/(\s*[·:—-]\s*|\s+)/).filter(w=>w.trim()&&!/^[·:—-]$/.test(w.trim())&&!(tokens(w).length&&tokens(w).every(t=>drop.has(t))));return words.join(' ').trim()||n.kind;};
-/** Structured values read as indented `key: value` lines rather than JSON, so a diff marks words, not punctuation. */
-export function plainText(v:JsonValue,indent=''):string {
- if(v===null)return `${indent}—`;
- if(Array.isArray(v))return v.map(item=>isRecord(item)||Array.isArray(item)?`${indent}•\n${plainText(item,indent+'  ')}`:`${indent}• ${programText(item)}`).join('\n');
- if(isRecord(v))return Object.entries(v).map(([k,item])=>item!==null&&typeof item==='object'?`${indent}${k.replace(/_/g,' ')}:\n${plainText(item,indent+'  ')}`:`${indent}${k.replace(/_/g,' ')}: ${programText(item)}`).join('\n');
- return `${indent}${programText(v)}`;
-}
-const cellText=(v:JsonValue)=>{const q=questionOf(v);return q?[q.text,q.options.length?`[${q.options.join(' / ')}]`:''].filter(Boolean).join(' '):plainText(v);};
-
-/** Aligned facts per arm. Identical rows collapse, so the reader sees what actually differs. */
-export function compareRows(program:HumanProgram,arms:Arm[]):CompareRow[] {
- const rows=new Map<string,CompareRow>();
- const put=(key:string,group:string,label:string,armId:string,text:string,nodeId?:string,unmapped?:boolean)=>{const row=rows.get(key)??{key,group,label,cells:[],same:false,...(unmapped?{unmapped}:{})};row.cells.push({armId,text,...(nodeId?{nodeId}:{})});rows.set(key,row);};
- const names=(ids:string[])=>ids.map(id=>program.nodes.find(n=>n.id===id)?.title??id).join(', ');
- const branchOf=(id:string)=>program.steps.find(s=>s.kind==='branch'&&s.children.includes(id));
- for(const arm of arms){
-  const studyId=arm.studyId??program.studies[0]?.id;
-  if(studyId)flatFlow(armPath(studyFlow(program,studyId),arm)).forEach(({item},i)=>put(`step:${i}`,'Procedure',item.arm?branchOf(item.step.id)?.title??`Step ${i+1}`:item.unmapped?item.step.title:`Step ${i+1}`,arm.id,item.unmapped?'Not stated which alternative this condition follows':[item.step.title,item.step.actorIds.length?`by ${names(item.step.actorIds)}`:'',item.step.rule&&item.step.rule.value!==null?`${item.step.rule.label}: ${programText(item.step.rule.value)}`:''].filter(Boolean).join(' · '),`flow:${item.step.id}`,item.unmapped));
-  for(const id of arm.nodeIds){
-   const n=program.nodes.find(n=>n.id===id);if(!n)continue;
-   const base=baseTitle(n,arm);
-   for(const f of n.fields){
-    if(Array.isArray(f.value)&&f.value.length&&f.value.every(v=>questionOf(v)))f.value.forEach((v,i)=>put(`${n.kind}:${base}:${f.id}:${i}`,base,`${f.label} ${i+1}`,arm.id,cellText(v),n.id));
-    else put(`${n.kind}:${base}:${f.id}`,base,f.label,arm.id,cellText(f.value),n.id);
-   }
-  }
- }
- return [...rows.values()].map(row=>({...row,same:!row.unmapped&&row.cells.length===arms.length&&row.cells.every(c=>c.text===row.cells[0].text)}));
+/** The agent's presentation plan: which steps open first and which containers start folded.
+ * It arranges the program; it never states order, conditions or any other scientific relation. */
+export function presentationPlan(program:HumanProgram):PresentationPlan {
+ const raw=program.extensions?.presentation,ids=new Set(program.steps.map(s=>s.id));
+ const list=(v:JsonValue|undefined)=>Array.isArray(v)?v.filter((x):x is string=>typeof x==='string'&&ids.has(x)):[];
+ return isRecord(raw)?{open:list(raw.open),collapsed:list(raw.collapsed)}:{open:[],collapsed:[]};
 }
 
 /** Word-level diff against a reference text, marking the words that are not shared.
  * Long texts fall back to whole lines. When most of a text differs nothing is marked:
  * highlighting everything carries no information. */
 export function wordDiff(text:string,reference:string):{text:string;changed:boolean}[] {
- const words=(v:string)=>v.match(/\s+|[\p{L}\p{N}]+|[^\s\p{L}\p{N}]/gu)??[],lines=(v:string)=>v.match(/[^\n]*\n|[^\n]+$/g)??[];
- let a=words(text),b=words(reference);
+ const tokens=(v:string)=>v.match(/\s+|[\p{L}\p{N}]+|[^\s\p{L}\p{N}]/gu)??[],lines=(v:string)=>v.match(/[^\n]*\n|[^\n]+$/g)??[];
+ let a=tokens(text),b=tokens(reference);
  if(a.length*b.length>250_000){a=lines(text);b=lines(reference);}
  if(a.length*b.length>250_000)return [{text,changed:false}];
  const lcs=Array.from({length:a.length+1},()=>new Uint16Array(b.length+1));
@@ -199,4 +144,13 @@ export function wordDiff(text:string,reference:string):{text:string;changed:bool
  const count=(v:string)=>v.split(/\s+/).filter(Boolean).length,marked=out.filter(p=>p.changed).reduce((n,p)=>n+count(p.text),0);
  if(marked/Math.max(1,count(text))>0.6)return [{text,changed:false}];
  return out;
+}
+
+/** A field value as readable text: transcribed questions as a question with its options, lists one item
+ * per line, and records as `key: value` lines, so a diff marks words rather than punctuation. */
+export function fieldText(v:JsonValue,indent=''):string {
+ if(isRecord(v)&&typeof v.question==='string')return `${indent}${v.question}${Array.isArray(v.options)&&v.options.length?` [${v.options.map(o=>programText(o)).join(' / ')}]`:''}`;
+ if(Array.isArray(v))return v.map(item=>fieldText(item,indent)).join('\n');
+ if(isRecord(v))return Object.entries(v).map(([k,item])=>item!==null&&typeof item==='object'?`${indent}${k.replace(/_/g,' ')}:\n${fieldText(item,indent+'  ')}`:`${indent}${k.replace(/_/g,' ')}: ${programText(item)}`).join('\n');
+ return `${indent}${programText(v)}`;
 }

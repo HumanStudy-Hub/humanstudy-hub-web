@@ -1,89 +1,78 @@
-# Human Program views
+# Human Program panel
 
-Review route: `/build/design?case=mobile&view=flow` (cases: `mobile`, `knobe`,
-`knobe-inferred`, `trust`, `game`, `vignette`; views: `flow`, `compare`, `screens`,
-`outline`). The route uses the production renderer with local feedback notes. It does not run
-an agent or save anything, and it is excluded from search indexing.
+Review route: `/build/design?case=mobile` (cases: `mobile`, `knobe`, `knobe-unstated`, `trust`,
+`game`, `vignette`). The route uses the production renderer with local notes. It runs no agent,
+saves nothing, and is excluded from search indexing. Without the PDF, "Select a passage" lists the
+program's cited quotes so reverse tracing can be tried.
 
-This design merges two explorations (`codex/program-visualizations` and
-`claude/program-visualizations`). The editor shows four views over the same program. Switching
-views never changes the program. Selection, source inspection, comments, agent context and
-proposed-change markers keep their callbacks and stable node/field IDs.
+The acceptance test for this panel: with a new paper, can a researcher quickly understand how the
+experiment runs and find where each key statement comes from?
 
-| View | Question | Representation |
-| --- | --- | --- |
-| Flow · Steps | What happens, in what order, by whom, and where do conditions split? | Step cards with their rules, materials and records. Actors become swimlanes, `branch` alternatives run side by side as condition columns, and repeats are containers |
-| Flow · Graph | How are the steps connected? | Directed step graph with splits, joins and loops (`programGraph`). Focusing a condition dims the other arms' alternatives |
-| Compare | What actually differs between conditions, or between studies? | Aligned rows per arm. Identical rows collapse, and differing words are marked |
-| Screens | What does one participant see? | Screen by screen for one condition, from `verbatim` fields and transcribed questions only. Unreported details appear as amber gaps |
-| Outline | The earlier card overview | unchanged |
+## One flow that adapts to the experiment
 
-## Reducing what the reader holds in mind
+The panel has no view tabs. It shows one flow, and the flow's shape follows the program's
+structure:
 
-- One tab row for the view and one for the study scope. Each condition keeps the same colour in
-  every view.
-- Background, design and data nodes are collapsed into counted groups (Codex). Steps with more
-  than four records collapse them.
-- A click selects. Details opens the inspector, and Ask agent sends the selection to the
-  conversation (Codex). Open questions show as amber marks where they apply.
-- Empty states offer one agent action ("map the flow", "check conditions") instead of a blank
-  panel.
+| Program structure | What appears |
+| --- | --- |
+| Steps joined by `next` | One line with arrows |
+| Steps with no `next` between them | "order not stated" instead of an arrow |
+| `branch` / `parallel` | Children side by side; the shared continuation follows once below |
+| `repeat` | A container marked "↻ repeats" with its rule |
+| Two or more actors | Swimlanes, one column per actor |
+| `next` to an earlier or non-adjacent step | Written out in the step ("↩ back to …", "→ continues to …"), never drawn as the next arrow |
+| Condition nodes with `conditionIds` | One colour per condition; focusing a condition dims other paths |
 
-## Scientific boundaries
+Steps start as one-line rows. Clicking a row selects it and opens it in place:
+- its rule;
+- what the participant sees (`visibleIds`), kept separate from what the step only uses
+  (`inputIds`);
+- its records (folded when there are more than four).
 
-- Connections come from `steps[].next` and typed containment. Array order, title similarity and
-  field prose never create arrows.
-- Conditions come, in order, from the agent's `extensions.presentation`, from `branch` steps, or
-  as a fallback from a design or manipulation field that lists condition labels. The fallback is
-  labelled "inferred · confirm", and that label asks the agent to check the conditions.
-- A later branch joins the arms only when each alternative carries exactly one arm's label (a
-  crossover's "Intervention arm: …" in both phases). Otherwise it stays unmapped. Compare marks
-  it as differing, never as identical, and Screens shows a gap. Reachability alone is not taken
-  to mean both arms run the same later steps.
-- A manipulation check is an outcome. It never marks the point where the conditions split.
-- When no conditions exist, studies are compared as studies, never relabelled as conditions.
-- Screens and Compare display field values only. Text clipped for a diagram label stays in its
-  accessible name, tooltip and details.
+Condition-specific materials sit side by side with the differing words marked, so a manipulation
+is checked where it happens in the flow. Background, design and data nodes stay folded in counted
+groups.
 
-## `extensions.presentation` (written by the build agent)
+## Original source, both ways
 
-The views work without this block. Conditions come, in order of preference, from this block,
-from `branch` steps (each alternative is an arm; a later branch, such as a crossover's second
-phase, joins the arms only when every alternative carries exactly one arm's label before the
-colon), or from a design or manipulation field that lists condition labels, and screens are inferred from each step's visible inputs.
-That inference is fragile, though. In the Knobe sample it puts the vignette and both questions
-on one screen. The build agent already reads the paper, so it can state the presentation
-directly:
+- Every step, node and field carries its citation: `p. N` opens the paper at the quote, and `file`
+  marks a material file. A dashed `p. N?` is a citation not yet matched on the page. Items with no
+  citation show "no source", so they never read as settled facts.
+- When the source panel is open, selecting a program item turns to its passage. The selection bar
+  also offers "Source · p. N".
+- Selecting text in the paper highlights the program items whose evidence quotes it: same source
+  and page, and a run of shared words long enough to be the same sentence. A bar names those items,
+  or says that nothing cites the passage.
+- Field origins other than `verbatim`/`reported` are labelled: implementation choice, derived,
+  researcher, origin unknown.
+
+## Scientific semantics
+
+- Arrows come only from `steps[].next`. Array order and nesting are not execution order.
+- Conditions are formal: nodes of kind `condition`, joined by `conditionIds` on steps and nodes.
+  Steps in different phases that share a condition id run in the same condition. That is how a
+  crossover is stated, never by matching titles. Validation rejects `conditionIds` that name a
+  node of another kind or from another study.
+- When no conditions are stated, the panel offers a suggestion (branch titles or a design field
+  listing levels) with "Confirm with agent". The suggestion never colours, groups or aligns
+  anything.
+- Comparison is structural. Branch alternatives are columns of their own subtrees, so paths of
+  different length do not shift the steps that follow.
+
+## `extensions.presentation` (presentation plan, written by the build agent)
 
 ```json
-"presentation": {
-  "conditions": [
-    {"id": "harm", "label": "Harm", "studyIds": ["exp-1", "exp-2"], "nodeIds": ["material-1-harm", "material-2-harm"]},
-    {"id": "help", "label": "Help", "studyIds": ["exp-1", "exp-2"], "nodeIds": ["material-1-help", "material-2-help"]}
-  ],
-  "screens": [
-    {"stepId": "exp-1-read",   "blocks": [{"field": "vignette"}]},
-    {"stepId": "exp-1-answer", "blocks": [{"field": "questions", "item": 0}, {"field": "questions", "item": 1}]}
-  ]
-}
+"presentation": { "open": ["exp-1-read"], "collapsed": ["practice-rounds"] }
 ```
 
-- `conditions[].nodeIds` lists the condition-specific nodes. Colours, lanes, the Compare
-  columns and the Screens condition switch all come from this list.
-- A screen block refers to a field and never carries text. A block without `node` resolves
-  against the nodes visible in that step for the selected condition, so one spec serves every
-  condition. `item` picks one element of an array field. `{"gap": "<issue id>"}` places an
-  open question on the screen.
-- Unknown node, step and issue IDs are ignored, so a stale block can't break rendering.
+- `open` lists step ids shown opened first: the stages a reader should see before anything else.
+- `collapsed` lists container step ids that start folded.
 
-The Knobe sample (`data/studio-samples/intentional-action/program.json`) carries this block.
-On the review route, "Side effects · inferred only" is the same program without it, so the two can be
-compared directly.
-
-A future change to the HumanStudy-Bench agent prompt (`agent_pipeline/CLAUDE.md`) should ask
-the agent to write this block. It is not part of this branch.
+The plan arranges the program only. Order, conditions and every other scientific relation come
+from the program itself. Unknown ids are ignored.
 
 ## Cases
 
 See `components/studio/design-cases/README.md` for provenance. The side-effects cases use
-`data/studio-samples/intentional-action/program.json`.
+`data/studio-samples/intentional-action/program.json`. In that sample, Harm and Help are
+condition nodes; `knobe-unstated` is the same program with them removed.

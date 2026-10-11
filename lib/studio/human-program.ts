@@ -3,8 +3,8 @@ import type { Evidence, EntityKind, StudySchema } from '@/app/build-preview/stud
 
 export type JsonValue = null | boolean | number | string | JsonValue[] | {[key:string]:JsonValue};
 export type ProgramField = {id:string;label:string;value:JsonValue;origin:'verbatim'|'reported'|'derived'|'researcher'|'implementation'|'unknown';state:'confirmed'|'check'|'decision'|'missing';evidenceIds:string[];derivation?:string;studyIds?:string[];extensions?:Record<string,JsonValue>};
-export type ProgramNode = {id:string;kind:string;title:string;summary?:string;description?:string;studyIds:string[];fields:ProgramField[];evidenceIds:string[];extensions?:Record<string,JsonValue>};
-export type ProgramStep = {id:string;studyId:string;kind:'action'|'sequence'|'repeat'|'branch'|'parallel'|'interaction'|'custom';title:string;actorIds:string[];inputIds:string[];outputIds:string[];visibleIds:string[];children:string[];next:{to:string;when?:string}[];rule?:ProgramField;evidenceIds:string[];extensions?:Record<string,JsonValue>};
+export type ProgramNode = {id:string;kind:string;title:string;summary?:string;description?:string;studyIds:string[];fields:ProgramField[];evidenceIds:string[];conditionIds?:string[];extensions?:Record<string,JsonValue>};
+export type ProgramStep = {id:string;studyId:string;kind:'action'|'sequence'|'repeat'|'branch'|'parallel'|'interaction'|'custom';title:string;actorIds:string[];inputIds:string[];outputIds:string[];visibleIds:string[];children:string[];next:{to:string;when?:string}[];rule?:ProgramField;evidenceIds:string[];conditionIds?:string[];extensions?:Record<string,JsonValue>};
 export type ProgramEvidence = {id:string;verification?:"verified"|"unverified";sourceId?:string;path?:string;url?:string;locator:{page?:number;pointer?:string;start?:number;end?:number;sheet?:string;cell?:string;region?:string};quote?:string};
 export type HumanProgram = {schemaVersion:2;id:string;title:string;intent:'reconstruct'|'codesign';source:StudySchema['source'];studies:{id:string;title:string;type:'empirical'|'analysis'|'unspecified';description?:string;dependsOn?:string[]}[];nodes:ProgramNode[];steps:ProgramStep[];relations:{id:string;from:string;to:string;type:string;label?:string}[];evidence:ProgramEvidence[];issues:{id:string;title:string;severity:'blocking'|'decision'|'check';reason:string;impact:string;suggestedAction:string;studyId?:string;nodeId?:string;fieldId?:string;stepId?:string;evidenceIds:string[]}[];extensions?:Record<string,JsonValue>};
 
@@ -59,6 +59,10 @@ export function validateHumanProgram(value:unknown):HumanProgram {
  const finished=new Set<string>(),byStudy=new Map(p.studies.map(s=>[s.id,s]));
  const studyVisit=(id:string,active:Set<string>)=>{if(active.has(id))throw new Error('Study dependency cycle');if(finished.has(id))return;const deps=byStudy.get(id)!.dependsOn??[];refs(deps,studies,id);for(const dep of deps)studyVisit(dep,new Set([...active,id]));finished.add(id);};
  p.studies.forEach(s=>studyVisit(s.id,new Set()));
+ // Condition membership is explicit: it names condition nodes that apply in the same study.
+ const conditions=(ids:string[]|undefined,scope:string[],where:string)=>{refs(ids??[],nodes,where);for(const id of ids??[]){const c=nodes.get(id)!;if(c.kind!=='condition')throw new Error(`${where}: ${id} is not a condition`);if(c.studyIds.length&&scope.length&&!scope.some(st=>c.studyIds.includes(st)))throw new Error(`${where}: condition ${id} belongs to another study`);}};
+ for(const n of p.nodes)conditions(n.conditionIds,n.studyIds,n.id);
+ for(const s of p.steps)conditions(s.conditionIds,[s.studyId],s.id);
  for(const r of p.relations)refs([r.from,...(r.to===r.from?[]:[r.to])],nodes,r.id);
  for(const e of p.evidence){if(!e.sourceId&&!e.path&&!e.url)throw new Error(`${e.id}: source reference is required`);if(e.locator.start!==undefined&&e.locator.end!==undefined&&e.locator.end<e.locator.start)throw new Error(`${e.id}: reversed source range`);}
  for(const i of p.issues){refs(i.evidenceIds,evidence,i.id);if(i.studyId)refs([i.studyId],studies,i.id);if(i.nodeId)refs([i.nodeId],nodes,i.id);if(i.stepId)refs([i.stepId],steps,i.id);if(i.fieldId&&(!i.nodeId||!nodes.get(i.nodeId)?.fields.some(f=>f.id===i.fieldId)))throw new Error(`${i.id}: unknown field reference`);}

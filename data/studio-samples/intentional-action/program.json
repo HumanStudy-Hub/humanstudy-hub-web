@@ -131,6 +131,46 @@
       "evidenceIds": []
     },
     {
+      "id": "condition-harm",
+      "kind": "condition",
+      "title": "Harm",
+      "studyIds": [
+        "exp-1",
+        "exp-2"
+      ],
+      "fields": [
+        {
+          "id": "level",
+          "label": "Level",
+          "value": "harm",
+          "origin": "reported",
+          "state": "check",
+          "evidenceIds": []
+        }
+      ],
+      "evidenceIds": []
+    },
+    {
+      "id": "condition-help",
+      "kind": "condition",
+      "title": "Help",
+      "studyIds": [
+        "exp-1",
+        "exp-2"
+      ],
+      "fields": [
+        {
+          "id": "level",
+          "label": "Level",
+          "value": "help",
+          "origin": "reported",
+          "state": "check",
+          "evidenceIds": []
+        }
+      ],
+      "evidenceIds": []
+    },
+    {
       "id": "intentionality",
       "kind": "variable",
       "title": "Intentionality judgment",
@@ -495,6 +535,9 @@
       ],
       "evidenceIds": [
         "material-e-1-harm"
+      ],
+      "conditionIds": [
+        "condition-harm"
       ]
     },
     {
@@ -558,6 +601,9 @@
       ],
       "evidenceIds": [
         "material-e-1-help"
+      ],
+      "conditionIds": [
+        "condition-help"
       ]
     },
     {
@@ -603,6 +649,9 @@
       ],
       "evidenceIds": [
         "material-e-2-harm"
+      ],
+      "conditionIds": [
+        "condition-harm"
       ]
     },
     {
@@ -648,6 +697,9 @@
       ],
       "evidenceIds": [
         "material-e-2-help"
+      ],
+      "conditionIds": [
+        "condition-help"
       ]
     }
   ],
@@ -1162,70 +1214,8 @@
       }
     },
     "presentation": {
-      "conditions": [
-        {
-          "id": "harm",
-          "label": "Harm",
-          "studyIds": [
-            "exp-1",
-            "exp-2"
-          ],
-          "nodeIds": [
-            "material-1-harm",
-            "material-2-harm"
-          ]
-        },
-        {
-          "id": "help",
-          "label": "Help",
-          "studyIds": [
-            "exp-1",
-            "exp-2"
-          ],
-          "nodeIds": [
-            "material-1-help",
-            "material-2-help"
-          ]
-        }
-      ],
-      "screens": [
-        {
-          "stepId": "exp-1-read",
-          "blocks": [
-            {
-              "field": "vignette"
-            }
-          ]
-        },
-        {
-          "stepId": "exp-1-answer",
-          "blocks": [
-            {
-              "field": "questions",
-              "item": 0
-            },
-            {
-              "field": "questions",
-              "item": 1
-            }
-          ]
-        },
-        {
-          "stepId": "exp-2-read",
-          "blocks": [
-            {
-              "field": "vignette"
-            }
-          ]
-        },
-        {
-          "stepId": "exp-2-answer",
-          "blocks": [
-            {
-              "field": "questions"
-            }
-          ]
-        }
+      "open": [
+        "exp-1-read"
       ]
     }
   }

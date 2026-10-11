@@ -8,106 +8,121 @@ function load(file,deps={}){const js=ts.transpileModule(fs.readFileSync(new URL(
 const contract=JSON.parse(fs.readFileSync(new URL('../lib/studio/human-program.schema.json',import.meta.url),'utf8'));
 const hp=load('lib/studio/human-program.ts',{'./human-program.schema.json':contract});
 const pv=load('lib/studio/program-view.ts',{'./human-program':hp});
-const graphs=load('lib/studio/program-views.ts');
 const css={default:new Proxy({},{get:(_,key)=>String(key)})};
-const visuals=load('components/studio/program-visuals.tsx',{'@/lib/studio/program-views':graphs,'./program-visuals.module.css':css});
-const views=load('components/studio/program-views.tsx',{'@/lib/studio/human-program':hp,'@/lib/studio/program-view':pv,'@/lib/studio/program-views':graphs,'./program-visuals':visuals,'./program-views.module.css':css}).default;
+const Flow=load('components/studio/program-views.tsx',{'@/lib/studio/human-program':hp,'@/lib/studio/program-view':pv,'./program-views.module.css':css}).default;
 const mobile=()=>JSON.parse(fs.readFileSync(new URL('../components/studio/design-cases/mobile-internet.json',import.meta.url),'utf8'));
 const knobe=()=>JSON.parse(fs.readFileSync(new URL('../data/studio-samples/intentional-action/program.json',import.meta.url),'utf8'));
 const fixtures=JSON.parse(fs.readFileSync(new URL('./fixtures/human-program-v2.json',import.meta.url),'utf8'));
 const sample=id=>structuredClone(fixtures.cases.find(c=>c.id===id).program);
 const noop=()=>{};
-const render=(program,view,studyId)=>renderToStaticMarkup(React.createElement(views,{program,view,studyId,selectedIds:[],issuesFor:()=>[],onPick:noop,onIssue:noop}));
+const render=(program,studyId,extra={})=>renderToStaticMarkup(React.createElement(Flow,{program,studyId,selectedIds:[],issuesFor:()=>[],onPick:noop,onIssue:noop,onSource:noop,...extra}));
+const count=(html,pattern)=>(html.match(pattern)||[]).length;
+/** The real crossover output with its two conditions stated explicitly across both phases. */
+const stated=()=>{
+ const p=mobile();
+ p.nodes.push({id:'cond-intervention',kind:'condition',title:'Intervention',studyIds:['study1_rct'],fields:[],evidenceIds:[]},{id:'cond-delayed',kind:'condition',title:'Delayed intervention',studyIds:['study1_rct'],fields:[],evidenceIds:[]});
+ for(const [id,c] of [['step_phase1_intervention_block','cond-intervention'],['step_phase2_intervention_release','cond-intervention'],['step_phase1_delayed_normal','cond-delayed'],['step_phase2_delayed_block','cond-delayed']])p.steps.find(s=>s.id===id).conditionIds=[c];
+ return hp.validateHumanProgram(p);
+};
 
-test('the sample program with its presentation extension still validates',()=>{assert.doesNotThrow(()=>hp.validateHumanProgram(knobe()));});
-
-test('agent-declared conditions win, and inference recovers the same arms without them',()=>{
- const p=knobe(),declared=pv.conditionArms(p,'exp-1');
- assert.deepEqual(declared.map(a=>[a.label,a.source,a.nodeIds]),[['Harm','agent',['material-1-harm']],['Help','agent',['material-1-help']]]);
- delete p.extensions.presentation;
- assert.deepEqual(pv.conditionArms(p,'exp-1').map(a=>[a.label,a.source,a.nodeIds]),[['harm','design',['material-1-harm']],['help','design',['material-1-help']]]);
+test('the sample states its conditions as condition nodes and still validates',()=>{
+ const p=hp.validateHumanProgram(knobe());
+ assert.deepEqual(pv.studyConditions(p,'exp-1').map(c=>[c.label,c.nodeIds]),[['Harm',['material-1-harm']],['Help',['material-1-help']]]);
 });
 
-test('flow forks at assignment and splits condition materials into lanes',()=>{
- const flow=pv.studyFlow(knobe(),'exp-1');
- assert.deepEqual(flow.map(f=>f.step.id),['exp-1-assign','exp-1-read','exp-1-answer']);
- assert.equal(flow[0].splits,true);
- assert.deepEqual(flow[1].lanes.map(l=>[l.arm.id,l.nodeIds]),[['harm',['material-1-harm']],['help',['material-1-help']]]);
+test('conditionIds must name condition nodes of the same study',()=>{
+ const p=knobe();p.nodes.find(n=>n.id==='material-1-harm').conditionIds=['design'];
+ assert.throws(()=>hp.validateHumanProgram(p),/is not a condition/);
+ const q=stated();q.nodes.find(n=>n.id==='cond-delayed').studyIds=[];q.studies.push({id:'other',title:'Other',type:'empirical'});q.nodes.find(n=>n.id==='cond-delayed').studyIds=['other'];
+ assert.throws(()=>hp.validateHumanProgram(q),/belongs to another study/);
 });
 
-test('repeat containers nest and two actors become swimlanes',()=>{
- const game=sample('study_009'),flow=pv.studyFlow(game,'exp-1');
- assert.equal(flow.length,1);assert.equal(flow[0].children[0].step.id,'guess');
- const trust=sample('study_012');
- assert.deepEqual(pv.flowActors(trust,pv.studyFlow(trust,'exp-1')).map(a=>a.id),['sender','receiver']);
+test('repro 1: steps without next edges are not joined by arrows',()=>{
+ const p=knobe();p.steps.forEach(s=>s.next=[]);hp.validateHumanProgram(p);
+ const html=render(p,'exp-1');
+ assert.equal(count(html,/class="arrow"/g),0);
+ assert.equal(count(html,/order not stated/g),2);
+ assert.equal(count(render(knobe(),'exp-1'),/class="arrow"/g),2);
 });
 
-test('screens use only verbatim fields and keep the unresolved question order visible',()=>{
- const p=knobe(),[harm,help]=pv.conditionArms(p,'exp-1');
- const screens=pv.studyScreens(p,'exp-1',help),answer=screens.find(s=>s.step.id==='exp-1-answer');
- assert.equal(screens.find(s=>s.step.id==='exp-1-read').blocks[0].text.includes('help the environment'),true);
- assert.deepEqual(answer.blocks.filter(b=>b.type==='question').map(b=>b.scale),[false,true]);
- assert.ok(answer.blocks.some(b=>b.type==='gap'&&b.issueId==='exp-1-question-order'));
- assert.ok(!JSON.stringify(pv.studyScreens(p,'exp-1',harm)).includes('help the environment'));
+test('repro 2: stated conditions keep their own paths across phases',()=>{
+ const p=stated(),[intervention,delayed]=pv.studyConditions(p,'study1_rct');
+ assert.deepEqual(intervention.stepIds,['step_phase1_intervention_block','step_phase2_intervention_release']);
+ assert.deepEqual(delayed.stepIds,['step_phase1_delayed_normal','step_phase2_delayed_block']);
+ assert.equal(pv.conditionSuggestion(p,'study1_rct'),null);
+ // A presentation plan cannot change these relations.
+ p.extensions={...p.extensions,presentation:{open:['step_t2_survey','unknown'],conditions:[{id:'x'}]}};
+ assert.deepEqual(pv.presentationPlan(p),{open:['step_t2_survey'],collapsed:[]});
+ assert.deepEqual(pv.studyConditions(p,'study1_rct').map(c=>c.stepIds),[intervention.stepIds,delayed.stepIds]);
 });
 
-test('compare collapses identical rows and marks only the differing words',()=>{
- const p=knobe(),rows=pv.compareRows(p,pv.conditionArms(p,'exp-1'));
- assert.ok(rows.filter(r=>r.group==='Procedure').every(r=>r.same));
- const q=rows.find(r=>r.label==='Questions 1');assert.equal(q.same,false);
- assert.deepEqual(pv.wordDiff(q.cells[0].text,q.cells[1].text).filter(d=>d.changed).map(d=>d.text.trim()),['harm']);
+test('repro 3: branches of uneven length stay aligned on the shared continuation',()=>{
+ const p=mobile(),alt=p.steps.find(s=>s.id==='step_phase1_intervention_block');
+ alt.kind='sequence';alt.children=['extra-check'];
+ p.steps.push({...structuredClone(alt),id:'extra-check',kind:'action',title:'Additional intervention check',children:[],next:[]});hp.validateHumanProgram(p);
+ const timeline=pv.studyFlow(p,'study1_rct')[0].children;
+ const ids=timeline.map(i=>i.step.id);
+ assert.equal(ids.filter(id=>id==='step_t2_survey').length,1);
+ const branch=timeline.find(i=>i.step.id==='step_phase1_branch');
+ assert.equal(branch.columns,true);
+ assert.deepEqual(branch.children.map(c=>c.step.id),['step_phase1_intervention_block','step_phase1_delayed_normal']);
+ assert.equal(branch.children[0].children[0].step.id,'extra-check');
+ assert.equal(timeline[ids.indexOf('step_phase1_sms_loop')].linked,true);
 });
 
-test('every view renders the fixture programs without throwing',()=>{
- for(const [program,study] of [[knobe(),'exp-1'],[sample('study_012'),'exp-1'],[sample('study_009'),'exp-1'],[sample('study_015'),'exp-1']])for(const view of ['flow','compare','screens'])assert.doesNotThrow(()=>render(program,view,study));
- assert.match(render(knobe(),'flow','exp-1'),/splits into/);
- assert.match(render(sample('study_012'),'compare','exp-1'),/No History Treatment/);
+test('repro 4: content says where it comes from, and inputs are not shown as what participants see',()=>{
+ const p=knobe();p.nodes.find(n=>n.id==='material-1-help').fields.find(f=>f.id==='questions').origin='implementation';hp.validateHumanProgram(p);
+ const html=render(p,'exp-1');
+ assert.doesNotMatch(html,/verbatim/i);
+ assert.match(html,/implementation choice/);
+ const read=render(knobe(),'exp-1');
+ assert.match(read,/Uses<\/span>.*Side-effect condition/);
+ assert.doesNotMatch(read,/Participant sees<\/span>[^<]*<span[^>]*><button[^>]*>Side-effect condition/);
 });
 
-test('branch steps become arms, a crossover branch joins them by label, and manipulation checks do not split',()=>{
- const p=mobile(),arms=pv.conditionArms(p,'study1_rct');
- assert.deepEqual(arms.map(a=>[a.label,a.source,a.stepIds]),[['Intervention arm','branch',['step_phase1_intervention_block','step_phase2_intervention_release']],['Delayed Intervention arm','branch',['step_phase1_delayed_normal','step_phase2_delayed_block']]]);
- const flow=pv.flatFlow(pv.studyFlow(p,'study1_rct')).map(f=>f.item);
- assert.deepEqual(flow.filter(i=>i.splits).map(i=>i.step.id),['step_randomize','step_phase1_branch','step_phase2_branch']);
- const ids=pv.studyScreens(p,'study1_rct',arms[1]).map(s=>s.step.id);
- assert.ok(ids.includes('step_phase2_delayed_block')&&!ids.includes('step_phase1_intervention_block'));
- const rows=pv.compareRows(p,arms).filter(r=>!r.same);
- assert.deepEqual(rows.map(r=>r.label),['Phase 1 (weeks 1-2) condition branch','Phase 2 (weeks 3-4) condition branch (roles swap)']);
- assert.doesNotThrow(()=>render(p,'flow','study1_rct'));
+test('without stated conditions the view only suggests them, and draws no condition colours',()=>{
+ const p=mobile();
+ assert.deepEqual(pv.conditionSuggestion(p,'study1_rct').labels,['Intervention arm','Delayed Intervention arm']);
+ const html=render(p,'study1_rct',{onDiscuss:noop});
+ assert.match(html,/Conditions not stated/);assert.match(html,/Confirm with agent/);
+ assert.equal(count(html,/data-tone=/g),0);
+ const colored=render(stated(),'study1_rct');
+ assert.match(colored,/data-tone="0"/);assert.match(colored,/data-tone="1"/);
 });
 
-test('an unmapped later branch is neither shared nor guessed: compare flags it and screens show a gap',()=>{
- const p=mobile();p.steps.find(s=>s.id==='step_phase2_delayed_block').title='Waitlist: install Freedom app';
- const arms=pv.conditionArms(p,'study1_rct');
- assert.deepEqual(arms.map(a=>a.stepIds),[['step_phase1_intervention_block'],['step_phase1_delayed_normal']]);
- const row=pv.compareRows(p,arms).find(r=>r.label.startsWith('Phase 2'));
- assert.equal(row.same,false);assert.equal(row.unmapped,true);
- const screens=pv.studyScreens(p,'study1_rct',arms[0]),ids=screens.map(s=>s.step.id);
- assert.ok(!ids.includes('step_phase2_intervention_release')&&!ids.includes('step_phase2_delayed_block'));
- assert.ok(screens.find(s=>s.step.id==='step_phase2_branch').blocks.some(b=>b.type==='gap'));
+test('an opened step compares condition materials in place, marking only the differing words',()=>{
+ const html=render(knobe(),'exp-1');
+ assert.match(html,/<mark>harm<\/mark>/);assert.match(html,/<mark>help<\/mark>/);
+ assert.doesNotMatch(html,/<mark>chairman/);
+ assert.deepEqual(pv.wordDiff('Did he harm it?','Did he help it?').filter(d=>d.changed).map(d=>d.text),['harm']);
 });
 
-test('shared step titles never create conditions',()=>{
- const p=structuredClone(sample('study_012'));p.steps.forEach(s=>s.title='Control condition: send');
- assert.deepEqual(pv.conditionArms(p,p.studies[0].id),[]);
+test('every item links to its source; items without one say so',()=>{
+ const p=mobile(),html=render(p,'study1_rct');
+ assert.equal(pv.itemSources(p,'flow:step_randomize')[0].page,pv.sourceRefs(p,['ev_sample_size_randomization'])[0].page);
+ assert.match(html,/>p\. \d+</);
+ const k=render(knobe(),'exp-1');assert.match(k,/no source/);assert.match(k,/>file</);
 });
 
-test('graph layout: the real longitudinal flow splits and reconverges from explicit links only',()=>{
- const p=mobile(),before=JSON.stringify(p),graph=graphs.programGraph(p);
- assert.equal(graph.steps.length+graph.wrappers.length,p.steps.length);
- assert.equal(graph.wrappers[0].kind,'sequence');
- const at=new Map(graph.positions.map(x=>[x.id,x]));
- assert.equal(at.get('step_phase1_intervention_block').y,at.get('step_phase1_delayed_normal').y);
- assert(at.get('step_t2_survey').y>at.get('step_phase1_sms_loop').y);
- assert(graph.links.some(e=>e.from==='step_phase1_delayed_normal'&&e.to==='step_phase1_sms_loop'));
- assert.equal(new Set(graph.positions.map(x=>`${x.x}:${x.y}`)).size,graph.steps.length);
- assert.equal(JSON.stringify(p),before);
+test('a selected passage finds the items that cite it, and only on its page',()=>{
+ const p=mobile(),e=p.evidence.find(e=>e.id==='ev_sample_size_randomization');
+ const ids=pv.supportedBy(p,{sourceId:e.sourceId,page:e.locator.page,text:e.quote});
+ assert.ok(ids.includes('flow:step_randomize'));
+ assert.deepEqual(pv.supportedBy(p,{sourceId:e.sourceId,page:e.locator.page+40,text:e.quote}),[]);
+ assert.deepEqual(pv.supportedBy(p,{sourceId:e.sourceId,page:e.locator.page,text:'participants were asked to'}),[]);
+ const html=render(p,'study1_rct',{highlightIds:new Set(ids)});
+ assert.match(html,/data-model-id="flow:step_randomize"[^>]*/);assert.match(html,/cited/);
 });
 
-test('graph layout keeps feedback loops finite and parallel containment distinct',()=>{
- const p=mobile();p.steps.find(s=>s.id==='step_t3_survey').next=[{to:'step_phase1_branch',when:'repeat if required'}];
- const graph=graphs.programGraph(p);assert(graph.height<2000);assert.equal(graph.positions.length,graph.steps.length);
- const q=mobile();q.steps=[{...q.steps[2],kind:'parallel'},...q.steps.slice(3,5)];
- assert(graphs.programGraph(q).links.some(e=>e.kind==='contains'));
- assert.equal(graphs.programView('paths'),'flow');assert.equal(graphs.programView('screens'),'screens');assert.equal(graphs.programView('x'),'flow');
+test('loops back and joins further on are written out, never drawn as the next arrow',()=>{
+ const p=mobile();p.steps.find(s=>s.id==='step_t3_survey').next=[{to:'step_phase1_branch',when:'if required'}];hp.validateHumanProgram(p);
+ const t3=pv.flatFlow(pv.studyFlow(p,'study1_rct')).find(i=>i.step.id==='step_t3_survey');
+ assert.deepEqual(t3.jumps.map(j=>[j.to,j.back]),[['step_phase1_branch',true]]);
+});
+
+test('swimlanes appear only when several people act, and every fixture renders',()=>{
+ assert.match(render(sample('study_012'),'exp-1'),/laneHeads/);
+ assert.doesNotMatch(render(knobe(),'exp-1'),/laneHeads/);
+ for(const [p,st] of [[sample('study_009'),'exp-1'],[sample('study_015'),'exp-1'],[stated(),'study1_rct']])assert.doesNotThrow(()=>render(p,st));
+ assert.match(render(sample('study_009'),'exp-1'),/repeats/);
 });
