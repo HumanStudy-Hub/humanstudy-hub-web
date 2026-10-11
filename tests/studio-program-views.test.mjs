@@ -125,3 +125,13 @@ test('the document adapts to the structure (branches, repeats) and every fixture
  assert.match(render(sample('study_009'),'exp-1'),/Repeated/);
  assert.match(render(stated(),'study1_rct'),/Depending on condition/);
 });
+
+test('generated views: a streamed reply splits into its note and artifact, even while incomplete',()=>{
+ const views=load('lib/studio/views.ts');
+ assert.deepEqual(views.parseView('Here is the flow. <artifact title="Flow"><html><body>'),{note:'Here is the flow.',title:'Flow',html:'<html><body>',done:false});
+ assert.equal(views.parseView('Done.<artifact title="F">```html\n<p>x</p>\n```</artifact>').html,'<p>x</p>');
+ assert.equal(views.parseView('Thinking').html,'');
+ const ctx=JSON.parse(views.programContext(knobe(),'exp-1'));
+ assert.ok(ctx.steps.every(s=>s.studyId==='exp-1'));
+ assert.equal(views.viewTemplates.length,3);
+});
