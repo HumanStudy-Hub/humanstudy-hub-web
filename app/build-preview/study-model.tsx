@@ -8,7 +8,7 @@ import { useT } from "./ui";
 import { programText } from "@/lib/studio/human-program";
 import ProgramDetails from "@/components/studio/program-details";
 import Materials from "@/components/studio/materials";
-import ProgramFlow,{viewStudies} from "@/components/studio/program-views";
+import ProgramDocument,{viewStudies} from "@/components/studio/program-document";
 import { itemSources, type SourceRef } from "@/lib/studio/program-view";
 import type { StudioArtifact } from "@/lib/studio/types";
 import { modelChanges } from "@/lib/studio/model-diff";
@@ -32,6 +32,13 @@ type Props = {
   onDiscuss: (anchor: ModelAnchor, draft?: string) => void;
   onRespond: (id: string, text: string) => void;
 };
+
+/** Shortcuts that ask the agent for a visual artifact. They prefill the chat, so the researcher can adjust the request before sending. */
+const visualTemplates=[
+  {label:"Participant flow",hint:"Diagram of steps, branches, loops and roles",prompt:"Make a participant-flow diagram of this Human Program as a new artifact. Draw steps in order with an arrow only where a next edge exists, branch alternatives side by side, repeats as loops and each role as a lane. Label every element with its program id and source page. Show nothing the program does not state; mark unstated order or rules as missing."},
+  {label:"Compare conditions",hint:"What differs between conditions, side by side",prompt:"Make a side-by-side comparison of the experimental conditions as a new artifact. Align by where each difference happens in the procedure, show shared steps once, and quote the differing material text exactly with its source page. If conditions are not stated in the program, say so instead of inferring them."},
+  {label:"Participant screens",hint:"What one participant sees, in order",prompt:"Make a screen-by-screen preview of what one participant sees in one condition, as a new artifact. Use only participant-visible materials, quote their text exactly with its source page, and mark screen grouping, order or wording the paper does not state as missing."},
+];
 
 export default function StudyModel({ support, focusArtifactId, onClearArtifactFocus, workspaceActions, model, previewModel, artifacts=[], onDiscussArtifact, selected, anchor, responses, onSelect, onSource, onDiscuss }: Props) {
   const approvedModel=model||exampleStudy;
@@ -92,7 +99,7 @@ export default function StudyModel({ support, focusArtifactId, onClearArtifactFo
   }
 
   return <section data-event="model.panel" className={s.model} aria-label="Human Program">
-    <header className={s.heading}><div><strong>{t("Human Program")}</strong></div><div className={s.headerActions}>{onDiscussArtifact&&<button aria-pressed={showingMaterials} onClick={()=>{onClearArtifactFocus?.();setMaterialsOpen(!showingMaterials);}}>{t("Materials")} <span>{artifacts.length}</span></button>}<button className={s.needsInput} aria-expanded={reviewOpen} onClick={() => {onClearArtifactFocus?.();setMaterialsOpen(false);setReviewOpen(!reviewOpen);}}><span>{needsInput.length}</span> {t("Questions")}</button>{workspaceActions}</div></header>
+    <header className={s.heading}><div className={s.artifactTabs} role="tablist" aria-label={t("Artifacts")}><button role="tab" aria-selected={!showingMaterials} onClick={()=>{onClearArtifactFocus?.();setMaterialsOpen(false);}}>{t(study.program?"Protocol":"Human Program")}</button>{onDiscussArtifact&&<button role="tab" aria-selected={showingMaterials} onClick={()=>{onClearArtifactFocus?.();setMaterialsOpen(true);}}>{t("Materials")} <span>{artifacts.length}</span></button>}{study.program&&<details className={s.visualize}><summary>{t("Visualize")} ▾</summary><div>{visualTemplates.map(v=><button key={v.label} onClick={e=>{e.currentTarget.closest("details")?.removeAttribute("open");onDiscuss({kind:"objects",entityIds:[]},v.prompt);}}><strong>{t(v.label)}</strong><small>{t(v.hint)}</small></button>)}</div></details>}</div><div className={s.headerActions}><button className={s.needsInput} aria-expanded={reviewOpen} onClick={() => {onClearArtifactFocus?.();setMaterialsOpen(false);setReviewOpen(!reviewOpen);}}><span>{needsInput.length}</span> {t("Questions")}</button>{workspaceActions}</div></header>
     {showingMaterials&&onDiscussArtifact?<Materials key={focusArtifactId||'materials'} activeId={focusArtifactId} artifacts={artifacts} onDiscuss={onDiscussArtifact}/>:<>
     {!study.program?<div className={s.toolbar}><button title={t("Return to full study overview")} aria-label={t("Return to full study overview")} onClick={() => { onSelect(null); setReviewOpen(false); scroll.current?.scrollTo({ top: 0, behavior: "smooth" }); }}>{t("Overview")}</button></div>
     :drawable.length>1&&<div className={s.toolbar}><div className={s.studyTabs} role="tablist" aria-label="Study scope">{drawable.map(scope=><button key={scope.id} role="tab" title={scope.title} aria-selected={viewStudy===scope.id} onClick={()=>{setActiveStudy(scope.id);setInspect(false);onSelect(null);}}>{scope.title}</button>)}</div></div>}
@@ -100,7 +107,7 @@ export default function StudyModel({ support, focusArtifactId, onClearArtifactFo
     {reviewOpen && <div className={s.reviewList} aria-label="All study questions"><div><strong>{t("All study questions")}</strong><button aria-label={t("Close questions")} onClick={() => setReviewOpen(false)}>×</button></div>{reviewIssues.map(i => <button key={i.id} onClick={() => openIssue(i.id)}><span className={responses[i.id] ? s.responded : s.issueDot}>{responses[i.id] ? "✓" : "!"}</span><span><strong>{t(i.title)}</strong><small><b className={`${s.severity} ${i.severity === "blocking" ? s.blocking : ""}`}>{t(i.severity === "blocking" ? "Blocking" : i.severity === "decision" ? "Decision" : "Check")}</b> · {responses[i.id] ? t("Response saved · pending application") : i.entity ? t(overview.cards[i.entity]?.title||i.entity) : [i.study,i.field].filter(Boolean).join(" · ")}</small></span><span>↗</span></button>)}</div>}
     <div className={s.scroll} ref={scroll}>
       <div className={`${s.overviewHeading} ${programView?s.compactHeading:""}`}><h1>{t(overview.question)}</h1>{preview&&preview.hasChanges&&<div className={s.previewSummary}><strong>{t("Proposed changes")}</strong>{preview.changedEntityIds.length>0&&<span> · {preview.changedEntityIds.length} {t("affected parts")}</span>}{preview.sections.filter(section=>section!=="entities").length>0&&<span> · {preview.sections.filter(section=>section!=="entities").map(section=>t(section==="study"?"Study details":section==="reviewIssues"?"Review questions":section[0].toUpperCase()+section.slice(1))).join(", ")}</span>}{preview.removedEntityIds.length>0&&<small>{t("Removed")}: {preview.entities.filter(item=>item.kind==="removed").map(item=>t(item.title)).join(", ")}</small>}</div>}</div>
-      {programView&&study.program?<ProgramFlow key={viewStudy} program={study.program} studyId={viewStudy} selectedIds={selectedIds} highlightIds={new Set(support?.ids??[])} issuesFor={id=>reviewIssues.filter(i=>i.entity===id&&!responses[i.id]).map(i=>i.id)} changedIds={changedIds} onPick={pick} onIssue={openIssue} onSource={openSource} onDiscuss={(id,draft)=>onDiscuss({kind:"objects",entityIds:id?[id]:[]},draft)}/>:<>
+      {programView&&study.program?<ProgramDocument key={viewStudy} program={study.program} studyId={viewStudy} selectedIds={selectedIds} highlightIds={new Set(support?.ids??[])} issuesFor={id=>reviewIssues.filter(i=>i.entity===id&&!responses[i.id]).map(i=>i.id)} changedIds={changedIds} onPick={pick} onIssue={openIssue} onSource={openSource} onAsk={(id,fieldId,draft)=>onDiscuss({kind:"objects",entityIds:id?[id]:[],...(fieldId?{fieldId}:{})},draft)}/>:<>
       {study.entities.length===0&&<p className={s.gestureHint}>{t("Upload a paper, then ask the agent to build the first model.")}</p>}
       <div data-event="model.canvas" ref={canvas} className={s.canvas}>
         {overview.stages.map((stage) => <section key={stage.id} className={s.stage} aria-label={t(stage.title)}>

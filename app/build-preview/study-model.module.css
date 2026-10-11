@@ -990,3 +990,14 @@
 .support {display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 15px;border-bottom:1px solid var(--line);background:color-mix(in srgb,#c98a12 9%,var(--surface));font-size:var(--text-xs,.75rem);color:var(--muted);}
 .support button {padding:1px 7px;border:1px solid #c98a12;border-radius:999px;color:var(--text);}
 .noSource {font-size:var(--text-xs,.75rem);color:var(--warning);align-self:center;}
+.heading>.artifactTabs {display:flex;flex-direction:row;align-items:center;gap:2px;min-width:0;}
+.artifactTabs > button {padding:5px 10px;border-radius:6px;color:var(--muted);font-weight:500;white-space:nowrap;}
+.artifactTabs > button[aria-selected="true"] {background:var(--accent-bg);color:var(--text);font-weight:600;}
+.artifactTabs > button span {color:var(--muted);font-weight:400;margin-left:3px;}
+.visualize {position:relative;}
+.visualize summary {list-style:none;cursor:pointer;padding:5px 10px;border-radius:6px;color:var(--accent);font-size:var(--text-sm,.875rem);}
+.visualize summary::-webkit-details-marker {display:none;}
+.visualize > div {position:absolute;z-index:20;top:calc(100% + 4px);left:0;width:280px;padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:0 8px 24px #0002;display:flex;flex-direction:column;gap:2px;}
+.visualize > div button {display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px;border-radius:6px;text-align:left;}
+.visualize > div button:hover {background:var(--accent-bg);}
+.visualize small {color:var(--muted);font-size:var(--text-xs,.75rem);}

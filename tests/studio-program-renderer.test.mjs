@@ -13,8 +13,8 @@ const css={default:new Proxy({},{get:(_,key)=>String(key)})};
 const details=load('components/studio/program-details.tsx',{'@/lib/studio/human-program':hp,'./program-details.module.css':css}).default;
 const schema=load('app/build-preview/study-schema.ts'),review=load('app/build-preview/model-review.ts',{'./study-schema':schema}),diff=load('lib/studio/model-diff.ts'),ui=load('app/build-preview/ui.tsx');
 const programView=load('lib/studio/program-view.ts',{'./human-program':hp});
-const views=load('components/studio/program-views.tsx',{'@/lib/studio/human-program':hp,'@/lib/studio/program-view':programView,'./program-views.module.css':css});
-const modelView=load('app/build-preview/study-model.tsx',{'@/components/studio/program-views':views,'@/lib/studio/program-view':programView,'./study-schema':schema,'./model-review':review,'./study-model.module.css':css,'./ui':ui,'@/components/studio/program-details':{default:details},'@/lib/studio/human-program':hp,'@/lib/studio/model-diff':diff,'@/components/studio/materials':{default:()=>null}}).default;
+const views=load('components/studio/program-document.tsx',{'@/lib/studio/human-program':hp,'@/lib/studio/program-view':programView,'./program-document.module.css':css});
+const modelView=load('app/build-preview/study-model.tsx',{'@/components/studio/program-document':views,'@/lib/studio/program-view':programView,'./study-schema':schema,'./model-review':review,'./study-model.module.css':css,'./ui':ui,'@/components/studio/program-details':{default:details},'@/lib/studio/human-program':hp,'@/lib/studio/model-diff':diff,'@/components/studio/materials':{default:()=>null}}).default;
 const noop=()=>{};
 test('actual React renderer shows scoped study choices and repeat/interaction objects',()=>{
  const p=sample('study_012'),model=hp.projectHumanProgram(p);
@@ -57,14 +57,14 @@ test('the program panel renders the live audit program with each step anchored o
  const p=JSON.parse(fs.readFileSync(new URL('../components/studio/design-cases/mobile-internet.json',import.meta.url),'utf8'));
  const model=hp.projectHumanProgram(p),base={model,selected:'',anchor:null,responses:{},onSelect:noop,onSource:noop,onDiscuss:noop,onRespond:noop};
  const html=renderToStaticMarkup(React.createElement(modelView,base));
- for(const step of p.steps)assert.equal(html.split(`data-model-id="flow:${step.id}"`).length-1,1);
+ for(const step of p.steps)assert.equal(html.split(`data-model-id="flow:${step.id}"`).length-1,1,step.id);
  for(const node of p.nodes)assert(html.includes(`data-model-id="${node.id}"`));
  assert.doesNotMatch(html,/role="tablist" aria-label="Program view"/);
- assert.match(html,/Conditions not stated/);
+ assert.match(html,/Conditions are not stated/);assert.match(html,/role="tab"[^>]*>Protocol/);
  const cited=renderToStaticMarkup(React.createElement(modelView,{...base,support:{page:3,ids:['flow:step_randomize']}}));
  assert.match(cited,/Selected passage · p\. 3 supports/);
  assert.match(renderToStaticMarkup(React.createElement(modelView,{...base,support:{page:3,ids:[]}})),/No program item cites this passage/);
  const unknown=hp.projectHumanProgram(sample('exploratory-extension'));
  const empty=renderToStaticMarkup(React.createElement(modelView,{...base,model:unknown}));
- assert.match(empty,/participant flow has not been mapped/);assert.match(empty,/Other details/);
+ assert.match(empty,/participant procedure has not been mapped/);assert.match(empty,/Other details/);
 });

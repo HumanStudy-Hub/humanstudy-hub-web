@@ -9,13 +9,13 @@ const contract=JSON.parse(fs.readFileSync(new URL('../lib/studio/human-program.s
 const hp=load('lib/studio/human-program.ts',{'./human-program.schema.json':contract});
 const pv=load('lib/studio/program-view.ts',{'./human-program':hp});
 const css={default:new Proxy({},{get:(_,key)=>String(key)})};
-const Flow=load('components/studio/program-views.tsx',{'@/lib/studio/human-program':hp,'@/lib/studio/program-view':pv,'./program-views.module.css':css}).default;
+const Doc=load('components/studio/program-document.tsx',{'@/lib/studio/human-program':hp,'@/lib/studio/program-view':pv,'./program-document.module.css':css}).default;
 const mobile=()=>JSON.parse(fs.readFileSync(new URL('../components/studio/design-cases/mobile-internet.json',import.meta.url),'utf8'));
 const knobe=()=>JSON.parse(fs.readFileSync(new URL('../data/studio-samples/intentional-action/program.json',import.meta.url),'utf8'));
 const fixtures=JSON.parse(fs.readFileSync(new URL('./fixtures/human-program-v2.json',import.meta.url),'utf8'));
 const sample=id=>structuredClone(fixtures.cases.find(c=>c.id===id).program);
 const noop=()=>{};
-const render=(program,studyId,extra={})=>renderToStaticMarkup(React.createElement(Flow,{program,studyId,selectedIds:[],issuesFor:()=>[],onPick:noop,onIssue:noop,onSource:noop,...extra}));
+const render=(program,studyId,extra={})=>renderToStaticMarkup(React.createElement(Doc,{program,studyId,selectedIds:[],issuesFor:()=>[],onPick:noop,onIssue:noop,onSource:noop,onAsk:noop,...extra}));
 const count=(html,pattern)=>(html.match(pattern)||[]).length;
 /** The real crossover output with its two conditions stated explicitly across both phases. */
 const stated=()=>{
@@ -40,9 +40,9 @@ test('conditionIds must name condition nodes of the same study',()=>{
 test('repro 1: steps without next edges are not joined by arrows',()=>{
  const p=knobe();p.steps.forEach(s=>s.next=[]);hp.validateHumanProgram(p);
  const html=render(p,'exp-1');
- assert.equal(count(html,/class="arrow"/g),0);
- assert.equal(count(html,/order not stated/g),2);
- assert.equal(count(render(knobe(),'exp-1'),/class="arrow"/g),2);
+ assert.equal(count(html,/aria-label="then"/g),0);
+ assert.equal(count(html,/aria-label="order not stated"/g),2);
+ assert.equal(count(render(knobe(),'exp-1'),/aria-label="then"/g),2);
 });
 
 test('repro 2: stated conditions keep their own paths across phases',()=>{
@@ -76,15 +76,15 @@ test('repro 4: content says where it comes from, and inputs are not shown as wha
  assert.doesNotMatch(html,/verbatim/i);
  assert.match(html,/implementation choice/);
  const read=render(knobe(),'exp-1');
- assert.match(read,/Uses<\/span>.*Side-effect condition/);
- assert.doesNotMatch(read,/Participant sees<\/span>[^<]*<span[^>]*><button[^>]*>Side-effect condition/);
+ assert.match(read,/Uses <span[^>]*><button[^>]*>Side-effect condition/);
+ assert.doesNotMatch(read,/participants see[^<]*<\/p>[^]*?Side-effect condition<\/button>[^]*?Uses/i);
 });
 
 test('without stated conditions the view only suggests them, and draws no condition colours',()=>{
  const p=mobile();
  assert.deepEqual(pv.conditionSuggestion(p,'study1_rct').labels,['Intervention arm','Delayed Intervention arm']);
- const html=render(p,'study1_rct',{onDiscuss:noop});
- assert.match(html,/Conditions not stated/);assert.match(html,/Confirm with agent/);
+ const html=render(p,'study1_rct');
+ assert.match(html,/Conditions are not stated/);assert.match(html,/Ask the agent to confirm/);
  assert.equal(count(html,/data-tone=/g),0);
  const colored=render(stated(),'study1_rct');
  assert.match(colored,/data-tone="0"/);assert.match(colored,/data-tone="1"/);
@@ -100,8 +100,8 @@ test('an opened step compares condition materials in place, marking only the dif
 test('every item links to its source; items without one say so',()=>{
  const p=mobile(),html=render(p,'study1_rct');
  assert.equal(pv.itemSources(p,'flow:step_randomize')[0].page,pv.sourceRefs(p,['ev_sample_size_randomization'])[0].page);
- assert.match(html,/>p\. \d+</);
- const k=render(knobe(),'exp-1');assert.match(k,/no source/);assert.match(k,/>file</);
+ assert.match(html,/\[p\. \d+\]/);
+ const k=render(knobe(),'exp-1');assert.match(k,/\[no source\]/);assert.match(k,/\[file\]/);
 });
 
 test('a selected passage finds the items that cite it, and only on its page',()=>{
@@ -120,9 +120,8 @@ test('loops back and joins further on are written out, never drawn as the next a
  assert.deepEqual(t3.jumps.map(j=>[j.to,j.back]),[['step_phase1_branch',true]]);
 });
 
-test('swimlanes appear only when several people act, and every fixture renders',()=>{
- assert.match(render(sample('study_012'),'exp-1'),/laneHeads/);
- assert.doesNotMatch(render(knobe(),'exp-1'),/laneHeads/);
- for(const [p,st] of [[sample('study_009'),'exp-1'],[sample('study_015'),'exp-1'],[stated(),'study1_rct']])assert.doesNotThrow(()=>render(p,st));
- assert.match(render(sample('study_009'),'exp-1'),/repeats/);
+test('the document adapts to the structure (branches, repeats) and every fixture renders',()=>{
+ for(const [p,st] of [[sample('study_012'),'exp-1'],[sample('study_009'),'exp-1'],[sample('study_015'),'exp-1'],[stated(),'study1_rct']])assert.doesNotThrow(()=>render(p,st));
+ assert.match(render(sample('study_009'),'exp-1'),/Repeated/);
+ assert.match(render(stated(),'study1_rct'),/Depending on condition/);
 });

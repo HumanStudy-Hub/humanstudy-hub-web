@@ -8,30 +8,22 @@ program's cited quotes so reverse tracing can be tried.
 The acceptance test for this panel: with a new paper, can a researcher quickly understand how the
 experiment runs and find where each key statement comes from?
 
-## One flow that adapts to the experiment
+## Protocol artifact
 
-The panel has no view tabs. It shows one flow, and the flow's shape follows the program's
-structure:
+The right panel works like an artifact: the default tab is **Protocol**, a methods-style
+document generated from the program. Every sentence is a program field and ends with its
+citation; headings are the only text the view adds. A step bar at the top gives the flow at a
+glance (an arrow only where a `next` edge exists, `·` where order is not stated) and jumps to the
+step. Branches read as "Depending on condition:" with one block per alternative; condition
+materials sit side by side with differing words marked; repeats read as "Repeated:".
 
-| Program structure | What appears |
-| --- | --- |
-| Steps joined by `next` | One line with arrows |
-| Steps with no `next` between them | "order not stated" instead of an arrow |
-| `branch` / `parallel` | Children side by side; the shared continuation follows once below |
-| `repeat` | A container marked "↻ repeats" with its rule |
-| Two or more actors | Swimlanes, one column per actor |
-| `next` to an earlier or non-adjacent step | Written out in the step ("↩ back to …", "→ continues to …"), never drawn as the next arrow |
-| Condition nodes with `conditionIds` | One colour per condition; focusing a condition dims other paths |
+Codesign happens on the text: selecting words, or the ✎ beside a field, opens the chat with that
+item (and field) as context; the agent's proposal changes the program and the document re-renders
+with changed items marked.
 
-Steps start as one-line rows. Clicking a row selects it and opens it in place:
-- its rule;
-- what the participant sees (`visibleIds`), kept separate from what the step only uses
-  (`inputIds`);
-- its records (folded when there are more than four).
-
-Condition-specific materials sit side by side with the differing words marked, so a manipulation
-is checked where it happens in the flow. Background, design and data nodes stay folded in counted
-groups.
+**Visualize** offers three prompt shortcuts (participant flow, compare conditions, participant
+screens) that prefill the chat to ask the agent for a visual artifact. They replace fixed
+visualization components. **Materials** lists the agent's other artifacts.
 
 ## Original source, both ways
 
