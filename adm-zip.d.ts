@@ -2,6 +2,7 @@ declare module "adm-zip" {
   interface ZipEntry {
     isDirectory: boolean;
     entryName: string;
+    header: { size: number };
     getData(): Buffer;
   }
 
