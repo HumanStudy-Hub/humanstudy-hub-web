@@ -87,7 +87,7 @@ function harness(initial = document()) {
       return sourceIds.length ? { path: `${ids.owner}/${ids.workspace}/${ids.next}.zip`, url: "https://storage.test/materials.zip", sourceIds } : null;
     },
   };
-  const pipeline = load("lib/studio/pipeline.ts", { "@/lib/github-jobs": github, "./http": http, "./store": store, "./pipeline-adapter": adapter, "./validation": validation, "./model-version": modelVersion, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": resourceServer });
+  const pipeline = load("lib/studio/pipeline.ts", { "./web-access": webPolicy,  "@/lib/github-jobs": github, "./http": http, "./store": store, "./pipeline-adapter": adapter, "./validation": validation, "./model-version": modelVersion, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": resourceServer });
   const auth = { async requireStudioUser() { return ctx; } };
   const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/model-version": modelVersion, "@/lib/studio/pipeline": pipeline, "@/lib/github-jobs": github };
   const chat = load("app/api/studio/workspaces/[id]/chat/route.ts", deps);
@@ -96,6 +96,9 @@ function harness(initial = document()) {
   const workspaceRoute = load("app/api/studio/workspaces/[id]/route.ts", deps);
   return { chat, sync, proposals, workspaceRoute, pipeline, github, job, calls, get workspace() { return workspace; }, set workspace(value) { workspace = value; }, get turn() {return turn;},set turn(value){turn=value;}, get reads() { return reads; }, get lists() { return lists; }, set configured(value) { configured = value; }, set signing(value) { signing = value; }, set materialsSigning(value) { materialsSigning = value; }, set dispatchError(value) { dispatchError = value; }, set casConflict(value) { casConflict = value; } };
 }
+
+// Most tests exercise the agent machinery itself; the web policy that limits it is tested below.
+let webPolicy = { webAgentAllowed: () => true };
 
 test("discussion is the default and completes beside an in-flight package sync", async () => {
   const initial=document();
@@ -207,6 +210,20 @@ test("an outdated package sync coalesces to the latest applied model", async () 
   assert.equal(h.workspace.document.pipeline.status,"queued");
   assert.equal(h.workspace.document.pipeline.targetModelFingerprint,modelVersion.modelFingerprint(initial.model));
   assert.equal(h.calls.filter(call=>call[0]==="create").length,1);
+});
+
+test("on the web, chat after a successful first build asks the user to continue in the app", async () => {
+  webPolicy = load("lib/studio/web-access.ts");
+  try {
+    const built = harness();
+    built.workspace = { ...built.workspace, document: { ...built.workspace.document, pipeline: { jobId: "studio-11111111-1111-4111-8111-111111111111-22222222-2222-4222-8222-222222222222", requestId: "11111111-1111-4111-8111-111111111111", conversationId: "22222222-2222-4222-8222-222222222222", sourceId: built.workspace.document.sources[0].id, status: "complete", message: "Done", updatedAt: new Date().toISOString() } } };
+    const response = await built.chat.POST(request("chat", input()), routeContext);
+    const body = await response.clone().json(); assert.equal(response.status, 403, JSON.stringify(body));
+    assert.equal((await response.json()).error, "continue_in_app");
+    assert.deepEqual(built.calls, []);
+  } finally {
+    webPolicy = { webAgentAllowed: () => true };
+  }
 });
 
 test("chat requires a PDF and setup before signing or dispatch", async () => {

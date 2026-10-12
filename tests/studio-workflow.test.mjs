@@ -85,7 +85,7 @@ for(const format of ['legacy','v2','v2-removed-field'])test(`${format}: complete
       approvals++;
     },
   };
-  const pipeline = load("lib/studio/pipeline.ts", { "@/lib/github-jobs": github, "./http": http, "./store": store, "./validation": validation, "./model-version": modelVersion, "./pipeline-adapter": {}, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": {} });
+  const pipeline = load("lib/studio/pipeline.ts", { "./web-access": { webAgentAllowed: () => true },  "@/lib/github-jobs": github, "./http": http, "./store": store, "./validation": validation, "./model-version": modelVersion, "./pipeline-adapter": {}, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": {} });
   const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/model-version": modelVersion, "@/lib/studio/pipeline": pipeline, "@/lib/studio/resources": resources, "@/lib/github-jobs": github, jszip: JSZip };
   const proposals = load("app/api/studio/workspaces/[id]/proposals/route.ts", deps);
   const exportRoute = load("app/api/studio/workspaces/[id]/export/route.ts", deps);

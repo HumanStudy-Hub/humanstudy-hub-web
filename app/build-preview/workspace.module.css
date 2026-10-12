@@ -2136,3 +2136,11 @@ fieldset.workspace {
 .shell[data-density="compact"] .agentMessage,.shell[data-density="compact"] .userMessage{margin-top:10px;margin-bottom:10px}
 .shell .settingsDialog input{padding:10px;border:1px solid var(--line);background:var(--surface);color:var(--text);margin-bottom:16px;width:100%;font:inherit}
 @media(max-width:800px){.workbenchFrame>aside{position:absolute;inset:0 auto 0 0;z-index:20;box-shadow:5px 0 16px #0002}.shell .header>strong{display:none}}
+
+.continueInApp {margin:12px;padding:16px;border:1px solid var(--accent-line,#bad6df);border-radius:8px;background:var(--accent-bg,#eef7fa);display:flex;flex-direction:column;gap:10px;font-size:var(--text-sm,.875rem);}
+.continueInApp strong {font-family:var(--font-serif);font-size:var(--text-lg,1.125rem);}
+.continueInApp p {margin:0;line-height:1.55;color:var(--text);}
+.continueInApp>div {display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.continueInApp a.primary {background:#155e75;color:#fff;padding:8px 14px;border-radius:4px;text-decoration:none;}
+.continueInApp button {color:var(--accent);}
+.continueInApp small {color:var(--muted);}

@@ -1,3 +1,4 @@
+import { webAgentAllowed } from './web-access';
 import { approveStage, createStudioPipelineJob, dispatchStudioPipelineJob, listPackageFiles, readOwnedStudioJob, readOwnedStudioTurn, retryStudioPipelineJob, studioPipelineConfigured, type StudioPipelineJob } from '@/lib/github-jobs';
 import type { StudioContext } from './auth';
 import type { StudioDocument, StudioMessage, StudioMessageRef, StudioPipeline, StudioWorkspace, SourceSelection } from './types';
@@ -54,6 +55,7 @@ export async function startPipeline(ctx:StudioContext,w:StudioWorkspace,input:St
  if(!studioPipelineConfigured())throw new StudioError(503,'pipeline_setup_required','Configure the original GitHub pipeline token and STUDIO_PIPELINE_REF.');
  const document=validateStudioDocument(w.document),mode=input.intent==='build'?'build':'discuss';
  if(document.conversations.some(c=>c.messages.some(m=>m.id===input.requestId)))return w;
+ if(!webAgentAllowed(document,mode))throw new StudioError(403,'continue_in_app','The first build runs on the web. Continue this study in HumanStudy Desktop.');
  if(active(document.discussion))throw new StudioError(409,'discussion_busy','The agent is answering a previous message.');
  if(mode==='build'&&active(document.pipeline))throw new StudioError(409,'pipeline_busy','The study package is still building.');
  const source=choosePaper(ctx,w,input.sourceId||input.sourceSelection?.sourceId||document.pipeline?.sourceId);
@@ -217,6 +219,8 @@ export async function reconcilePackageApproval(ctx:StudioContext,w:StudioWorkspa
 export async function retryPipeline(ctx:StudioContext,w:StudioWorkspace,lane:'pipeline'|'discussion'='pipeline'){
  const state=w.document[lane];
  if(!state)throw new StudioError(404,lane==='pipeline'?'pipeline_not_found':'discussion_not_found');
+ // A first build that failed or stalled may run again; once it has succeeded, the study continues in the app.
+ if(lane!=='pipeline'||state.status==='review'||state.status==='complete')throw new StudioError(403,'continue_in_app','Continue this study in HumanStudy Desktop.');
  const age=Date.now()-Date.parse(state.updatedAt);
  try{
   const job=await readOwnedStudioJob(state.jobId,identity(ctx,w));
