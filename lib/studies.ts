@@ -30,3 +30,24 @@ export async function getStudies(): Promise<StudyEntry[]> {
   const local = await fs.readFile(path.join(process.cwd(), "data/studies_index.json"), "utf8");
   return studiesFrom(JSON.parse(local));
 }
+
+export type CommunityPaper = { paperKey: string; paper: Record<string, unknown> | null; contributions: Record<string, unknown>[] };
+
+// The index's `community` array lives on whichever Bench branch carries the community layout
+// until it reaches main; COMMUNITY_INDEX_BRANCH points at that branch.
+function communityIndexUrl(): string {
+  const branch = process.env.COMMUNITY_INDEX_BRANCH;
+  if (!branch) return indexUrl;
+  return indexUrl.replace(/\/HumanStudy-Bench\/[^/]+\/co_website\//, `/HumanStudy-Bench/${branch}/co_website/`);
+}
+
+export async function getCommunityPapers(): Promise<CommunityPaper[]> {
+  try {
+    const response = await fetch(communityIndexUrl(), { next: { revalidate: 60 } });
+    if (!response.ok) return [];
+    const value = (await response.json()) as { community?: unknown };
+    return Array.isArray(value.community) ? (value.community as CommunityPaper[]) : [];
+  } catch {
+    return [];
+  }
+}
