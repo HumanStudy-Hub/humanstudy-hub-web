@@ -11,7 +11,7 @@ const PREFIX = "hsd_v1";
 /** Models the hosted proxy forwards. The desktop app picks its default from here. */
 export const DESKTOP_MODELS = (process.env.DESKTOP_MODELS || "anthropic/claude-haiku-5.5,anthropic/claude-sonnet-5.5,deepseek/deepseek-chat")
   .split(",").map((m) => m.trim()).filter(Boolean);
-export const DESKTOP_DEFAULT_MODEL = process.env.DESKTOP_DEFAULT_MODEL || DESKTOP_MODELS[0];
+export const DESKTOP_DEFAULT_MODEL = process.env.DESKTOP_DEFAULT_MODEL || (DESKTOP_MODELS.includes("anthropic/claude-sonnet-5.5") ? "anthropic/claude-sonnet-5.5" : DESKTOP_MODELS[0]);
 
 const b64 = (s: string) => Buffer.from(s).toString("base64url");
 const sign = (payload: string) => createHmac("sha256", ACCESS_SECRET).update(`${PREFIX}.${payload}`).digest("base64url");
