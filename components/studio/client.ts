@@ -1,6 +1,15 @@
 import type { StudioDocument } from "@/lib/studio/types";
 
 const messages:Record<string,string>={
+ invalid_password:'Use a password between 8 and 128 characters.',
+ invalid_current_password:'Your current password is incorrect. Please try again.',
+ weak_password:'Choose a stronger password that meets the account password policy.',
+ same_password:'Choose a different password from your current one.',
+ recovery_required:'Open the reset link from your email before setting a new password.',
+ recovery_expired:'This reset link has expired or was already used. Request a new link.',
+ invalid_recovery:'This reset link is invalid. Request a new link.',
+ reauthentication_needed:'Please verify your account again before changing the password.',
+ reauthentication_not_valid:'Account verification expired. Please verify again.',
  project_copy_failed:'The project was saved, but its file copy failed. Open Projects and choose Retry file copy.',
  project_copy_pending:'Finish copying the project files before continuing. Open Projects to retry.',
  project_copy_too_large:'This project exceeds the 50 MB fork file limit. Export it to keep a complete copy.',
