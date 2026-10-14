@@ -70,3 +70,21 @@ returned 200 / sent:true. Resend showed Delivered for "Reset your HumanStudy Hub
 password". The email credential was not read or consumed; no real password was
 changed. Full password-replacement/sign-in acceptance is still the owner's step.
 This Preview remains behind Vercel sign-in; public callback rollout is not done.
+
+## Production rollout (2026-10-14)
+
+PR #17 merged into main at cfbc1f7. Production deployment
+https://humanstudy-hub-1vdsg3i6k-xuanl17s-projects.vercel.app is Ready and serves
+https://humanstudy-hub.com. STUDIO_AUTH_ORIGIN is https://humanstudy-hub.com.
+The public desktop config and /auth/reset both returned 200. Supabase Site URL now
+uses https://humanstudy-hub.com/auth/confirm and the exact
+https://humanstudy-hub.com/auth/reset redirect was added, retaining the existing URLs.
+
+A single recovery request from the public reset page to the owner's designated test
+mailbox succeeded. Resend record 01a13c4e-64c3-796b-9a04-a618cfdfe98e is Delivered.
+The link was not opened or consumed and no real password was changed. Owner verification
+and new-password sign-in remain pending. The earlier beta.1 installer embeds the protected
+Preview callback; the desktop beta.2 build moves its callback to the production origin.
+
+The separate help queue migration is owner-scoped, supports explicit optional app details,
+and is not part of research telemetry. No team notification email is configured yet.
