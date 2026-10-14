@@ -9,13 +9,13 @@ export type StudioContext = { user: StudioUser; accessToken: string };
 
 // Use a stable hosted origin when configured, so preview-deployment URLs do not
 // need a broad redirect allowlist. Otherwise use the already checked POST origin.
-export function studioConfirmationUrl(request: Request): string {
+export function studioConfirmationUrl(request: Request, destination: 'confirm' | 'reset' = 'confirm'): string {
   const raw = process.env.STUDIO_AUTH_ORIGIN || request.headers.get("origin");
   try {
     const url = new URL(raw || "");
     const local = ["localhost", "127.0.0.1"].includes(url.hostname);
     if ((url.protocol !== "https:" && !(local && url.protocol === "http:")) || url.username || url.password || url.search || url.hash || url.pathname !== "/") throw new Error("Invalid origin");
-    return `${url.origin}/auth/confirm`;
+    return `${url.origin}/auth/${destination}`;
   } catch { throw new StudioError(503, "auth_redirect_setup_required"); }
 }
 

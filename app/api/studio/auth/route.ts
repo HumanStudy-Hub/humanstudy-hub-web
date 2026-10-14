@@ -57,16 +57,17 @@ export async function POST(request: Request) {
       const user = await establishStudioSession(session);
       return NextResponse.json({ user }, { headers: { "Cache-Control": "no-store" } });
     }
-    if (action !== "signup" && action !== "signin" && action !== "resend") throw new StudioError(400, "invalid_action");
+    if (action !== "signup" && action !== "signin" && action !== "resend" && action !== "forgot-password") throw new StudioError(400, "invalid_action");
     if (typeof email !== "string" || email.trim().length > 254 || !/^\S+@\S+\.\S+$/.test(email.trim())) throw new StudioError(400, "invalid_credentials");
-    if (action === "resend") {
-      const response = await studioFetch(`/auth/v1/resend?redirect_to=${encodeURIComponent(studioConfirmationUrl(request))}`, { method: "POST", body: { email: email.trim(), type: "signup" } });
+    if (action === "resend" || action === "forgot-password") {
+      const reset = action === "forgot-password";
+      const response = await studioFetch(`/auth/v1/${reset ? 'recover' : 'resend'}?redirect_to=${encodeURIComponent(studioConfirmationUrl(request, reset ? 'reset' : 'confirm'))}`, { method: "POST", body: { email: email.trim(), ...(!reset ? { type: "signup" } : {}) } });
       // Do not disclose whether an address has an account.
       if (!response.ok) {
         const detail = await response.clone().json().catch(() => ({}));
         if (!["user_not_found", "email_already_confirmed"].includes(detail.error_code || detail.code)) await checkAuthResponse(response);
       }
-      return NextResponse.json({ requiresEmailConfirmation: true }, { headers: { "Cache-Control": "no-store" } });
+      return NextResponse.json(reset ? { sent: true } : { requiresEmailConfirmation: true }, { headers: { "Cache-Control": "no-store" } });
     }
     if (typeof password !== "string" || password.length < 8 || password.length > 128) {
       throw new StudioError(400, "invalid_credentials");
