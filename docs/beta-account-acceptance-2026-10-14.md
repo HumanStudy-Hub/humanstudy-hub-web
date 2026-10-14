@@ -54,10 +54,19 @@ Preview alias. SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY were added only for thi
 Preview branch, using the existing website's public configuration. No production
 secret was copied. Supabase redirect allowlist now includes this exact Preview's
 /auth/reset and /auth/confirm; existing redirects and Site URL are preserved.
-The recovery email template already uses ConfirmationURL and required no change.
+The recovery email template now uses RedirectTo + TokenHash with type=recovery.
+Custom links require explicit verification in the page, so email scanners do not
+consume a Supabase verification GET before the recipient opens the email.
 
 Desktop source correction: the installed app is 0.5.2, from local integration
 commit c0b8587. The companion account changes have been ported to an isolated
 worktree based on that commit (not older upstream main); 49 regressions pass there.
 The beta desktop keeps its existing production model backend, with a build-time
 auth callback override for these Preview pages. Its next test build is 0.5.3-beta.1.
+
+Live acceptance: Preview public config returns 200 with the expected callback
+origin. One recovery request to the owner's supplied test mailbox hs5533@nyu.edu
+returned 200 / sent:true. Resend showed Delivered for "Reset your HumanStudy Hub
+password". The email credential was not read or consumed; no real password was
+changed. Full password-replacement/sign-in acceptance is still the owner's step.
+This Preview remains behind Vercel sign-in; public callback rollout is not done.
