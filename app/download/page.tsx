@@ -68,13 +68,17 @@ function Downloads({ release }: { release: DesktopRelease }) {
       <div className="flex flex-wrap gap-3">
         <DownloadLink asset={release.macArm64} fallback={release.pageUrl} label="Download for Mac (Apple Silicon)" primary />
         <DownloadLink asset={release.macX64} fallback={release.pageUrl} label="Mac (Intel)" />
-        <button
-          type="button"
-          disabled
-          className="cursor-not-allowed border border-dashed border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-400"
-        >
-          Windows — coming soon
-        </button>
+        {release.windows ? (
+          <DownloadLink asset={release.windows} fallback={release.pageUrl} label="Windows (preview)" />
+        ) : (
+          <button
+            type="button"
+            disabled
+            className="cursor-not-allowed border border-dashed border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-400"
+          >
+            Windows — coming soon
+          </button>
+        )}
       </div>
       <p className="mt-3 text-sm text-gray-600">
         {hasBuild && release.version ? (
@@ -190,7 +194,7 @@ const faq: [string, React.ReactNode][] = [
   ],
   [
     "Is there a Windows version?",
-    <>Not yet. A Windows build is planned; it will appear on the releases page when it is ready.</>,
+    <>A Windows preview is available. It has not been tested on many machines yet and the installer is not code-signed, so Windows SmartScreen will warn on first run: choose “More info”, then “Run anyway”. Please tell us what breaks.</>,
   ],
   [
     "I started a study in the web builder. Where did it go?",
@@ -320,7 +324,7 @@ export default async function DownloadPage() {
             <h2 className="font-serif text-2xl font-bold sm:text-3xl">Requirements</h2>
             <dl className="mt-6 divide-y divide-gray-200 border-y border-gray-200 text-base">
               {[
-                ["System", "macOS 12 Monterey or later, on Apple Silicon or Intel. Windows is coming."],
+                ["System", "macOS 12 Monterey or later, on Apple Silicon or Intel. Windows 10/11 (64-bit) as a preview."],
                 ["First launch", "Downloads the study assistant, about 170 MB, once."],
                 ["Models", "Hosted. No API keys or model accounts needed."],
                 ["Sign-in", "HumanStudy-Hub account, invitation code and research-data agreement."],

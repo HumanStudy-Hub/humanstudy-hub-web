@@ -10,6 +10,7 @@ const API_URL = `https://api.github.com/repos/${DESKTOP_REPO}/releases?per_page=
 
 export const MAC_ARM64_ASSET = /mac-arm64\.dmg$/;
 export const MAC_X64_ASSET = /mac-x64\.dmg$/;
+export const WINDOWS_ASSET = /Setup-[\w.-]+\.exe$/;
 
 export type DesktopAsset = { name: string; url: string; size: number };
 
@@ -22,6 +23,8 @@ export type DesktopRelease = {
   pageUrl: string;
   macArm64: DesktopAsset | null;
   macX64: DesktopAsset | null;
+  /** Windows installer (preview: unsigned, not yet tested on real machines). */
+  windows: DesktopAsset | null;
 };
 
 type GitHubAsset = { name?: unknown; browser_download_url?: unknown; size?: unknown };
@@ -43,6 +46,7 @@ export const NO_RELEASE: DesktopRelease = {
   pageUrl: DESKTOP_RELEASES_URL,
   macArm64: null,
   macX64: null,
+  windows: null,
 };
 
 const str = (value: unknown) => (typeof value === "string" && value ? value : null);
@@ -75,6 +79,7 @@ export function pickDesktopRelease(payload: unknown): DesktopRelease {
     pageUrl: pageUrl?.startsWith("https://github.com/") ? pageUrl : DESKTOP_RELEASES_URL,
     macArm64: findAsset(newest.assets, MAC_ARM64_ASSET),
     macX64: findAsset(newest.assets, MAC_X64_ASSET),
+    windows: findAsset(newest.assets, WINDOWS_ASSET),
   };
 }
 
