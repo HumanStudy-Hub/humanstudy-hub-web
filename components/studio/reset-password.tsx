@@ -120,7 +120,7 @@ export default function ResetPassword({ tokenHash, invalid, changeMode = false }
       {mode === "done" ? <>
         <h1>Password updated.</h1>
         <p>{changeMode ? "Your password has been changed." : "Your password has been changed. Desktop users: return to the app and sign in with your new password."}</p>
-        <Link className={s.button} href="/build">{changeMode ? "Back to workspace" : "Sign in"}</Link>
+        <Link className={s.button} href="/build/projects">{changeMode ? "Back to workspace" : "Sign in"}</Link>
       </> : changeMode ? <>
         <h1>Change your password.</h1>
         <p>Enter your current password to verify your account, then choose a new password.</p>
@@ -157,7 +157,7 @@ export default function ResetPassword({ tokenHash, invalid, changeMode = false }
       </>}
       {error && <p className={s.error} role="alert">{error}</p>}
       {message && <p className={s.message} role="status">{message}</p>}
-      {mode !== "done" && <Link className={s.back} href="/build">Back to sign in</Link>}
+      {mode !== "done" && <Link className={s.back} href="/build/projects">Back to sign in</Link>}
     </section>
   </main>;
 }

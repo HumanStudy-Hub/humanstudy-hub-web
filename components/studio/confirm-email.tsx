@@ -24,7 +24,7 @@ export default function ConfirmEmail({ tokenHash, invalid }: { tokenHash?: strin
     setBusy(true); setError("");
     try {
       await studioApi("/api/studio/auth", { method: "POST", body: JSON.stringify({ action: "confirm", tokenHash, type: "email" }) });
-      window.location.replace("/build");
+      window.location.replace("/build/projects");
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not confirm your email. Please retry.");
       setBusy(false);
@@ -36,6 +36,6 @@ export default function ConfirmEmail({ tokenHash, invalid }: { tokenHash?: strin
     <p>{tokenHash ? "Confirm this email to finish creating your HumanStudy Hub account." : "Sign in with your email and password to continue."}</p>
     {error && <p className={s.error} role="alert">{error}</p>}
     {tokenHash && <button onClick={confirm} disabled={busy}>{busy ? "Confirming…" : "Confirm and continue"}</button>}
-    <Link href="/build" prefetch={false}>{tokenHash ? "Back to sign in" : "Sign in"}</Link>
+    <Link href="/build/projects" prefetch={false}>{tokenHash ? "Back to sign in" : "Sign in"}</Link>
   </section>;
 }

@@ -6,7 +6,7 @@ import { isStudioEditorRoute } from "@/lib/studio/editor-route";
 
 const links = [
   { name: "Datasets", href: "/dataset" },
-  { name: "Build Study", href: "/build" },
+  { name: "Desktop app", href: "/download" },
   { name: "Playground", href: "/playground" },
   { name: "Agent Evaluations", href: "/results" },
   { name: "Partnerships", href: "/collaboration" },

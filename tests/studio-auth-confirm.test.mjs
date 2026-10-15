@@ -46,7 +46,7 @@ test("opening a custom confirmation page does not consume its token until the us
     assert.deepEqual(h.locations, ["/auth/confirm"]);
     await button(h.tree).props.onClick();
     assert.deepEqual(JSON.parse(h.requests[0][1].body), { action: "confirm", tokenHash: "a".repeat(64), type: "email" });
-    assert.deepEqual(h.locations, ["/auth/confirm", "/build"]);
+    assert.deepEqual(h.locations, ["/auth/confirm", "/build/projects"]);
   } finally { h.restore(); }
 });
 

@@ -93,5 +93,5 @@ test('directory lists metadata only and autosave preserves server-owned provenan
 });
 
  test('legacy example route leads to sample loading rather than an offline editor',()=>{
- let destination;const page=load('app/build/example/page.tsx',{'next/navigation':{redirect:href=>{destination=href;}}});page.default();assert.equal(destination,'/build?sample=intentional-action');
+ let destination;const page=load('app/build/example/page.tsx',{'next/navigation':{redirect:href=>{destination=href;}}});page.default();assert.equal(destination,'/build/projects?sample=intentional-action');
  });

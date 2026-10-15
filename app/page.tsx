@@ -21,14 +21,14 @@ export default function Home() {
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link href="/dataset" className="bg-cyan-800 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-700">Explore datasets</Link>
-            <Link href="/build" className="border border-gray-400 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:border-cyan-700 hover:text-cyan-800">Build a study</Link>
+            <Link href="/download" className="border border-gray-400 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:border-cyan-700 hover:text-cyan-800">Get the desktop app</Link>
             <Link href="/playground" className="border border-gray-400 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:border-cyan-700 hover:text-cyan-800">Playground</Link>
           </div>
 
           <dl className="mt-6 grid max-w-3xl gap-x-6 gap-y-3 border-t border-gray-300/70 pt-5 sm:grid-cols-3">
             {[
               ["Explore datasets", "Browse the human studies already turned into reusable data you can download."],
-              ["Build a study", "Explore the demo, then develop a source-grounded study model with your agent."],
+              ["Desktop app", "Rebuild a published study from its paper and check every item against the PDF."],
               ["Playground", "Run a model through one of those studies and see how it compares to real people."],
             ].map(([term, detail]) => (
               <div key={term}>
