@@ -99,8 +99,8 @@ export default function StudioEditor({id}:{id:string}){
   return '';
  }
  function downloadUnsaved(){const url=URL.createObjectURL(new Blob([JSON.stringify(current.current,null,2)],{type:'application/json'}));const a=window.document.createElement('a');a.href=url;a.download='unsaved-study-draft.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
- if(!workspace||!document)return <div className={s.home}><main><Link href="/build">← Your studies</Link><p>{error||'Loading study…'}</p></main></div>;
- if(document.project?.copyState&&document.project.copyState!=='ready')return <div className={s.home}><main><Link href="/build">← Projects</Link><p>{document.project.copyState==='failed'?'The project was saved, but its files need another copy attempt. Retry from Projects.':'Copying project files. Return to Projects to check progress or retry.'}</p></main></div>;
+ if(!workspace||!document)return <div className={s.home}><main><Link href="/build/projects">← Your studies</Link><p>{error||'Loading study…'}</p></main></div>;
+ if(document.project?.copyState&&document.project.copyState!=='ready')return <div className={s.home}><main><Link href="/build/projects">← Projects</Link><p>{document.project.copyState==='failed'?'The project was saved, but its files need another copy attempt. Retry from Projects.':'Copying project files. Return to Projects to check progress or retry.'}</p></main></div>;
  const paper=document.sources.find(source=>source.id===primaryPaperId&&isPaper(source)&&source.includeInBuild!==false)||document.sources.find(source=>isPaper(source)&&source.includeInBuild!==false);
  async function startBuild(instructions=''){
   if(!paper)return;setBuildJob(null);telemetry.track('chat',{action:'build',sourceId:paper.id});
@@ -127,7 +127,7 @@ export default function StudioEditor({id}:{id:string}){
   onChange,onChat:async request=>{telemetry.track('chat',{action:'send',conversationId:request.conversationId,...(request.modelAnchor?.entityIds[0]?{entityId:request.modelAnchor.entityIds[0]}:{}),...(request.sourceSelection?.sourceId?{sourceId:request.sourceSelection.sourceId}:{})});return transact('chat',{...request,sourceId:paper?.id});},
   onProposal:async(proposalId,decision)=>{telemetry.track('review',{action:decision,reviewId:proposalId});return transact('proposals',{proposalId,decision});},
   onSave:flush,onExport:()=>void exportWorkspace(),onManage:flush,onNavigate:async href=>{await flush();window.location.assign(href);},
-  onLeave:async()=>{await flush();window.location.assign("/build");},onSource:setSourceId,
+  onLeave:async()=>{await flush();window.location.assign("/build/projects");},onSource:setSourceId,
   onProjectAction:async(action,title)=>{
    if(operation.current)throw new Error('Wait for the current operation to finish.');
    operation.current=true;setBusy(true);setError('');

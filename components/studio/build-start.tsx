@@ -31,7 +31,7 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
   const papers = document.sources.filter(source => isPaper(source) && source.includeInBuild !== false);
   const checking = progress?.phase === 'validating_package' || progress?.phase === 'ready_for_review';
   return <div className={s.start} data-studio-workspace={id}>
-    <header><Link href="/" className={s.brand} onClick={event=>{event.preventDefault();onNavigate("/");}}>HumanStudy-Hub</Link><Link href="/build" data-event="build.studies" onClick={event=>{event.preventDefault();onNavigate("/build");}}>Your studies</Link></header>
+    <header><Link href="/" className={s.brand} onClick={event=>{event.preventDefault();onNavigate("/");}}>HumanStudy-Hub</Link><Link href="/build/projects" data-event="build.studies" onClick={event=>{event.preventDefault();onNavigate("/build/projects");}}>Your studies</Link></header>
     <main>
       <div className={s.heading}><span>Build study</span><h1>{document.title}</h1></div>
       {stage === 'intake' ? <section className={s.intake}>

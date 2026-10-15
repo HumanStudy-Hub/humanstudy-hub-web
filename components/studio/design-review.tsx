@@ -48,7 +48,7 @@ export default function DesignReview({ initialCase }: { initialCase?: string }) 
     setDraft(text||''); document.getElementById('view-feedback')?.focus();
   }
   return <div className={s.shell}>
-    <header className={s.header}><Link href="/">HumanStudy-Hub</Link><span>Visual design review</span><Link href="/build">Open study editor ↗</Link></header>
+    <header className={s.header}><Link href="/">HumanStudy-Hub</Link><span>Visual design review</span><Link href="/build/projects">Open study editor ↗</Link></header>
     <div className={s.workspace}>
       <aside className={s.review} aria-label="Design review notes">
         <label htmlFor="review-case">Study</label><select id="review-case" value={caseId} onChange={e=>{setCaseId(e.target.value);setAnchor(null);setSelected('');setQuote(null);setPassage(null);setContext('');updateUrl(e.target.value);}}>{examples.map(e=><option key={e.id} value={e.id}>{e.label}</option>)}</select>

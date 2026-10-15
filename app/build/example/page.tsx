@@ -1,2 +1,2 @@
 import { redirect } from 'next/navigation';
-export default function ExampleStudyPage(){redirect('/build?sample=intentional-action');}
+export default function ExampleStudyPage(){redirect('/build/projects?sample=intentional-action');}
