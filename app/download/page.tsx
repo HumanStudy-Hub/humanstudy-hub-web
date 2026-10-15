@@ -76,7 +76,7 @@ function Downloads({ release }: { release: DesktopRelease }) {
             disabled
             className="cursor-not-allowed border border-dashed border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-400"
           >
-            Windows — coming soon
+            Windows: coming soon
           </button>
         )}
       </div>
@@ -212,10 +212,10 @@ export default async function DownloadPage() {
     <div className="bg-white text-gray-950">
       <section className="mx-auto max-w-7xl px-4 pt-14 sm:px-8 sm:pt-20">
         <div className="max-w-4xl">
-          <h1 className="font-serif text-4xl font-bold leading-tight sm:text-6xl">HumanStudy Hub for Mac</h1>
+          <h1 className="font-serif text-4xl font-bold leading-tight sm:text-6xl">Know in minutes whether a paper can be reproduced</h1>
           <p className="mt-5 max-w-2xl text-lg leading-8 text-gray-700">
-            Rebuild a published study from its paper, see exactly which details the paper leaves out, and check every
-            item against the original PDF.
+            HumanStudy Hub for Mac rebuilds the study from its paper and lists what the paper does not state. Every item
+            is checked against the original PDF, page by page. A Windows preview is also available.
           </p>
           <div className="mt-8">
             <Downloads release={release} />
@@ -245,6 +245,23 @@ export default async function DownloadPage() {
       </section>
 
       <div className="mx-auto mt-20 max-w-7xl space-y-20 px-4 sm:mt-28 sm:space-y-28 sm:px-8">
+        <section>
+          <h2 className="font-serif text-2xl font-bold leading-snug sm:text-3xl">Who it is for</h2>
+          <dl className="mt-6 divide-y divide-gray-200 border-y border-gray-200 text-base">
+            {[
+              ["Students and early PhDs reading an experimental paper", "Read the twelve-section study document and compare each item with the PDF."],
+              ["Researchers planning a replication or adaptation", "Start from verbatim materials, the procedure and the missing-information list, and ask the agent for a preregistration draft."],
+              ["Reviewers, editors and meta-scientists", "Judge reporting completeness from the amber \u201cnot stated in the paper\u201d items, each with page citations."],
+              ["Teachers of research methods", "Show the design and results as interactive charts, and run simulated participants on simple survey or vignette studies, clearly labelled as simulation."],
+            ].map(([who, use]) => (
+              <div key={who} className="grid gap-1 py-4 lg:grid-cols-12 lg:gap-8">
+                <dt className="font-semibold text-gray-950 lg:col-span-4">{who}</dt>
+                <dd className="leading-7 text-gray-700 lg:col-span-8">{use}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
         {features.map((feature, i) => (
           <section key={feature.title} className="grid items-start gap-8 lg:grid-cols-12 lg:gap-12">
             <div className={`lg:col-span-4 lg:pt-6 ${i % 2 ? "lg:order-2" : ""}`}>
@@ -289,6 +306,10 @@ export default async function DownloadPage() {
             <p>
               Simulated responses are labelled as simulation everywhere they appear and are kept apart from the
               paper&apos;s human results. They are not data about people.
+            </p>
+            <p>
+              Simulation works best for simple survey and vignette studies. Complex interactive experiments are mapped
+              and checked against the paper, not fully simulated.
             </p>
           </div>
         </section>
