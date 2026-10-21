@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getStudies, type StudyEntry } from "@/lib/studies";
+import { getResearchPaper } from "@/lib/research";
+import ResearchPaperDetail from "@/components/ResearchPaperDetail";
 
 export async function generateStaticParams() {
   return (await getStudies()).map((study) => ({ studyId: study.study_id }));
@@ -12,6 +14,11 @@ export default async function StudyDetailPage({
   params: Promise<{ studyId: string }>;
 }) {
   const { studyId } = await params;
+  if (/^paper_[a-f0-9]{24}$/.test(studyId)) {
+    const paper = await getResearchPaper(studyId);
+    if (!paper) notFound();
+    return <ResearchPaperDetail paper={paper} />;
+  }
   const studies: StudyEntry[] = await getStudies();
 
   const study = studies.find((s) => s.study_id === studyId);

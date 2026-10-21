@@ -138,6 +138,7 @@ export function validateContributionZip(
   const files = entries.filter((e) => !e.isDirectory && !ignorable(e.name));
   const names = new Set<string>();
   let unsafe = false;
+  let totalBytes = 0;
   const extra = new Set<string>();
   for (const f of files) {
     const name = f.name;
@@ -147,22 +148,30 @@ export function validateContributionZip(
       unsafe = true;
       continue;
     }
+    if (parts.some(p => [".env", ".git", ".opencode", ".humanstudy", "node_modules", "threads", "conversations", "chat", "chats", "credentials", "account.json", "settings.json"].includes(p.toLowerCase()) || p.toLowerCase().startsWith(".env."))) {
+      errors.push(`${name} is a private project file and is not published.`);
+      continue;
+    }
+    if (names.has(name)) errors.push(`The zip contains the same file more than once: ${name}.`);
     names.add(name);
+    totalBytes += f.size;
     const top = parts[0];
     const allowed =
       name === "program.json" || name === "CONTRIBUTION.json" ||
       (top === "package" && parts.length > 1) ||
-      (top === "artifacts" && parts[1] === "simulations" && parts.length > 2);
+      (top === "artifacts" && parts.length > 1) ||
+      (top === "sources" && parts.length > 1);
     if (!allowed) extra.add(parts.length > 1 ? `${top}/` : top);
     if (f.size > MAX_FILE_BYTES) errors.push(`${name} is ${mb(f.size)}, over the ${mb(MAX_FILE_BYTES)} per-file limit.`);
     if (/\.pdf$/i.test(name) && !opts.includesPdf) {
       errors.push(`${name} is a PDF. Papers are usually under copyright, so PDFs are only published when you tick "Include the paper PDF".`);
     }
   }
+  if (files.length > 2000 || totalBytes > 128 * 1024 * 1024) errors.push("The expanded contribution is too large. Store large research data as referenced resources; no files have been published.");
   if (!names.has("CONTRIBUTION.json")) errors.push("The zip has no CONTRIBUTION.json. It should be created by the HumanStudy app when you press Publish.");
   if (!names.has("program.json")) errors.push("The zip has no program.json, so there is no study to publish.");
   if (extra.size) {
-    errors.push(`The zip contains files that are not part of a contribution: ${[...extra].sort().join(", ")}. Only program.json, package/, artifacts/simulations/ and CONTRIBUTION.json are published.`);
+    errors.push(`The zip contains files that are not part of a contribution: ${[...extra].sort().join(", ")}. Only program.json, package/, sources/, research artifacts and CONTRIBUTION.json are published.`);
   }
   return errors;
 }

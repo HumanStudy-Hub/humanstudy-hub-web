@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { fail } from "@/lib/community-auth";
 import { listOpenForPaper, storeConfigured } from "@/lib/community-store";
 import { getCommunityPapers } from "@/lib/studies";
+import { getResearchPaper } from "@/lib/research";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,7 @@ export async function GET(request: Request) {
   }
   const papers = await getCommunityPapers();
   const entry = papers.find((p) => p.paperKey === key);
+  const recommended = await getResearchPaper(key).catch(() => null);
   let pending: { folder: string; slug: string; status: string; prUrl: string | null; createdAt: string }[] = [];
   if (storeConfigured()) {
     try {
@@ -23,7 +25,9 @@ export async function GET(request: Request) {
     }
   }
   return NextResponse.json(
-    { paperKey: key, paper: entry?.paper ?? null, contributions: entry?.contributions ?? [], pending },
+    { paperKey: key, paper: recommended ?? entry?.paper ?? null,
+      recommended, baseRevision: recommended?.currentRevision ?? null,
+      contributions: recommended ? [recommended] : [], pending },
     { headers: { "Cache-Control": "public, max-age=30" } },
   );
 }

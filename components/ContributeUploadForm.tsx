@@ -1,182 +1,54 @@
 "use client";
-
-import { useState, useCallback } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { upload } from "@vercel/blob/client";
+import JSZip from "jszip";
+import Link from "next/link";
 
-type Result = { success: true; pr_url: string } | { success: false; errors: string[] };
-
-const MAX_ZIP_BYTES = 50 * 1024 * 1024;
-
+type Metadata = { paperId?: string; baseRevision?: string; includesPdf?: boolean; paper: { title: string; firstAuthor: string; authors?: string[]; year: number; doi?: string } };
 export default function ContributeUploadForm() {
-  const [file, setFile] = useState<File | null>(null);
-  const [contributorGithub, setContributorGithub] = useState("");
-  const [contributorName, setContributorName] = useState("");
-  const [contributorInstitution, setContributorInstitution] = useState("");
-  const [dragActive, setDragActive] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<Result | null>(null);
-  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
-
-  const chooseFile = useCallback((f: File) => {
-    if (!f.name.endsWith(".zip")) {
-      setResult({ success: false, errors: ["Please upload a .zip file."] });
-      return;
-    }
-    if (f.size > MAX_ZIP_BYTES) {
-      setResult({ success: false, errors: [`This zip is ${(f.size / 1024 / 1024).toFixed(1)} MB. The limit is 50 MB.`] });
-      return;
-    }
-    setFile(f);
-    setResult(null);
-  }, []);
-
-  const handleDrag = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(e.type === "dragenter" || e.type === "dragover");
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    const f = e.dataTransfer.files?.[0];
-    if (f) chooseFile(f);
-  }, [chooseFile]);
-
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) chooseFile(f);
-  }, [chooseFile]);
-
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!file) {
-        setResult({ success: false, errors: ["Please select a zip file first."] });
-        return;
-      }
-      setLoading(true);
-      setResult(null);
-      setUploadPercent(0);
-      try {
-        // Upload straight to Vercel Blob; a function request body caps out at 4.5 MB.
-        const blob = await upload(file.name, file, {
-          access: "private",
-          handleUploadUrl: "/api/contribute/upload-url",
-          multipart: file.size > 8 * 1024 * 1024,
-          onUploadProgress: ({ percentage }) => setUploadPercent(percentage),
-        });
-        setUploadPercent(null);
-        const res = await fetch("/api/contribute/upload", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filePathname: blob.pathname,
-            fileName: file.name,
-            contributor_github: contributorGithub.trim(),
-            contributor_name: contributorName.trim(),
-            contributor_institution: contributorInstitution.trim() || "Independent Researcher",
-          }),
-        });
-        const data = await res.json();
-        if (data.success) setResult({ success: true, pr_url: data.pr_url });
-        else setResult({ success: false, errors: data.errors || [data.error] || ["Upload failed."] });
-      } catch (caught) {
-        setResult({ success: false, errors: [caught instanceof Error ? caught.message : "Network error. Please try again."] });
-      } finally {
-        setUploadPercent(null);
-        setLoading(false);
-      }
-    },
-    [file, contributorGithub, contributorName, contributorInstitution]
-  );
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <input
-        type="text"
-        value={contributorName}
-        onChange={(e) => setContributorName(e.target.value)}
-        placeholder="Your name (required)"
-        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cyan-500 focus:outline-none"
-        required
-      />
-      <input
-        type="text"
-        value={contributorGithub}
-        onChange={(e) => setContributorGithub(e.target.value)}
-        placeholder="GitHub ID or profile URL (required)"
-        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cyan-500 focus:outline-none"
-        required
-      />
-      <input
-        type="text"
-        value={contributorInstitution}
-        onChange={(e) => setContributorInstitution(e.target.value)}
-        placeholder="Institution (leave blank for Independent Researcher)"
-        className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-cyan-500 focus:outline-none"
-      />
-      <div
-        onDragEnter={handleDrag}
-        onDragLeave={handleDrag}
-        onDragOver={handleDrag}
-        onDrop={handleDrop}
-        className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
-          dragActive ? "border-cyan-500 bg-cyan-50/50" : "border-gray-300 bg-gray-50/50"
-        }`}
-      >
-        <input
-          type="file"
-          accept=".zip"
-          onChange={handleChange}
-          className="hidden"
-          id="contribute-zip"
-        />
-        <label htmlFor="contribute-zip" className="cursor-pointer">
-          <p className="text-sm font-medium text-gray-700">
-            {file ? file.name : "Drag and drop your study .zip here, or click to choose"}
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
-            {file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "Max 50MB. Zip should contain a study_XXX directory with specification.json, metadata.json, and ground_truth.json."}
-          </p>
-        </label>
-      </div>
-      {uploadPercent !== null && (
-        <div>
-          <div className="flex items-center justify-between text-xs text-gray-600"><span>Uploading {file?.name}</span><span className="font-mono font-semibold text-cyan-700">{Math.round(uploadPercent)}%</span></div>
-          <div className="mt-2 h-2 overflow-hidden rounded bg-gray-100"><div className="h-full bg-cyan-600 transition-[width] duration-300" style={{ width: `${uploadPercent}%` }} /></div>
-        </div>
-      )}
-      <button
-        type="submit"
-        disabled={!file || loading}
-        className="w-full rounded-md bg-cyan-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      >
-        {loading ? (uploadPercent !== null ? `Uploading ${Math.round(uploadPercent)}%` : "Validating and creating PR…") : "Upload and create PR"}
-      </button>
-      {result && (
-        <div
-          className={`rounded-lg p-4 text-sm ${
-            result.success ? "bg-green-50 text-green-800 border border-green-200" : "bg-red-50 text-red-800 border border-red-200"
-          }`}
-        >
-          {result.success ? (
-            <p>
-              PR created:{" "}
-              <a href={result.pr_url} target="_blank" rel="noopener noreferrer" className="font-medium underline">
-                {result.pr_url}
-              </a>
-            </p>
-          ) : (
-            <ul className="list-disc list-inside space-y-1">
-              {result.errors.map((err, i) => (
-                <li key={i}>{err}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-    </form>
-  );
+  const [user,setUser]=useState<{id:string}|null>(null),[checked,setChecked]=useState(false);
+  const [file,setFile]=useState<File|null>(null),[metadata,setMetadata]=useState<Metadata|null>(null);
+  const [name,setName]=useState(""),[affiliation,setAffiliation]=useState("");
+  const [busy,setBusy]=useState(false),[progress,setProgress]=useState<number|null>(null);
+  const [error,setError]=useState(""),[submitted,setSubmitted]=useState(false);
+  useEffect(()=>{fetch('/api/studio/auth').then(r=>r.json()).then(body=>setUser(body.user||null)).catch(()=>setUser(null)).finally(()=>setChecked(true))},[]);
+  async function choose(next:File|undefined){
+    setError("");setMetadata(null);setFile(null);setSubmitted(false);
+    if(!next)return;
+    if(!next.name.toLowerCase().endsWith('.zip')||next.size>40*1024*1024){setError('Choose a community ZIP no larger than 40 MB.');return}
+    try{
+      const zip=await JSZip.loadAsync(next);
+      const entry=zip.file('CONTRIBUTION.json');
+      if(!entry)throw Error('Ask the study agent to export a community contribution, then select that ZIP.');
+      const meta=JSON.parse(await entry.async('string')) as Metadata;
+      if(!meta.paper?.title||!meta.paper.firstAuthor||!Number.isInteger(meta.paper.year))throw Error('The export needs the paper title, author and year. Ask the study agent to check its paper metadata and export again.');
+      setMetadata(meta);setFile(next);
+    }catch(e){setError(e instanceof Error?e.message:'The contribution could not be read.')}
+  }
+  async function submit(event:FormEvent){
+    event.preventDefault();if(!user||!file||!metadata)return;
+    setBusy(true);setProgress(0);setError("");
+    try{
+      const blob=await upload(`community/${user.id}/contribution.zip`,file,{access:'private',handleUploadUrl:'/api/community/upload-url',multipart:file.size>8*1024*1024,onUploadProgress:({percentage})=>setProgress(percentage)});
+      setProgress(null);
+      const response=await fetch('/api/community/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({blobPathname:blob.pathname,paperMeta:metadata.paper,paperId:metadata.paperId,baseRevision:metadata.baseRevision,includesPdf:metadata.includesPdf===true,contributor:{name,affiliation},slug:'research-contribution'})});
+      const result=await response.json();if(!response.ok)throw Error(result.message||'The contribution could not be submitted.');
+      setSubmitted(true);
+    }catch(e){setError(e instanceof Error?e.message:'The contribution could not be submitted.')}
+    finally{setBusy(false);setProgress(null)}
+  }
+  if(!checked)return <p className="text-sm text-gray-600">Checking sign-in…</p>;
+  if(!user)return <p className="text-sm text-gray-700"><Link href="/build/projects" className="font-semibold text-cyan-700 underline">Sign in to HumanStudy Hub</Link> to contribute. A GitHub account is optional.</p>;
+  if(submitted)return <p role="status" className="text-sm leading-6 text-cyan-900">Contribution submitted. The source checks and review run in the background; the current recommended version stays available.</p>;
+  return <form onSubmit={submit} className="space-y-4">
+    <input aria-label="Your name" required value={name} onChange={e=>setName(e.target.value)} placeholder="Your name" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+    <input aria-label="Affiliation" value={affiliation} onChange={e=>setAffiliation(e.target.value)} placeholder="Affiliation (optional)" className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+    <label className="block rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-700">
+      Community contribution ZIP
+      <input aria-label="Community contribution ZIP" type="file" accept=".zip" disabled={busy} onChange={e=>void choose(e.target.files?.[0])} className="mt-3 block w-full text-sm" />
+    </label>
+    {metadata&&<p className="text-sm text-gray-700">{metadata.paper.title} ({metadata.paper.year})</p>}
+    {error&&<p role="alert" className="text-sm text-red-700">{error}</p>}
+    <button disabled={!file||busy||!name.trim()} className="w-full rounded-md bg-cyan-700 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy?progress!==null?`Uploading ${Math.round(progress)}%`:'Submitting…':'Contribute'}</button>
+  </form>;
 }

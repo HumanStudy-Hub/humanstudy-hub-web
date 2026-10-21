@@ -1,11 +1,11 @@
 // Opens a pull request against the community repository for one contribution zip. Pure of
 // HTTP concerns: the route authenticates the user and fetches the zip, this does the rest.
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Octokit } from "@octokit/rest";
 import {
-  BOT_LOGIN, MAX_PUBLISHES_PER_HOUR, contributionFolder, decryptToken, githubContributorId, hubContributorId,
-  latestVersion, makePaperKey, paperKeyToDir, readContributionZip, signHub,
+  BOT_LOGIN, MAX_PUBLISHES_PER_HOUR, decryptToken,
+  makePaperKey, readContributionZip, signHub,
 } from "./community";
 import { countRecentContributions, getIdentity, insertContribution } from "./community-store";
 
@@ -17,6 +17,8 @@ export type PublishBody = {
   paperMeta?: { doi?: unknown; title?: unknown; year?: unknown; firstAuthor?: unknown; authors?: unknown; venue?: unknown };
   slug?: unknown;
   supersedes?: unknown;
+  baseRevision?: unknown;
+  paperId?: unknown;
 };
 export type PublishResult =
   | { ok: true; id: string; prUrl: string; status: "pr_open" }
@@ -62,6 +64,10 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
   const affiliation = body.contributor?.affiliation ? str(body.contributor.affiliation, 300) : "";
   const includesPdf = body.includesPdf === true;
   const doi = typeof body.paperMeta?.doi === "string" ? body.paperMeta.doi : undefined;
+  if (doi && doi.length > 300) return bad(400, "bad_doi", "The DOI is too long to be a paper identifier.");
+  if (body.baseRevision != null && !/^[a-f0-9]{64}$/.test(String(body.baseRevision))) {
+    return bad(400, "bad_baseline", "The original research version is not valid. Reload the community study before contributing.");
+  }
   if (typeof body.supersedes === "string" && body.supersedes && !/^[a-z0-9][a-z0-9-]*--[a-z0-9][a-z0-9-]*$/.test(body.supersedes)) {
     return bad(400, "bad_supersedes", "The contribution you are replacing is not named correctly.");
   }
@@ -102,27 +108,34 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
   const api = new Octokit({ auth: token });
 
   const paperKey = makePaperKey({ doi, title, year, firstAuthor });
-  const paperDir = paperKeyToDir(paperKey);
-  const contributorId = asUser ? githubContributorId(login) : hubContributorId(userId);
+  const paperDir = `paper_${createHash("sha256").update(paperKey).digest("hex").slice(0,24)}`;
 
   try {
-    // 5. What exists upstream decides the version and whether paper.json is needed.
+    // 5. A proposal is an immutable submission, not another visible version of the paper.
     const upstream = await api.rest.repos.get({ owner, repo });
     const defaultBranch = upstream.data.default_branch;
-    const listing = await isMissing(api.rest.repos.getContent({ owner, repo, path: `community/${paperDir}`, ref: defaultBranch }));
-    const existing = listing && Array.isArray(listing.data) ? listing.data.map((e: { name: string }) => e.name) : [];
-    const hasPaperJson = existing.includes("paper.json");
-    const latest = latestVersion(existing, slug, contributorId);
-    const version = Math.max(latest + 1, 1);
-    const folder = contributionFolder(slug, contributorId, version);
-    const supersedes = typeof body.supersedes === "string" && body.supersedes ? body.supersedes : latest > 0 ? contributionFolder(slug, contributorId, latest) : undefined;
-    const branch = `community/${folder}`;
-    const root = `community/${paperDir}/${folder}`;
+    const id = randomUUID();
+    const folder = id;
+    const branch = `community/${id}`;
+    const root = `community/${paperDir}/proposals/${id}`;
+    const authors = Array.isArray(body.paperMeta?.authors) ? body.paperMeta.authors.filter((a): a is string => typeof a === "string" && !!a.trim()) : [];
+    const paper = { title, authors: authors.length ? authors : [firstAuthor], year,
+      ...(doi && paperKey.startsWith("doi:") ? { doi: paperKey.slice(4) } : {}),
+      ...(str(body.paperMeta?.venue, 300) ? { venue: str(body.paperMeta?.venue, 300) } : {}) };
+    const suppliedBase = body.baseRevision ?? clientMeta.baseRevision ?? null;
+    if (suppliedBase !== null && !/^[a-f0-9]{64}$/.test(String(suppliedBase))) return bad(400, "bad_baseline", "The contribution's source version is invalid.");
+    const paperId = body.paperId ?? clientMeta.paperId ?? null;
+    if (paperId !== null && !/^paper_[a-f0-9]{24}$/.test(String(paperId))) return bad(400, "bad_paper_id", "The original paper identity is invalid.");
 
     const checks = clientMeta.checks as Record<string, unknown> | undefined;
     const contribution: Record<string, unknown> = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       paperKey,
+      paper,
+      paperId,
+      sourceAlias: typeof clientMeta.sourceAlias === "string" ? clientMeta.sourceAlias : null,
+      baseRevision: suppliedBase,
+      intent: (() => { try { return JSON.parse(read.files.find(f => f.name === "program.json")!.data.toString("utf8")).intent; } catch { return "unknown"; } })(),
       slug,
       contributor: {
         name,
@@ -130,7 +143,7 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
         ...(orcid ? { orcid } : {}),
         ...(asUser ? { github: login } : { hub: { id: userId, signature: signHub(userId) } }),
       },
-      license: { content: "CC-BY-4.0", code: "MIT" },
+      license: { content: "CC-BY-4.0", code: "MIT", scope: "Contributor-authored reconstruction only. Original papers, data, materials and third-party code retain their own licenses." },
       includesPdf,
       appVersion: typeof clientMeta.appVersion === "string" && clientMeta.appVersion ? clientMeta.appVersion.slice(0, 50) : "unknown",
       createdAt: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
@@ -139,20 +152,10 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
         package: typeof checks?.package === "boolean" ? checks.package : null,
         simulation: typeof checks?.simulation === "boolean" ? checks.simulation : null,
       },
-      ...(supersedes ? { supersedes } : {}),
     };
 
     const files: Files = read.files.filter((f) => f.name !== "CONTRIBUTION.json").map((f) => ({ path: `${root}/${f.name}`, content: f.data }));
     files.push({ path: `${root}/CONTRIBUTION.json`, content: Buffer.from(JSON.stringify(contribution, null, 2) + "\n") });
-    if (!hasPaperJson) {
-      const authors = Array.isArray(body.paperMeta?.authors) ? (body.paperMeta!.authors as unknown[]).filter((a): a is string => typeof a === "string" && !!a.trim()).slice(0, 200) : [];
-      const paper = {
-        schemaVersion: 1, paperKey, title, authors: authors.length ? authors : [firstAuthor], year,
-        ...(doi && paperKey.startsWith("doi:") ? { doi: paperKey.slice(4) } : {}),
-        ...(str(body.paperMeta?.venue, 300) ? { venue: str(body.paperMeta?.venue, 300) } : {}),
-      };
-      files.push({ path: `community/${paperDir}/paper.json`, content: Buffer.from(JSON.stringify(paper, null, 2) + "\n") });
-    }
 
     // 6. Where the branch lives: the user's fork, or the repository itself for the bot.
     const baseRef = await api.rest.git.getRef({ owner, repo, ref: `heads/${defaultBranch}` });
@@ -167,9 +170,12 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
 
     // 7. One commit through the Git Data API.
     const entries: { path: string; mode: "100644"; type: "blob"; sha: string }[] = [];
-    for (const f of files) {
-      const blob = await api.rest.git.createBlob({ ...target, content: f.content.toString("base64"), encoding: "base64" });
-      entries.push({ path: f.path, mode: "100644", type: "blob", sha: blob.data.sha });
+    for (let offset = 0; offset < files.length; offset += 8) {
+      const chunk = await Promise.all(files.slice(offset, offset + 8).map(async f => {
+        const blob = await api.rest.git.createBlob({ ...target, content: f.content.toString("base64"), encoding: "base64" });
+        return { path: f.path, mode: "100644" as const, type: "blob" as const, sha: blob.data.sha };
+      }));
+      entries.push(...chunk);
     }
     const tree = await api.rest.git.createTree({ ...target, base_tree: baseCommit.data.tree.sha, tree: entries });
     const trailer = `Co-authored-by: ${name} <${userId}@users.humanstudy-hub.com>`;
@@ -180,11 +186,9 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
       parents: [baseSha],
       ...(asUser ? {} : { author: { name, email: `${userId}@users.humanstudy-hub.com`, date: new Date().toISOString() } }),
     });
-    const existingRef = await isMissing(api.rest.git.getRef({ ...target, ref: `heads/${branch}` }));
-    if (existingRef) await api.rest.git.updateRef({ ...target, ref: `heads/${branch}`, sha: commit.data.sha, force: true });
-    else await api.rest.git.createRef({ ...target, ref: `refs/heads/${branch}`, sha: commit.data.sha });
+    await api.rest.git.createRef({ ...target, ref: `refs/heads/${branch}`, sha: commit.data.sha });
 
-    // 8. The pull request (a republish of the same folder replaces the branch and keeps the PR).
+    // 8. The proposal PR is background bookkeeping; it is not a second public research entry.
     const head = `${target.owner}:${branch}`;
     const prBody = [
       `Reconstruction of **${title}** (${year}) by ${firstAuthor}, submitted by **${name}**${affiliation ? ` (${affiliation})` : ""} via HumanStudy Hub.`,
@@ -193,7 +197,7 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
       `- Paper key: \`${paperKey}\``,
       asUser ? `- Author: @${login}` : `- Submitted through the Hub bot (@${BOT_LOGIN}) with a signed Hub id.`,
       "",
-      "Checks run automatically. A pull request that only adds this folder and passes them is merged without further review.",
+      "The community maintainer validates this proposal, reviews source fidelity and integrates compatible changes into the paper's single recommended version. Conflicts retain the previous recommendation for review.",
     ].join("\n");
     const prTitle = `Community: ${title} (${year}) — ${name}`;
     const open = await api.rest.pulls.list({ owner, repo, head, state: "open" });
@@ -206,7 +210,6 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
     }
 
     // 9. Remember it.
-    const id = randomUUID();
     try {
       await insertContribution({ id, owner_id: userId, paper_key: paperKey, folder, slug, status: "pr_open", pr_url: pr.html_url, pr_number: pr.number, branch, error: null });
     } catch {
