@@ -1,5 +1,5 @@
 -- Legacy desktop_events: accept consented events captured offline more than 30 days ago.
--- Separate from the contract migration so the owner can apply or drop it independently.
+-- Owner approved removal on 2026-10-22. Kept separate for rollout sequencing; not yet applied.
 -- (First drafted 2026-10-13 as 20261013071140_desktop_events_allow_offline_capture, never applied.)
 --
 -- Desktop <= 0.6.6 keeps such events in its local queue and retries them; with the 30-day lower

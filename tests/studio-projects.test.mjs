@@ -7,6 +7,7 @@ const require=createRequire(import.meta.url),ts=require('typescript');
 const root=path.resolve(import.meta.dirname,'..');
 const next={NextResponse:{json:(body,init={})=>({body,status:init.status||200})}};
 function load(file,deps={}){
+ if (deps["@/lib/studio/auth"]?.requireStudioUser) deps["@/lib/research-data/consent-server"] = {requireStudioResearchUser: deps["@/lib/studio/auth"].requireStudioUser};
  const js=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
  const m={exports:{}};
  new Function('require','module','exports',js)(id=>{

@@ -20,6 +20,33 @@
 -- Validators (immutable, usable in CHECK constraints)
 -- ---------------------------------------------------------------------------------------------
 
+-- Version 3 explicitly includes privately stored original sources. Older local agreements do
+-- not satisfy this record. Immutable per owner/surface/version; the server stamps acceptance.
+create table public.research_consents (
+  owner_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  surface text not null check (surface in ('desktop', 'web', 'headless')),
+  version integer not null check (version = 3),
+  usage boolean not null check (usage),
+  content boolean not null check (content),
+  sources boolean not null check (sources),
+  accepted_at timestamptz not null default now(),
+  primary key (owner_id, surface, version)
+);
+create function public.research_consent_stamp() returns trigger
+language plpgsql set search_path = pg_catalog, pg_temp as $$
+begin new.accepted_at := now(); return new; end;
+$$;
+revoke all on function public.research_consent_stamp() from public;
+create trigger research_consent_stamp before insert on public.research_consents
+for each row execute function public.research_consent_stamp();
+alter table public.research_consents enable row level security;
+create policy research_consents_insert on public.research_consents for insert to authenticated
+  with check (owner_id = (select auth.uid()));
+create policy research_consents_select on public.research_consents for select to authenticated
+  using (owner_id = (select auth.uid()));
+revoke all on public.research_consents from public, anon, authenticated;
+grant select, insert on public.research_consents to authenticated;
+
 -- content_refs: [{ "role": "text", "sha256": "<64 hex>", "bytes": 123, "mime": "text/plain" }, ...]
 create function public.research_valid_content_refs(refs jsonb) returns boolean
 language sql immutable parallel safe set search_path = pg_catalog, pg_temp as $$
@@ -109,7 +136,7 @@ create table public.research_events (
   constraint research_events_seq_unique
     unique (owner_id, surface, install_id, research_session_id, client_seq),
   constraint research_events_primary_action check (
-    event_type <> 'action.invoke' or action_id = id),
+    event_type <> 'action.invoke' or (action_id is not null and action_id = id)),
   constraint research_events_artifact_version check (
     artifact_version is null or artifact_id is not null),
   constraint research_events_clean check (
@@ -155,10 +182,12 @@ create policy research_events_insert on public.research_events for insert to aut
     owner_id = (select auth.uid())
     and occurred_at <= now() + interval '10 minutes'
     and occurred_at >= timestamptz '2026-01-01 00:00:00+00'
+    and exists (select 1 from public.research_consents c where c.owner_id = research_events.owner_id
+      and c.surface = research_events.surface and c.version = research_events.consent_version)
   );
 create policy research_events_select on public.research_events for select to authenticated
   using (owner_id = (select auth.uid()));
-revoke all on public.research_events from anon, authenticated;
+revoke all on public.research_events from public, anon, authenticated;
 grant select, insert on public.research_events to authenticated;
 
 -- ---------------------------------------------------------------------------------------------
@@ -192,6 +221,8 @@ create table public.research_content (
   created_at timestamptz not null default now(),
   -- Set only by a service-role verifier that re-hashes the stored bytes (follow-up).
   verified_at timestamptz,
+  verification_attempted_at timestamptz,
+  verification_error text,
   primary key (owner_id, sha256),
   constraint research_content_parts check ((kind = 'manifest') = (parts is not null))
 );
@@ -204,6 +235,9 @@ create policy research_content_insert on public.research_content for insert to a
   with check (
     owner_id = (select auth.uid())
     and verified_at is null
+    and verification_attempted_at is null and verification_error is null
+    and exists (select 1 from public.research_consents c where c.owner_id = research_content.owner_id
+      and c.surface = research_content.surface and c.version = 3 and c.sources)
     and exists (
       select 1 from storage.objects o
       where o.bucket_id = 'research-content'
@@ -212,8 +246,10 @@ create policy research_content_insert on public.research_content for insert to a
   );
 create policy research_content_select on public.research_content for select to authenticated
   using (owner_id = (select auth.uid()));
-revoke all on public.research_content from anon, authenticated;
+revoke all on public.research_content from public, anon, authenticated;
 grant select, insert on public.research_content to authenticated;
+grant select on public.research_content to service_role;
+grant update (verified_at, verification_attempted_at, verification_error) on public.research_content to service_role;
 
 -- Storage: insert and read under the caller's own prefix, object name must be a sha256. No update
 -- policy (so no upsert: a repeated upload of the same content is a duplicate, which clients treat
@@ -223,6 +259,8 @@ create policy research_content_storage_insert on storage.objects for insert to a
     bucket_id = 'research-content'
     and name ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{64}$'
     and (storage.foldername(name))[1] = (select auth.uid())::text
+    and exists (select 1 from public.research_consents c where c.owner_id = (select auth.uid())
+      and c.version = 3 and c.sources)
   );
 create policy research_content_storage_select on storage.objects for select to authenticated
   using (

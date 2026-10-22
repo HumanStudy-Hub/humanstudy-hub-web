@@ -16,6 +16,7 @@ const ctx = { user: { id: userId, email: "owner@example.test" }, accessToken: "v
 const nextServer = { NextResponse: { json: (body, init = {}) => ({ body, status: init.status ?? 200, headers: init.headers ?? {} }) } };
 
 function load(file, dependencies = {}) {
+ if (dependencies["@/lib/studio/auth"]?.requireStudioUser) dependencies["@/lib/research-data/consent-server"] = {requireStudioResearchUser: dependencies["@/lib/studio/auth"].requireStudioUser};
   const source = fs.readFileSync(path.join(root, file), "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const loadedModule = { exports: {} };

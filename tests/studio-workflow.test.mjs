@@ -10,6 +10,7 @@ const ts = requireLocal("typescript");
 const JSZip = requireLocal("jszip");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 function load(file, dependencies = {}) {
+ if (dependencies["@/lib/studio/auth"]?.requireStudioUser) dependencies["@/lib/research-data/consent-server"] = {requireStudioResearchUser: dependencies["@/lib/studio/auth"].requireStudioUser};
   const source = fs.readFileSync(path.join(root, file), "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const loadedModule = { exports: {} };

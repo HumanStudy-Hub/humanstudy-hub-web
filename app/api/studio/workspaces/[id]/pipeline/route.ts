@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireStudioUser } from "@/lib/studio/auth";
+import { requireStudioResearchUser as requireStudioUser } from "@/lib/research-data/consent-server";
 import { getWorkspace } from "@/lib/studio/store";
 import { syncPipeline, retryPipeline, getPipelineJobs, startPackageSync, reconcilePackageApproval } from "@/lib/studio/pipeline";
 import { assertSameOrigin, readJsonBody, routeError, StudioError } from "@/lib/studio/http";

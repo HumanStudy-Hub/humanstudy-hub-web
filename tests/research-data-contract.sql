@@ -9,6 +9,8 @@ select set_config('rdc.owner', gen_random_uuid()::text, true),
        set_config('rdc.other', gen_random_uuid()::text, true),
        set_config('rdc.session', gen_random_uuid()::text, true);
 insert into auth.users(id) values (current_setting('rdc.owner')::uuid), (current_setting('rdc.other')::uuid);
+insert into public.research_consents(owner_id,surface,version,usage,content,sources)
+values (current_setting('rdc.owner')::uuid,'desktop',3,true,true,true);
 
 create function pg_temp.as_user(u text) returns void language sql as $$
   select set_config('request.jwt.claim.sub', u, true),
@@ -108,11 +110,13 @@ begin
   exception when insufficient_privilege or check_violation then null; end;
   begin
     update public.research_events set target = 'x' where id = a;
-    raise exception 'update allowed';
+    get diagnostics n = row_count;
+    if n <> 0 then raise exception 'update changed a research row'; end if;
   exception when insufficient_privilege then null; end;
   begin
     delete from public.research_events where id = a;
-    raise exception 'delete allowed';
+    get diagnostics n = row_count;
+    if n <> 0 then raise exception 'delete changed a research row'; end if;
   exception when insufficient_privilege then null; end;
 
   -- 6. Content: row only after the object exists; objects only under the caller's prefix.

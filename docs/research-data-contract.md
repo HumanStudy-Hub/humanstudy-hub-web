@@ -303,3 +303,53 @@ local queue while offline can still be delivered. It narrows nothing.
    contract events and content into a local queue directory and uploads with the account session
    the desktop app already holds (or a scoped token passed by the operator); runs without an account
    stay local and are reported as undelivered sessions.
+
+
+## Owner decisions accepted — 2026-10-22
+
+The owner approved all five collection decisions: mandatory first-use web agreement; renewed
+desktop agreement before original sources upload; offline desktop events older than 30 days;
+individual collaborator identities for headless (a separate service identity only for shared
+batch workers); and server-side stored-byte verification. Agreement version 3 explicitly includes
+original sources and is recorded per account and surface in `research_consents`. Version 2 is
+not migrated automatically. The optional offline-policy migration is approved for inclusion in
+the rollout, but has not been applied to the shared project.
+
+### Implementation and rollout
+
+- Web: the actual workspace stays unmounted until the agreement check passes. Study API routes
+  enforce the same record. Login/password recovery and account data export remain accessible.
+- Original web sources stay in operational private storage while a background task archives
+  them into the per-owner hash-addressed research store. The original stored source is the
+  durable retry input if a request or function stops. Research records use deterministic IDs.
+  Operational source copies remain per project; deduplication here concerns the research archive.
+- Desktop: agreement version 3 re-prompts existing users. Only papers/resources in explicitly
+  opened projects are collected; no general disk scan. Original bytes are privately staged in
+  4 MiB parts before upload. Pending content survives restart and has no age/count pruning.
+  A new account cannot upload the previous account's queued files.
+- Headless: use a personal private account profile, refresh and verify it against Supabase,
+  and verify that any hosted model key belongs to that account. Source bytes use the same
+  collector as desktop. See the desktop PR's `docs/headless-research.md`.
+- Integrity: `/api/cron/research-integrity` requires `CRON_SECRET` and server-only
+  `SUPABASE_SERVICE_ROLE_KEY`. A daily Vercel job checks a bounded batch, verifies decompressed
+  bytes/ordered manifest parts and hashes, and updates only verification columns. Failed or
+  incomplete objects rotate so they cannot starve new content. No file text is logged.
+  Delivery completeness is still distinct from `verified_at`; do not label unchecked bytes
+  as verified. Higher-volume verification can use the same function from a dedicated worker.
+
+Apply migrations to a disposable database and verify real Storage/RLS behavior first. Reconcile
+live migration history before applying to the shared project; obtain the owner's approval for
+that application. Configure the cron secrets server-side and test one bounded batch after
+application. Never ship a service-role key in a web, desktop or headless client.
+
+This implements the five approved decisions, not the entirety of issue #27: the general web and
+headless conversation/tool adapters, legacy web queue durability, and the full cross-surface
+action/causality/completeness coverage are still separate follow-up work. No deployment, release
+or shared database application is implied by these branches.
+
+Deployment is staged behind server-only `RESEARCH_COLLECTION_V1_ENABLED=1` (off by default).
+While off, existing workspace access continues, original-source archival is disabled, and the
+new verifier returns disabled. Mouse-movement capture remains removed independently. Deploy
+code, validate/apply the schema with owner approval, configure server-only cron credentials,
+then explicitly enable collection. This prevents a code-first deployment from locking out
+existing users when the new tables are not present yet.

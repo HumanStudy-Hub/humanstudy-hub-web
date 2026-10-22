@@ -1,4 +1,5 @@
 "use client";
+import { useSourceArchive } from "@/lib/research-data/use-source-archive";
 import { useCallback,useEffect,useRef,useState } from 'react';
 import Link from 'next/link';
 import Workspace,{type ConnectedStudio,type Page} from '@/app/build-preview/workspace';
@@ -19,6 +20,7 @@ export default function StudioEditor({id}:{id:string}){
  const [workspace,setWorkspace]=useState<StudioWorkspace|null>(null),[document,setDocument]=useState<StudioDocument|null>(null),[sourceId,setSourceId]=useState(''),[primaryPaperId,setPrimaryPaperId]=useState(''),[pages,setPages]=useState<Page[]>([]),[loading,setLoading]=useState(''),[error,setError]=useState(''),[status,setStatus]=useState('Saved'),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[conflict,setConflict]=useState(false);
  const [pipelineMessage,setPipelineMessage]=useState(''),[refreshVersion,setRefreshVersion]=useState(0);
  const [buildJob,setBuildJob]=useState<{status:string;message:string;progress?:PipelineProgress}|null>(null);
+ const sourceArchiveError=useSourceArchive(id,workspace?.document.sources??[]);
  const stage=document?workspaceBuildStage(document):'loading';
  const syncPipelineRef=useRef<()=>Promise<void>>(async()=>{});
  const server=useRef<StudioWorkspace|null>(null),pending=useRef<StudioDocument|null>(null),current=useRef<StudioDocument|null>(null),operation=useRef(false),blocked=useRef(false),timer=useRef<ReturnType<typeof setTimeout>|null>(null),saving=useRef<Promise<void>|null>(null);
@@ -111,7 +113,7 @@ export default function StudioEditor({id}:{id:string}){
  async function recover(lane:'pipeline'|'discussion',proposalId?:string){try{await transact('pipeline',proposalId?{action:'sync-package',proposalId}:{action:'retry',lane});setPipelineMessage('');}catch(e){setError(e instanceof Error?e.message:'Could not recover the agent task.');}}
  if(stage==='intake'||stage==='processing')return <><BuildStart id={id} document={document} stage={stage} primaryPaper={paper} onPaper={nextId=>{setPrimaryPaperId(nextId);setSourceId(nextId);}} busy={busy||uploading} message={pipelineMessage} error={error||telemetry.deliveryError||undefined} job={buildJob} resources={<ResourceControls sources={document.sources} selectedId={sourceId} disabled={busy||uploading} uploading={uploading} onSelect={selectSource} onUpload={upload} onDownload={source=>void download(source)} onToggleBuild={toggleBuild}/>} onBuild={instructions=>void startBuild(instructions)} onRetry={()=>{if(document.pipeline?.status==='failed')void startBuild();else void recover('pipeline');}} onCheck={()=>void syncPipelineRef.current()} onNavigate={href=>{void (async()=>{try{if(operation.current)throw new Error("Wait for the current operation to finish.");await flush();window.location.assign(href);}catch(e){setError(e instanceof Error?e.message:"Could not save before leaving.");}})();}}/></>;
  const connected:ConnectedStudio={
-  workspaceId:id,initialDocument:document,pages,sourceId,loading,status,busy:busy||uploading,
+  workspaceId:id,initialDocument:document,pages,sourceId,loading,status:sourceArchiveError?`${status} · Source upload pending`:status,busy:busy||uploading,
   syncVersion:refreshVersion,agentRunning:Boolean(document.discussion&&['preparing','queued','running'].includes(document.discussion.status)),buildRunning:Boolean(document.pipeline&&['preparing','queued','running'].includes(document.pipeline.status)),packageStatus:packageStatus(document),
   pipelineMessage:pipelineMessage||document.pipeline?.message,
   recoveryControls:<AgentRecovery buildFailed={document.pipeline?.status==='failed'} discussionFailed={document.discussion?.status==='failed'} needsSync={packageStatus(document)==='Study package needs updating'} canSync={Boolean(latestApplied)} busy={busy||uploading} message={pipelineMessage||document.discussion?.status==='failed'&&document.discussion.message||document.pipeline?.status==='failed'&&document.pipeline.message||''} onRetryDiscussion={()=>void recover('discussion')} onRetryBuild={()=>void recover('pipeline',latestApplied?.id)}/>,
