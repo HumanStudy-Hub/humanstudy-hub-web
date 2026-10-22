@@ -248,7 +248,7 @@ test("event batch uses owner from verified context and idempotent insert prefere
   global.fetch = async (url, options) => { sent = { url, options }; return new Response(null, { status: 201 }); };
   const response = await eventRoute.POST(jsonRequest({ events: [validEvent(), validEvent()] }), eventContext);
   assert.equal(response.status, 200);
-  assert.deepEqual(response.body, { accepted: 2 });
+  assert.deepEqual(response.body, { accepted: 2, ignored: 0 });
   assert.equal(sent.options.headers.Prefer, "resolution=ignore-duplicates,return=minimal");
   const rows = JSON.parse(sent.options.body);
   assert.equal(rows[0].owner_id, userId);
@@ -257,6 +257,23 @@ test("event batch uses owner from verified context and idempotent insert prefere
   assert.equal(rows[0].id, rows[1].id);
   assert.equal(rows[0].target, "button[role-tab]");
   assert.equal(rows[0].metadata.area, "source");
+}));
+
+test("retired pointer and per-event scroll payloads are acknowledged but never stored", async () => withService(async () => {
+  let rows = null;
+  global.fetch = async (_url, options) => { rows = JSON.parse(options.body); return new Response(null, { status: 201 }); };
+  const pointer = { ...validEvent(), id: crypto.randomUUID(), type: "pointer", x: 0.25, y: 0.5 };
+  const oldScroll = { ...validEvent(), id: crypto.randomUUID(), type: "scroll", y: 0.4 };
+  const onlyRetired = await eventRoute.POST(jsonRequest({ events: [pointer, oldScroll] }), eventContext);
+  assert.equal(onlyRetired.status, 200);
+  assert.deepEqual(onlyRetired.body, { accepted: 0, ignored: 2 });
+  assert.equal(rows, null, "nothing inserted");
+  const summary = { ...validEvent(), id: crypto.randomUUID(), type: "scroll", durationMs: 1200, metadata: { status: "settled", startDepth: 0, endDepth: 400, maxDepth: 650 } };
+  const mixed = await eventRoute.POST(jsonRequest({ events: [pointer, { ...validEvent(), x: 0.1, y: 0.2 }, summary] }), eventContext);
+  assert.deepEqual(mixed.body, { accepted: 2, ignored: 1 });
+  assert.deepEqual(rows.map(row => row.event_type), ["click", "scroll"]);
+  assert.ok(rows.every(row => !Object.hasOwn(row, "x") && !Object.hasOwn(row, "y")));
+  assert.deepEqual(rows[1].metadata, { status: "settled", startDepth: 0, endDepth: 400, maxDepth: 650 });
 }));
 
 test("semantic layout and selection events persist bounded metadata with server revision", async () => withService(async () => {
