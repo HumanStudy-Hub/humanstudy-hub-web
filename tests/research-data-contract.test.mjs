@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url), ts = require('typescript');
 const source = fs.readFileSync(new URL('../lib/research-data/contract.ts', import.meta.url), 'utf8');
-const migration = fs.readFileSync(new URL('../supabase/migrations/20261022120000_research_data_contract_v1.sql', import.meta.url), 'utf8');
+const migration = fs.readFileSync(new URL('../supabase/migrations/20261022223132_research_data_contract_v1.sql', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const m = { exports: {} }; new Function('require', 'module', 'exports', js)(() => { throw new Error('contract.ts must not import'); }, m, m.exports);
 const c = m.exports;

@@ -55,7 +55,7 @@ test('web source archival keeps exact bytes, deduplicates across projects and re
     const h=new URL('https://db.test'+path).searchParams.get('sha256').slice(3);return Response.json(content.has(h)?[{sha256:h}]:[]);
    }
    if(path.startsWith('/rest/v1/research_events')){
-    if(o.method==='POST'){for(const row of o.body)events.set(row.id,row);return Response.json(o.body);}
+    if(o.method==='POST'){const keys=Object.keys(o.body[0]).sort();for(const row of o.body){assert.deepEqual(Object.keys(row).sort(),keys,'real PostgREST rejects mixed bulk-insert columns');events.set(row.id,row);}return Response.json(o.body);}
     return Response.json([]);
    }
    throw Error('Unexpected route');

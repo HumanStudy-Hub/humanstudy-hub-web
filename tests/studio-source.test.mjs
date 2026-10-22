@@ -242,14 +242,14 @@ test("telemetry batches 50 events, retries with stable IDs, and sends a bounded 
   assert.ok(requests.slice(2).every((request) => request.events.length <= 50 && request.options.keepalive));
 });
 
-test("telemetry caps an offline queue and every unload batch", async () => {
+test("telemetry preserves all offline events and bounds every unload batch", async () => {
   const requests = [];
   const harness = fakeTelemetry((url, options) => {
     requests.push({ url, options, events: JSON.parse(options.body).events });
     return new Promise(() => {});
   });
   for (let i = 0; i < 5100; i++) harness.hook.track("review", { status: "open" });
-  assert.equal(harness.state.droppedEvents, 101, "only overflow beyond the 5000-event cap is dropped");
+  assert.equal(harness.state.droppedEvents, 0, "no count-based pruning");
   harness.listeners.get("window:pagehide")();
   const unload = requests.slice(1);
   assert.ok(unload.length > 0);
@@ -258,18 +258,19 @@ test("telemetry caps an offline queue and every unload batch", async () => {
   harness.cleanup();
 });
 
-test("telemetry drops rejected batches without retrying a client error", async () => {
-  const requests = [];
-  const harness = fakeTelemetry((url, options) => {
-    requests.push({ url, options });
-    return Promise.resolve({ ok: false, status: 400 });
-  });
-  for (let i = 0; i < 49; i++) harness.hook.track("chat", { action: "send" });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(requests.length, 1);
-  assert.equal(harness.state.droppedEvents, 50);
-  assert.equal(harness.state.deliveryError, "Telemetry delivery failed; some events were dropped.");
-  assert.equal([...harness.timers.values()].filter((timer) => timer.delay === 1000).length, 0);
+test("telemetry quarantines single rejected events without dropping the rest of a batch", async () => {
+  const requests = [], storage=fakeStorage();
+  const harness = fakeTelemetry(async (url, options) => {
+    const events=JSON.parse(options.body).events;requests.push(events);
+    return {ok:events.length===1&&events[0].type!=="visibility",status:events.length===1&&events[0].type!=="visibility"?200:400};
+  },{storage});
+  for (let i=0;i<49;i++)harness.hook.track("chat",{action:"send"});
+  await settle();
+  assert.equal(harness.state.droppedEvents,0);
+  assert.equal(requests.length,51);
+  assert.equal([...storage.data.keys()].filter(k=>k.includes(':rejected:')).length,1);
+  assert.equal([...storage.data.keys()].filter(k=>k.includes(':event:')).length,0);
+  assert.match(harness.state.deliveryError,/retained locally/);
   harness.cleanup();
 });
 
@@ -367,8 +368,8 @@ test("telemetry keeps failed events with backoff, persists them, and resends the
   assert.ok(attempts.length >= 9);
   offline.listeners.get("window:pagehide")();
   const stored = [...storage.data.entries()].filter(([key]) => key.startsWith("hs-studio-telemetry:workspace-1:"));
-  assert.equal(stored.length, 1);
-  const storedIds = JSON.parse(stored[0][1]).map((event) => event.id);
+  assert.ok(stored.length >= 51);
+  const storedIds = stored.map(([,value]) => JSON.parse(value).id);
   assert.ok(storedIds.length >= 51);
   const delivered = [];
   const online = fakeTelemetry(async (_url, options) => { delivered.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; }, { storage, idOffset: 1_000_000 });

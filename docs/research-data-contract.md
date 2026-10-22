@@ -3,7 +3,7 @@
 One collection contract for HumanStudy Hub **desktop**, **web** and the **headless** OpenCode
 worker (HumanStudy-Hub/humanstudy-desktop#27). This document is the normative text. The
 machine-readable part is `lib/research-data/contract.ts`; desktop and headless copy that file
-verbatim. The database half is `supabase/migrations/20261022120000_research_data_contract_v1.sql`.
+verbatim. The database half is `supabase/migrations/20261022223132_research_data_contract_v1.sql`.
 
 Version rules: adding an event type, metadata key or optional column is a minor bump (1.1.0);
 changing the meaning of an existing field or type is a major bump (2.0.0). Every row carries the
@@ -269,7 +269,7 @@ Legacy `desktop_events.event_type` → v1 (explains meaning only; legacy rows ar
 - `project.file_written`, `artifact.created`, `export.created` → `artifact.version`
 - `replay.dropped` → `delivery.checkpoint`
 
-The separate migration `20261022120100_desktop_events_allow_offline_capture.sql` removes the
+The separate migration `20261022223142_desktop_events_allow_offline_capture.sql` removes the
 30-day lower bound on legacy `desktop_events` inserts, so events that desktop ≤ 0.6.6 kept in its
 local queue while offline can still be delivered. It narrows nothing.
 
@@ -337,15 +337,16 @@ the rollout, but has not been applied to the shared project.
   Delivery completeness is still distinct from `verified_at`; do not label unchecked bytes
   as verified. Higher-volume verification can use the same function from a dedicated worker.
 
-Apply migrations to a disposable database and verify real Storage/RLS behavior first. Reconcile
-live migration history before applying to the shared project; obtain the owner's approval for
-that application. Configure the cron secrets server-side and test one bounded batch after
-application. Never ship a service-role key in a web, desktop or headless client.
+The owner approved shared application on 2026-10-22 after real rollback/Storage acceptance.
+See the applied migration versions below. Future migrations still require isolated validation and
+history reconciliation. Configure cron secrets server-side; never ship a service-role key in a
+web, desktop or headless client.
 
-This implements the five approved decisions, not the entirety of issue #27: the general web and
-headless conversation/tool adapters, legacy web queue durability, and the full cross-surface
-action/causality/completeness coverage are still separate follow-up work. No deployment, release
-or shared database application is implied by these branches.
+Desktop and headless now share a collector and kernel adapter for conversation, tool, permission,
+question, usage and generated-file capture. Web semantic UI events also target v1 when enabled.
+This is still not the entirety of issue #27: web server conversation/tool/artifact migration,
+browser storage expansion and cross-surface action/causality coverage remain open. These draft
+branches have not been merged, released or enabled on Vercel production.
 
 Deployment is staged behind server-only `RESEARCH_COLLECTION_V1_ENABLED=1` (off by default).
 While off, existing workspace access continues, original-source archival is disabled, and the
@@ -353,3 +354,21 @@ new verifier returns disabled. Mouse-movement capture remains removed independen
 code, validate/apply the schema with owner approval, configure server-only cron credentials,
 then explicitly enable collection. This prevents a code-first deployment from locking out
 existing users when the new tables are not present yet.
+
+
+## Rollout checkpoint — 2026-10-22
+
+The owner authorized application integration and shared-database migration. The approved additive
+schema and offline policy are now applied as `20261022223132` and `20261022223142`; filenames match
+those server-generated versions. No historical scientific data was rewritten. SQL/RLS assertions
+passed on real PostgreSQL with rollback. Synthetic-account HTTP acceptance passed real original
+file upload/download, cross-account denial, idempotency, source manifests and stored-byte integrity.
+The actual Next production build passed the agreement gate, all five sample original files,
+mixed UI-event inserts and the protected integrity route. These tests are local against real
+Supabase, not a deployed Vercel acceptance. The production collection flag remains off.
+
+Web UI events now use the v1 contract when enabled. Legacy browser queue count/age deletion and
+whole-batch rejection deletion were removed. Server-owned messages, workflow tool calls and
+scientific snapshots are not yet fully routed to v1; legacy history remains the durable source.
+Do not enable the production rollout flag before this gap is closed. Canonical tracking:
+https://github.com/HumanStudy-Hub/humanstudy-desktop/issues/30.

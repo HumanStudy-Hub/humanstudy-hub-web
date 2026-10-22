@@ -1,7 +1,7 @@
 -- Research-data contract v1: RLS, idempotency, offline capture, prohibitions, sanitization,
 -- content presence and delivery completeness. Run on a BRANCH database after applying
--- supabase/migrations/20261022120000_research_data_contract_v1.sql (and optionally
--- 20261022120100_desktop_events_allow_offline_capture.sql). Everything is rolled back.
+-- supabase/migrations/20261022223132_research_data_contract_v1.sql (and optionally
+-- 20261022223142_desktop_events_allow_offline_capture.sql). Everything is rolled back.
 --
 --   psql "$BRANCH_DB_URL" -v ON_ERROR_STOP=1 -f tests/research-data-contract.sql
 begin;
@@ -151,9 +151,11 @@ begin
   update storage.objects set name = name where bucket_id = 'research-content';
   get diagnostics n = row_count;
   if n <> 0 then raise exception 'object update allowed'; end if;
-  delete from storage.objects where bucket_id = 'research-content';
-  get diagnostics n = row_count;
-  if n <> 0 then raise exception 'object delete allowed'; end if;
+  begin
+    delete from storage.objects where bucket_id = 'research-content';
+    get diagnostics n = row_count;
+    if n <> 0 then raise exception 'object delete allowed'; end if;
+  exception when insufficient_privilege then null; end;
 
   -- Large content: manifest present but one part missing -> still incomplete.
   insert into storage.objects(bucket_id, name) values ('research-content', auth.uid()::text || '/' || sha_part1),

@@ -3,6 +3,7 @@ import { requireStudioResearchUser as requireStudioUser } from "@/lib/research-d
 import { assertSameOrigin, isUuid, readJsonBody, routeError, studioFetch, StudioError } from "@/lib/studio/http";
 import { getWorkspaceMetadata } from "@/lib/studio/store";
 import type { StudioEvent } from "@/lib/studio/types";
+import {webResearchEvent} from '@/lib/research-data/web-event';
 
 type Context = { params: Promise<{ id: string }> };
 const eventTypes = new Set(["click", "scroll", "selection", "visibility", "chat", "review", "layout"]);
@@ -30,7 +31,7 @@ function validateEvent(input: unknown, workspaceId: string, ownerId: string, wor
       !eventTypes.has(event.type || "") || typeof event.at !== "string") throw new StudioError(400, "invalid_event");
   if(event.displayRevision !== undefined && (!Number.isSafeInteger(event.displayRevision) || event.displayRevision < 1 || event.displayRevision > workspaceRevision)) throw new StudioError(400,"invalid_event");
   const at = Date.parse(event.at);
-  if (!Number.isFinite(at) || at < Date.now() - 30 * 86400_000 || at > Date.now() + 300_000) throw new StudioError(400, "invalid_event");
+  if (!Number.isFinite(at) || at < Date.parse('2026-01-01T00:00:00Z') || at > Date.now() + 300_000) throw new StudioError(400, "invalid_event");
   if (event.target !== undefined && (typeof event.target !== "string" || !/^[a-zA-Z0-9_.:/#\[\]-]{1,160}$/.test(event.target))) {
     throw new StudioError(400, "invalid_event");
   }
@@ -52,10 +53,10 @@ function validateEvent(input: unknown, workspaceId: string, ownerId: string, wor
   }
   return {
     id: event.id, workspace_id: workspaceId, owner_id: ownerId, workspace_revision: workspaceRevision,
-    ...(event.displayRevision === undefined ? {} : { display_revision:event.displayRevision }),
+    display_revision:event.displayRevision??null,
     session_id: event.sessionId, event_type: event.type, occurred_at: new Date(at).toISOString(),
-    ...(event.target === undefined ? {} : { target: event.target }),
-    ...(event.durationMs === undefined ? {} : { duration_ms: event.durationMs }),
+    target:event.target??null,
+    duration_ms:event.durationMs??null,
     metadata,
   };
 }
@@ -73,8 +74,13 @@ export async function POST(request: Request, context: Context) {
     if (events.length < 1 || events.length > 100) throw new StudioError(400, "invalid_events");
     const kept = events.filter(event => !isRetiredEvent(event));
     if (!kept.length) return NextResponse.json({ accepted: 0, ignored: events.length });
-    const rows = kept.map(event => validateEvent(event, id, ctx.user.id, workspace.revision));
-    const response = await studioFetch("/rest/v1/studio_events?on_conflict=id", {
+    const unified=process.env.RESEARCH_COLLECTION_V1_ENABLED==='1';
+    const rows = kept.map(event => {
+      validateEvent(event,id,ctx.user.id,workspace.revision);
+      if(!unified)return validateEvent(event,id,ctx.user.id,workspace.revision);
+      try{return webResearchEvent(event as StudioEvent,id);}catch{throw new StudioError(400,'invalid_event');}
+    });
+    const response = await studioFetch(`/rest/v1/${unified?'research_events':'studio_events'}?on_conflict=id`, {
       method: "POST", token: ctx.accessToken,
       headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
       body: rows,

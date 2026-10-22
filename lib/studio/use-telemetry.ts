@@ -12,15 +12,12 @@ type Metadata = StudioEvent["metadata"];
 type TelemetryState = { droppedEvents: number; deliveryError: string | null };
 type ScrollRun = { target?: string; start: number; end: number; max: number; startedAt: number; timer?: ReturnType<typeof setTimeout> };
 
-// Only true overflow drops events; failed deliveries stay queued and back off.
-export const MAX_QUEUE = 5000;
+// Events have no count/age pruning; storage failures are visible, never silent.
 const BATCH_SIZE = 50;
 const FLUSH_INTERVAL_MS = 5000;
 const MAX_BACKOFF_MS = 60_000;
-const PERSIST_DELAY_MS = 1500;
 export const SCROLL_SETTLE_MS = 800;
 // The server rejects events older than 30 days; never resend those from storage.
-const MAX_STORED_AGE_MS = 29 * 86_400_000;
 // Browsers normally cap all outstanding keepalive bodies at about 64 KiB.
 const KEEPALIVE_BUDGET = 60_000;
 export const STORAGE_PREFIX = "hs-studio-telemetry:";
@@ -73,7 +70,7 @@ function isStoredEvent(value: unknown): value is StudioEvent {
   const event = value as Partial<StudioEvent>;
   if (typeof event.id !== "string" || typeof event.sessionId !== "string" || typeof event.type !== "string" || typeof event.at !== "string") return false;
   const at = Date.parse(event.at);
-  return event.type !== ("pointer" as string) && Number.isFinite(at) && at > Date.now() - MAX_STORED_AGE_MS;
+  return event.type !== ("pointer" as string) && Number.isFinite(at);
 }
 
 /** Take over events that earlier pages (or remounts) left undelivered for this workspace. */
@@ -90,13 +87,12 @@ function adoptStored(workspaceId: string, ownKey: string): StudioEvent[] {
     }
     const seen = new Set<string>();
     for (const key of keys) {
+      if (key.includes(':rejected:')) continue;
       try {
         const parsed: unknown = JSON.parse(store.getItem(key) || "[]");
-        if (Array.isArray(parsed)) {
-          for (const event of parsed) if (isStoredEvent(event) && !seen.has(event.id)) { seen.add(event.id); adopted.push(event); }
-        }
-      } catch { /* corrupt entry: discard */ }
-      store.removeItem(key);
+        const values = Array.isArray(parsed) ? parsed : [parsed];
+        for (const event of values) if (isStoredEvent(event) && !seen.has(event.id)) { seen.add(event.id); adopted.push(event); }
+      } catch { /* retain corrupt data for recovery; never delete on adoption */ }
     }
   } catch { return adopted; }
   return adopted;
@@ -110,6 +106,8 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
   const [state, setState] = useState<TelemetryState>({ droppedEvents: 0, deliveryError: null });
   const trackRef = useRef<((type: ExplicitEvent, metadata?: Metadata) => void) | null>(null);
   const sessionIdRef = useRef("");
+  const installIdRef = useRef("");
+  const seqRef = useRef(0);
   const revisionRef = useRef(workspaceRevision);
   useEffect(() => { revisionRef.current = workspaceRevision; }, [workspaceRevision]);
 
@@ -125,6 +123,7 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
     if (!root) return;
 
     if (!sessionIdRef.current) sessionIdRef.current = crypto.randomUUID();
+    if (!installIdRef.current) installIdRef.current = crypto.randomUUID();
     const endpoint = `/api/studio/workspaces/${encodeURIComponent(workspaceId)}/events`;
     // One key per listener binding: a remount adopts (and removes) the previous binding's key.
     const storageKey = `${STORAGE_PREFIX}${workspaceId}:${crypto.randomUUID()}`;
@@ -141,29 +140,33 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
     let requestController: AbortController | null = null;
     const scrollRuns = new Map<Element, ScrollRun>();
 
-    const drop = (count: number) => {
-      if (count) setState((previous) => ({ ...previous, droppedEvents: previous.droppedEvents + count }));
-    };
-    if (queue.length > MAX_QUEUE) drop(queue.splice(0, queue.length - MAX_QUEUE).length);
     /** Returns whether the pending queue is now durable in storage. */
     const persistNow = (): boolean => {
       if (persistTimer) { clearTimeout(persistTimer); persistTimer = undefined; }
       const store = storage();
       if (!store) return false;
       try {
-        if (queue.length) store.setItem(storageKey, JSON.stringify(queue));
-        else store.removeItem(storageKey);
+        // One independently addressed record per id. Tabs never rewrite or take ownership of
+        // another tab's active queue. Acknowledgement deletes only confirmed ids.
+        for (const event of queue) store.setItem(`${STORAGE_PREFIX}${workspaceId}:event:${event.id}`, JSON.stringify(event));
         return true;
       } catch { return false; /* quota or privacy mode: the in-memory queue still delivers */ }
-    };
-    const persistSoon = () => {
-      if (stopped || persistTimer) return;
-      persistTimer = setTimeout(() => { persistTimer = undefined; persistNow(); }, PERSIST_DELAY_MS);
     };
     const remove = (sent: StudioEvent[]) => {
       const ids = new Set(sent.map((event) => event.id));
       for (let i = queue.length - 1; i >= 0; i--) if (ids.has(queue[i].id)) queue.splice(i, 1);
-      if (!stopped) persistSoon();
+      const store = storage();
+      if (store) try {
+        for (const id of ids) store.removeItem(`${STORAGE_PREFIX}${workspaceId}:event:${id}`);
+        // Compatibility with saved pre-v1 arrays: remove acknowledged ids, never whole queues.
+        const keys = Array.from({ length: store.length }, (_, i) => store.key(i)).filter((k): k is string => Boolean(k?.startsWith(`${STORAGE_PREFIX}${workspaceId}:`) && !k.includes(':event:') && !k.includes(':rejected:')));
+        for (const key of keys) {
+          const parsed: unknown = JSON.parse(store.getItem(key) || '[]');
+          if (!Array.isArray(parsed)) continue;
+          const left = parsed.filter(e => !ids.has(e.id));
+          if (left.length) store.setItem(key, JSON.stringify(left)); else store.removeItem(key);
+        }
+      } catch { /* duplicate retry is harmless; a failed deletion never loses unacknowledged data */ }
     };
     const makeEvent = (type: StudioEvent["type"], fields: Partial<StudioEvent> = {}): StudioEvent => ({
       id: crypto.randomUUID(),
@@ -175,9 +178,13 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
     });
     const push = (event: StudioEvent) => {
       if (stopped) return;
-      if (queue.length >= MAX_QUEUE) drop(queue.splice(0, queue.length - MAX_QUEUE + 1).length);
+      event.research ??= { installId: installIdRef.current, seq: ++seqRef.current };
       queue.push(event);
-      persistSoon();
+      const store = storage();
+      try {
+        if (!store) throw new Error('unavailable');
+        store.setItem(`${STORAGE_PREFIX}${workspaceId}:event:${event.id}`, JSON.stringify(event));
+      } catch { setState(previous => ({ ...previous, deliveryError: 'Local research storage is unavailable. Keep this page open until delivery succeeds.' })); }
       if (queue.length >= BATCH_SIZE) void flush();
     };
     const enqueue = (type: StudioEvent["type"], fields: Partial<StudioEvent> = {}) => push(makeEvent(type, fields));
@@ -209,9 +216,22 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
       } catch {
         if (!stopped) {
           if (!retryable) {
-            remove(batch);
-            drop(batch.length);
-            setState((previous) => ({ ...previous, deliveryError: "Telemetry delivery failed; some events were dropped." }));
+            // A whole batch must never be discarded because one event failed. Isolate the bad
+            // record by retrying individually; preserve complete rejected records for recovery.
+            try { for (const event of batch) {
+              const single = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ events: [event] }) });
+              if (single.ok) remove([event]);
+              else if ([400, 413, 422].includes(single.status)) {
+                const store = storage();
+                if (!store) throw new Error('Cannot retain a rejected event.');
+                store.setItem(`${STORAGE_PREFIX}${workspaceId}:rejected:${event.id}`, JSON.stringify({ event, status: single.status }));
+                remove([event]);
+              } else throw new Error('Delivery needs retry.');
+            } } catch {
+              retryCount++;
+              retryTimer = setTimeout(() => { retryTimer = undefined; void flush(); }, Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.min(16, retryCount - 1)));
+            }
+            setState((previous) => ({ ...previous, deliveryError: 'A rejected research record was retained locally for review.' }));
           } else {
             retryCount++;
             setState((previous) => ({ ...previous, deliveryError: "Telemetry delivery is retrying." }));
@@ -360,14 +380,9 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
       // (the studio really unmounted), deliver it now; whatever fails stays for the next visit.
       setTimeout(() => {
         const store = storage();
-        try { if (!store?.getItem(storageKey)) return; } catch { return; }
+        if (!store) return;
         sendFinal(pending, (batch) => {
-          const ids = new Set(batch.map((event) => event.id));
-          try {
-            const left = (JSON.parse(store.getItem(storageKey) || "[]") as StudioEvent[]).filter((event) => !ids.has(event.id));
-            if (left.length) store.setItem(storageKey, JSON.stringify(left));
-            else store.removeItem(storageKey);
-          } catch { /* adopted or unavailable */ }
+          remove(batch);
         });
       }, 0);
     };
