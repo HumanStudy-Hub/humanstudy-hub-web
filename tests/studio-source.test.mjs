@@ -125,12 +125,34 @@ test("PDF abort cancels rendering and destroys the loading task", async () => {
   assert.equal(harness.revoked.length, 0);
 });
 
-function fakeTelemetry(fetchImpl) {
+class FakeElement {
+  constructor({ tag = "div", attrs = {}, scrollHeight = 0, clientHeight = 0, scrollTop = 0 } = {}) {
+    this.tagName = tag.toUpperCase();this.attrs = { ...attrs };this.scrollHeight = scrollHeight;this.clientHeight = clientHeight;this.scrollTop = scrollTop;
+  }
+  getAttribute(name) { return name in this.attrs ? this.attrs[name] : null; }
+  setAttribute(name, value) { this.attrs[name] = String(value); }
+  hasAttribute(name) { return name in this.attrs; }
+  closest(selector) { return selector === "[data-event]" ? ("data-event" in this.attrs ? this : null) : this; }
+}
+
+function fakeStorage(initial = {}) {
+  const data = new Map(Object.entries(initial));
+  return {
+    data,
+    get length() { return data.size; },
+    key: (i) => [...data.keys()][i] ?? null,
+    getItem: (key) => data.has(key) ? data.get(key) : null,
+    setItem: (key, value) => { data.set(key, String(value)); },
+    removeItem: (key) => { data.delete(key); },
+  };
+}
+
+function fakeTelemetry(fetchImpl, { storage, idOffset = 0 } = {}) {
   let cleanup;
   let effectIndex=0;
   const effects=[];
   let state = { droppedEvents: 0, deliveryError: null };
-  let nextId = 0;
+  let nextId = idOffset;
   let refIndex = 0;
   const refs = [];
   const timers = new Map();
@@ -169,7 +191,7 @@ function fakeTelemetry(fetchImpl) {
     useState: (value) => [value, (next) => { state = typeof next === "function" ? next(state) : next; }],
   };
   const globals = {
-    document: doc, window: win, Element: class {},
+    document: doc, window: win, Element: FakeElement, ...(storage ? { localStorage: storage } : {}),
     crypto: { randomUUID: () => `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}` },
     fetch: fetchImpl, AbortController, Date, Promise,
     setTimeout: (fn, delay) => { const id = ++nextId; timers.set(id, { fn, delay }); return id; },
@@ -226,8 +248,8 @@ test("telemetry caps an offline queue and every unload batch", async () => {
     requests.push({ url, options, events: JSON.parse(options.body).events });
     return new Promise(() => {});
   });
-  for (let i = 0; i < 600; i++) harness.hook.track("review", { status: "open" });
-  assert.ok(harness.state.droppedEvents >= 50);
+  for (let i = 0; i < 5100; i++) harness.hook.track("review", { status: "open" });
+  assert.equal(harness.state.droppedEvents, 101, "only overflow beyond the 5000-event cap is dropped");
   harness.listeners.get("window:pagehide")();
   const unload = requests.slice(1);
   assert.ok(unload.length > 0);
@@ -278,3 +300,91 @@ test('telemetry keeps the displayed revision of each event while an autosave adv
  const selections=sent.flatMap(batch=>batch.events).filter(e=>e.type==='selection');
  assert.deepEqual(selections.map(e=>e.displayRevision),[1,2]);assert.equal(selections[0].sessionId,selections[1].sessionId);
 });
+
+const settle = async () => { for (let i = 0; i < 3; i++) await new Promise((resolve) => setImmediate(resolve)); };
+const runTimers = (harness, delay) => { for (const [id, timer] of [...harness.timers]) if (timer.delay === delay) { harness.timers.delete(id); timer.fn(); } };
+
+test("telemetry never listens to pointer movement and sends no coordinates", async () => {
+  const sent = [];
+  const h = fakeTelemetry(async (_url, options) => { sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; });
+  assert.equal(h.root.events.has("pointermove"), false);
+  assert.equal([...h.root.events.keys()].some((type) => type.startsWith("pointer") || type.startsWith("mouse") || type.startsWith("key")), false);
+  const pane = new FakeElement({ attrs: { "data-event": "source-pane" }, scrollHeight: 2000, clientHeight: 1000 });
+  for (const top of [100, 400, 900, 700]) { pane.scrollTop = top; h.root.events.get("scroll")({ target: pane }); }
+  h.listeners.get("window:pagehide")();
+  await settle();
+  assert.ok(sent.every((event) => event.type !== "pointer" && event.x === undefined && event.y === undefined));
+});
+
+test("telemetry summarizes a scroll once it settles instead of recording every event", async () => {
+  const sent = [];
+  const h = fakeTelemetry(async (_url, options) => { sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; });
+  const pane = new FakeElement({ attrs: { "data-event": "source-pane" }, scrollHeight: 2000, clientHeight: 1000 });
+  for (const top of [100, 200, 500, 900, 600]) { pane.scrollTop = top; h.root.events.get("scroll")({ target: pane }); }
+  assert.equal([...h.timers.values()].filter((timer) => timer.delay === 800).length, 1, "one pending settle timer per container");
+  runTimers(h, 800);
+  pane.scrollTop = 0; h.root.events.get("scroll")({ target: pane });
+  h.render(1); // view change ends the open run
+  h.cleanup();
+  await settle();
+  const scrolls = sent.filter((event) => event.type === "scroll");
+  assert.equal(scrolls.length, 2);
+  assert.deepEqual(scrolls[0].metadata, { status: "settled", startDepth: 100, endDepth: 600, maxDepth: 900 });
+  assert.equal(scrolls[0].target, "source-pane");
+  assert.ok(Number.isInteger(scrolls[0].durationMs));
+  assert.deepEqual(scrolls[1].metadata, { status: "view", startDepth: 600, endDepth: 0, maxDepth: 600 });
+});
+
+test("a click handled by a semantic event is recorded once", async () => {
+  const sent = [];
+  const h = fakeTelemetry(async (_url, options) => { sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; });
+  const send = new FakeElement({ tag: "button", attrs: { "data-event": "chat-send" } });
+  h.root.events.get("click")({ target: send });
+  h.hook.track("chat", { action: "send" });
+  runTimers(h, 0);
+  const other = new FakeElement({ tag: "button", attrs: { "data-event": "tab-sources" } });
+  h.root.events.get("click")({ target: other });
+  runTimers(h, 0);
+  h.listeners.get("window:pagehide")();
+  await settle();
+  const actions = sent.filter((event) => event.type === "click" || event.type === "chat");
+  assert.deepEqual(actions.map((event) => [event.type, event.target]), [["chat", "chat-send"], ["click", "tab-sources"]]);
+});
+
+test("telemetry keeps failed events with backoff, persists them, and resends the same ids next visit", async () => {
+  const storage = fakeStorage();
+  const attempts = [];
+  const offline = fakeTelemetry(async (_url, options) => { attempts.push(JSON.parse(options.body).events); throw new Error("offline"); }, { storage });
+  for (let i = 0; i < 49; i++) offline.hook.track("review", { status: "open" });
+  for (let i = 0; i < 8; i++) {
+    await settle();
+    const retry = [...offline.timers].find(([, timer]) => timer.delay >= 1000 && timer.delay !== 1500);
+    assert.ok(retry, `retry ${i} scheduled`);
+    offline.timers.delete(retry[0]);retry[1].fn();
+  }
+  await settle();
+  assert.equal(offline.state.droppedEvents, 0);
+  assert.ok(attempts.length >= 9);
+  offline.listeners.get("window:pagehide")();
+  const stored = [...storage.data.entries()].filter(([key]) => key.startsWith("hs-studio-telemetry:workspace-1:"));
+  assert.equal(stored.length, 1);
+  const storedIds = JSON.parse(stored[0][1]).map((event) => event.id);
+  assert.ok(storedIds.length >= 51);
+  const delivered = [];
+  const online = fakeTelemetry(async (_url, options) => { delivered.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; }, { storage, idOffset: 1_000_000 });
+  await settle();
+  for (const id of storedIds) assert.ok(delivered.some((event) => event.id === id), "stored event resent with its original id");
+  runTimers(online, 1500);
+  assert.equal([...storage.data.keys()].filter((key) => key.startsWith("hs-studio-telemetry:")).length, 0, "delivered events leave storage");
+});
+
+test("telemetry works when storage throws", async () => {
+  const sent = [];
+  const broken = { get length() { throw new Error("denied"); }, key() { throw new Error("denied"); }, getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); }, removeItem() { throw new Error("denied"); } };
+  const h = fakeTelemetry(async (_url, options) => { sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; }, { storage: broken });
+  h.hook.track("layout", { action: "collapse" });
+  h.cleanup();
+  await settle();
+  assert.ok(sent.some((event) => event.type === "layout"));
+});
+

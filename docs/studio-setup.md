@@ -236,12 +236,19 @@ remain available. A stale save is rejected, and the UI offers a local JSON copy
 before loading the current server version. Account separation is enforced by
 RLS and verified server sessions, independent of the legacy promo-code gate.
 
-Workspace telemetry captures clicks, normalized pointer positions (up to four
-per second), scrolling, selection length, visibility duration and explicit
-chat/review actions and explicit panel layout changes. Selection events record
+Workspace telemetry follows the shared collection contract
+(HumanStudy-Hub/humanstudy-desktop#27): one primary event per click or product
+action (a click handled by a semantic chat/review/selection/layout event is not
+also recorded as a generic click), one scroll summary per container when
+scrolling settles (800 ms idle) or the view is hidden, changed or unloaded
+(start/end/max depth in per-mille, duration), visibility duration, selection
+length and explicit panel layout changes. Pointer movement, keystrokes and
+continuous recordings are not collected; the events endpoint acknowledges but
+never stores `pointer` events or per-event scroll positions from old clients.
+Historical `pointer` rows remain in `studio_events` as legacy data. Selection events record
 source/page, selection mode, length and rectangle count, not selected text.
 The server stamps events with the owned workspace revision at receipt; this
-links events to saved state but is not an exact reconstruction of unsaved drafts. Events have stable IDs, bounded queues and bounded retries.
+links events to saved state but is not an exact reconstruction of unsaved drafts. Events have stable IDs (inserts ignore duplicates). Undelivered events persist in `localStorage` per workspace, are flushed with keepalive requests when the page is hidden or unloaded, retry with backoff without giving up, and are adopted on the next visit; only overflow beyond 5,000 queued events (or a batch the server rejects as invalid) is dropped and counted.
 Listeners rebind after keyed workspace refreshes while retaining the session ID.
 No password, keypress or DOM-wide text capture is performed. Conversations are
 saved in the study document. Settings disclose recording. Events are in
