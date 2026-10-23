@@ -1,6 +1,6 @@
 -- T08 server outbox: atomic commit + capture, never-blocking outbox failure, delivery bookkeeping
 -- guard, owner isolation and the delivery view. Run on a BRANCH database (or a rolled-back session)
--- after applying supabase/migrations/20261023120000_research_server_outbox.sql. Everything is rolled back.
+-- after applying 20261023120000_research_server_outbox.sql and 20261023140000_research_server_outbox_tighten.sql. Everything is rolled back.
 --
 --   psql "$BRANCH_DB_URL" -v ON_ERROR_STOP=1 -f tests/research-server-outbox.sql
 begin;
@@ -16,14 +16,23 @@ insert into public.studio_workspaces(id, owner_id, title, document)
 values (current_setting('rso.ws')::uuid, current_setting('rso.owner')::uuid, 'Study',
         '{"version":1,"title":"Study","model":{},"sources":[],"annotations":[],"conversations":[],"reviewResponses":{}}');
 
+select set_config('rso.ws_other', gen_random_uuid()::text, true);
+insert into public.studio_workspaces(id, owner_id, title, document)
+values (current_setting('rso.ws_other')::uuid, current_setting('rso.other')::uuid, 'Other',
+        '{"version":1,"title":"Other","model":{},"sources":[],"annotations":[],"conversations":[],"reviewResponses":{}}');
 create function pg_temp.as_user(u text) returns void language sql as $$
   select set_config('request.jwt.claim.sub', u, true),
          set_config('request.jwt.claims', json_build_object('sub', u, 'role', 'authenticated')::text, true);
 $$;
-create function pg_temp.batch(p_id text, p_events integer, p_payload jsonb default '{"events":[],"content":[]}') returns jsonb
+create function pg_temp.evs(p_id text, n integer) returns jsonb language sql as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', gen_random_uuid(), 'surface', 'web', 'research_session_id', p_id, 'client_seq', s,
+    'event_type', 'session.start', 'install_id', 'web-server', 'consent_version', 3, 'metadata', '{}'::jsonb, 'content_refs', '[]'::jsonb)), '[]'::jsonb)
+  from generate_series(1, n) s;
+$$;
+create function pg_temp.batch(p_id text, p_events integer, p_payload jsonb default null) returns jsonb
 language sql as $$
   select jsonb_build_array(jsonb_build_object('id', p_id, 'producer', 'chat.submit', 'project_id', current_setting('rso.ws'),
-    'event_count', p_events, 'content_count', 0, 'payload', p_payload));
+    'event_count', p_events, 'content_count', 0, 'payload', coalesce(p_payload, jsonb_build_object('events', pg_temp.evs(p_id, p_events), 'content', '[]'::jsonb))));
 $$;
 
 select pg_temp.as_user(current_setting('rso.owner'));
@@ -115,7 +124,7 @@ begin
 
   -- 8. Rejected batches are visible and kept.
   insert into public.research_server_outbox(id, producer, project_id, event_count, content_count, payload)
-  values (b2, 'workspace.save', ws::text, 2, 0, '{"events":[],"content":[]}');
+  values (b2, 'workspace.save', ws::text, 2, 0, jsonb_build_object('events', pg_temp.evs(b2::text, 2), 'content', '[]'::jsonb));
   update public.research_server_outbox set attempts = 1, last_attempt_at = now(), last_error = 'rejected:rejected_400' where id = b2;
   select state into st from public.research_server_outbox_delivery where id = b2;
   if st <> 'rejected' then raise exception 'rejected batch shown as %', st; end if;
@@ -150,6 +159,84 @@ do $$ begin
   raise exception 'anon executed the commit RPC';
 exception when insufficient_privilege then null; end $$;
 
+
+-- T-tighten. Insert policy from 20261023140000: legit RPC and direct rows accepted, forged rows denied.
+reset role;
+select pg_temp.as_user(current_setting('rso.owner'));
+set local role authenticated;
+do $$
+declare
+  ws uuid := current_setting('rso.ws')::uuid;
+  wso text := current_setting('rso.ws_other');
+  me text := current_setting('rso.owner');
+  other text := current_setting('rso.other');
+  b uuid; r jsonb; rev int; n bigint;
+  ev jsonb; good jsonb; c jsonb := '[{"sha256":"aa","bytes":2,"mime":"text/plain","text":"hi"}]';
+  forged record;
+begin
+  select revision into rev from public.studio_workspaces where id = ws;
+  -- T1. Producer-shaped RPC batch (as server-capture.ts sends it: id = session id, project_id = workspace id,
+  --     events surface=web with that research_session_id and no owner_id, content_count = content length).
+  b := gen_random_uuid();
+  ev := jsonb_build_object('contract_version','1.0.0','surface','web','platform',null,'install_id','web-server','research_session_id',b::text,
+    'occurred_at',now(),'project_id',ws::text,'client_seq',1,'data_type','session','event_type','session.start','metadata','{"collection_mode":"server-producer"}'::jsonb,
+    'content_refs','[]'::jsonb,'app_version','web','collector_version','web-server-producer/1.0.0','consent_version',3,'id',gen_random_uuid());
+  good := jsonb_build_array(ev, ev || jsonb_build_object('id', gen_random_uuid(), 'client_seq', 2, 'event_type', 'session.end'));
+  r := public.studio_cas_workspace_research(ws, rev, '{"version":1,"title":"T1","sources":[],"annotations":[],"conversations":[],"reviewResponses":{}}',
+    jsonb_build_array(jsonb_build_object('id', b, 'producer', 'chat.submit', 'project_id', ws::text, 'event_count', 2, 'content_count', 1,
+      'payload', jsonb_build_object('events', good, 'content', c))));
+  if (r->>'outbox_stored')::boolean is not true or (r->'workspace'->>'revision')::int <> rev + 1 then raise exception 'T1 legit RPC batch not stored: %', r; end if;
+  if not exists (select 1 from public.research_server_outbox where id = b and owner_id = me::uuid and project_id = ws::text) then raise exception 'T1 row missing'; end if;
+  rev := rev + 1;
+
+  -- T2. Legit direct insert (insertOutbox fallback path) and project_id null are accepted; explicit own owner_id ok.
+  b := gen_random_uuid();
+  insert into public.research_server_outbox(id, owner_id, producer, project_id, event_count, content_count, payload)
+  values (b, me::uuid, 'workspace.save', ws::text, 1, 0, jsonb_build_object('events', pg_temp.evs(b::text, 1), 'content', '[]'::jsonb));
+  b := gen_random_uuid();
+  insert into public.research_server_outbox(id, producer, project_id, event_count, content_count, payload)
+  values (b, 'workspace.save', null, 1, 1, jsonb_build_object('events', jsonb_build_array(pg_temp.evs(b::text, 1)->0 || jsonb_build_object('owner_id', me)), 'content', c));
+
+  -- T3. Forged direct inserts are denied by RLS (42501).
+  for forged in
+    select * from (values
+      ('other owner',            other, ws::text, 1, 0, 'web', null::text, false, null::text),
+      ('other user project',     me,    wso,      1, 0, 'web', null, false, null),
+      ('unknown project',        me,    gen_random_uuid()::text, 1, 0, 'web', null, false, null),
+      ('wrong surface',          me,    ws::text, 1, 0, 'desktop', null, false, null),
+      ('wrong session',          me,    ws::text, 1, 0, 'web', gen_random_uuid()::text, false, null),
+      ('event names other owner',me,    ws::text, 1, 0, 'web', null, false, other),
+      ('event_count mismatch',   me,    ws::text, 2, 0, 'web', null, false, null),
+      ('content_count mismatch', me,    ws::text, 1, 1, 'web', null, false, null),
+      ('non-object event',       me,    ws::text, 1, 0, 'web', null, true, null)
+    ) v(label, owner, proj, ec, cc, surf, sess, scalar, ev_owner)
+  loop
+    b := gen_random_uuid();
+    begin
+      insert into public.research_server_outbox(id, owner_id, producer, project_id, event_count, content_count, payload)
+      values (b, forged.owner::uuid, 'forged', forged.proj, forged.ec, forged.cc, jsonb_build_object('events',
+        case when forged.scalar then '["x"]'::jsonb else jsonb_build_array(jsonb_strip_nulls(jsonb_build_object('surface', forged.surf,
+          'research_session_id', coalesce(forged.sess, b::text), 'owner_id', forged.ev_owner))) end, 'content', '[]'::jsonb));
+      raise exception 'T3 forged row accepted: %', forged.label;
+    exception when insufficient_privilege then null;
+    end;
+  end loop;
+
+  -- T4. A forged batch through the RPC: save still commits, outbox_stored=false, nothing stored.
+  b := gen_random_uuid();
+  r := public.studio_cas_workspace_research(ws, rev, '{"version":1,"title":"T4","sources":[],"annotations":[],"conversations":[],"reviewResponses":{}}',
+    jsonb_build_array(jsonb_build_object('id', b, 'producer', 'chat.submit', 'project_id', ws::text, 'event_count', 1, 'content_count', 0,
+      'payload', jsonb_build_object('events', jsonb_build_array(jsonb_build_object('surface','desktop','research_session_id',b::text)), 'content', '[]'::jsonb))));
+  if (r->'workspace'->>'revision')::int <> rev + 1 or (r->>'outbox_stored')::boolean is not false then raise exception 'T4 forged RPC batch: %', r; end if;
+  if exists (select 1 from public.research_server_outbox where id = b) then raise exception 'T4 forged RPC row stored'; end if;
+  rev := rev + 1;
+  -- T5. RPC batch naming another user's workspace as project: not stored.
+  b := gen_random_uuid();
+  r := public.studio_cas_workspace_research(ws, rev, '{"version":1,"title":"T5","sources":[],"annotations":[],"conversations":[],"reviewResponses":{}}',
+    jsonb_build_array(jsonb_build_object('id', b, 'producer', 'chat.submit', 'project_id', wso, 'event_count', 1, 'content_count', 0,
+      'payload', jsonb_build_object('events', pg_temp.evs(b::text, 1), 'content', '[]'::jsonb))));
+  if (r->>'outbox_stored')::boolean is not false or exists (select 1 from public.research_server_outbox where id = b) then raise exception 'T5 cross-project batch stored: %', r; end if;
+end $$;
 reset role;
 rollback;
-select 'passed: atomic commit+capture, conflict stores nothing, outbox failure never blocks the save, idempotent replay, payload released only after delivery, monotonic attempts, delivery recorded once, unconfirmed/failing/rejected/delivered states, owner isolation, anon denied; all rolled back' as verification;
+select 'trial passed (rolled back)' as verification, (select count(*) from public.research_server_outbox) as outbox_rows_after, (select with_check from pg_policies where policyname='research_server_outbox_insert') as live_check_after;
