@@ -79,7 +79,10 @@ export function searchSnapshot(index: ResearchIndex, input: ResearchQuery) {
 }
 
 function databaseConfig() {
-  const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Public, read-only search runs with the publishable key so RLS applies; never the service role.
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+    || process.env.SUPABASE_ANON_KEY;
   return url && key ? { url, key } : null;
 }
 
@@ -90,7 +93,7 @@ export async function searchResearch(input: ResearchQuery) {
     try {
       const response = await fetch(`${config.url}/rest/v1/rpc/search_research_catalog`, {
         method: "POST", cache: "no-store", signal: AbortSignal.timeout(5000),
-        headers: { apikey: config.key, Authorization: `Bearer ${config.key}`, "Content-Type": "application/json" },
+        headers: { apikey: config.key, "Content-Type": "application/json" },
         body: JSON.stringify({ query_text: query, concept_filter: concept ? [concept] : [],
           capability_filter: capability || null, page_offset: offset, page_size: limit }),
       });

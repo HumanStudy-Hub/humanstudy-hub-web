@@ -40,7 +40,8 @@ export function surname(author: string): string {
 export type PaperMeta = { doi?: string | null; title: string; year?: number | null; firstAuthor: string };
 
 export function makePaperKey(meta: PaperMeta): string {
-  if (meta.doi && normaliseDoi(meta.doi).startsWith("10.")) return `doi:${normaliseDoi(meta.doi)}`;
+  // Same DOI shape HumanStudy-Bench accepts (scripts/research/catalog.py normalise_doi); anything else keys by title.
+  if (meta.doi && /^10\.\d{4,9}\/\S+$/.test(normaliseDoi(meta.doi))) return `doi:${normaliseDoi(meta.doi)}`;
   const parts = [normaliseTitle(meta.title), meta.year ? String(meta.year) : "nd", surname(meta.firstAuthor) || "anon"];
   return `title:${parts.filter(Boolean).join("-")}`;
 }

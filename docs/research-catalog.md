@@ -56,6 +56,8 @@ node scripts/sync-research-index.mjs <research_index.json>
 
 The command needs existing server-side `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`; it does
 not load .env files or print credentials. Public clients never receive the service role.
+Public search calls `search_research_catalog` with `SUPABASE_PUBLISHABLE_KEY` only, so RLS applies;
+if that key, the migration or the first sync is missing, the Bench (or bundled) snapshot is served.
 Subsequent Bench updates can call `POST /api/research/sync` with an exact `sourceCommit` and
 the shared `RESEARCH_INDEX_SYNC_SECRET`. The source repository is fixed, and every publication
 uses the current snapshot as its optimistic-lock baseline. A failed sync preserves the old data.

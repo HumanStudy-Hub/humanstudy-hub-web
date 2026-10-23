@@ -5,8 +5,8 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url), ts = require('typescript');
 const source = readFileSync(new URL('../lib/research.ts', import.meta.url),'utf8');
 const js = ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
-const module = {exports:{}};new Function('require','module','exports',js)(require,module,module.exports);
-const {searchSnapshot, validateResearchQuery, searchResearch}=module.exports;
+const mod = {exports:{}};new Function('require','module','exports',js)(require,mod,mod.exports);
+const {searchSnapshot, validateResearchQuery, searchResearch}=mod.exports;
 const index = JSON.parse(readFileSync(new URL('../data/research_index.json',import.meta.url),'utf8'));
 
 test('search covers the entire corpus, source claims and reviewed Chinese aliases',()=>{
@@ -28,8 +28,8 @@ test('pagination has stable totals and validation rejects malformed filters',()=
     assert.throws(()=>validateResearchQuery(new URLSearchParams(q)));
 });
 test('unavailable database falls back explicitly, while empty initialized results remain authoritative',async()=>{
-  const previous=globalThis.fetch,oldUrl=process.env.SUPABASE_URL,oldKey=process.env.SUPABASE_ANON_KEY;
-  process.env.SUPABASE_URL='https://test.supabase.co';process.env.SUPABASE_ANON_KEY='public-test';
+  const previous=globalThis.fetch,oldUrl=process.env.SUPABASE_URL,oldKey=process.env.SUPABASE_PUBLISHABLE_KEY;
+  process.env.SUPABASE_URL='https://test.supabase.co';process.env.SUPABASE_PUBLISHABLE_KEY='public-test';
   try {
     globalThis.fetch=async()=>{throw Error('offline')};
     const fallback=await searchResearch({query:'框架效应'});
@@ -39,6 +39,19 @@ test('unavailable database falls back explicitly, while empty initialized result
   } finally {
     globalThis.fetch=previous;
     if(oldUrl===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=oldUrl;
-    if(oldKey===undefined)delete process.env.SUPABASE_ANON_KEY;else process.env.SUPABASE_ANON_KEY=oldKey;
+    if(oldKey===undefined)delete process.env.SUPABASE_PUBLISHABLE_KEY;else process.env.SUPABASE_PUBLISHABLE_KEY=oldKey;
+  }
+});
+test('public search never uses the service-role key',async()=>{
+  const previous=globalThis.fetch,saved={...process.env};let called=false;
+  delete process.env.SUPABASE_PUBLISHABLE_KEY;delete process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;delete process.env.SUPABASE_ANON_KEY;
+  process.env.SUPABASE_URL='https://test.supabase.co';process.env.SUPABASE_SERVICE_ROLE_KEY='secret-test';
+  try {
+    globalThis.fetch=async(url)=>{if(String(url).includes('/rest/v1/'))called=true;throw Error('offline')};
+    const result=await searchResearch({query:'framing'});
+    assert.equal(called,false);assert.equal(result.source,'snapshot');
+  } finally {
+    globalThis.fetch=previous;
+    for(const k of ['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_PUBLISHABLE_KEY','NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY','SUPABASE_ANON_KEY']){if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k]}
   }
 });

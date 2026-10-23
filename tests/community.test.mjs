@@ -14,7 +14,9 @@ const lib = load('lib/community.ts', { './access': access, 'adm-zip': admZip });
 // Same cases as HumanStudy-Bench tests/test_community.py.
 test('paper keys match scripts/community.py', () => {
   assert.equal(lib.makePaperKey({ doi: 'https://doi.org/10.1111/ABC.1', title: 't', year: 2000, firstAuthor: 'A B' }), 'doi:10.1111/abc.1');
-  assert.equal(lib.makePaperKey({ doi: 'doi: 10.1/x', title: 't', year: 2000, firstAuthor: 'A B' }), 'doi:10.1/x');
+  assert.equal(lib.makePaperKey({ doi: 'doi: 10.1234/x', title: 't', year: 2000, firstAuthor: 'A B' }), 'doi:10.1234/x');
+  // Bench rejects DOIs outside 10.NNNN/…; such input keys by title so the proposal can still validate.
+  assert.equal(lib.makePaperKey({ doi: 'doi: 10.1/x', title: 't', year: 2000, firstAuthor: 'A B' }), 'title:t-2000-b');
   assert.equal(lib.makePaperKey({ title: 'Intentional Action & Side-Effects!', year: 2003, firstAuthor: 'Joshua Knobe' }), 'title:intentional-action-side-effects-2003-knobe');
   assert.equal(lib.makePaperKey({ doi: '', title: 'Café Müller', year: 1999, firstAuthor: 'Müller, Hans' }), 'title:cafe-muller-1999-muller');
   assert.equal(lib.makePaperKey({ doi: 'not-a-doi', title: 'T', year: null, firstAuthor: 'Ada Lovelace' }), 'title:t-nd-lovelace');

@@ -9,7 +9,11 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
   let input, error = "";
   try { input = validateResearchQuery(raw); }
   catch (e) { error = e instanceof Error ? e.message : "Invalid search."; }
-  const result = input ? await searchResearch(input) : null;
+  let result: Awaited<ReturnType<typeof searchResearch>> | null = null;
+  if (input) {
+    try { result = await searchResearch(input); }
+    catch { error = "The research library could not be loaded. Try again shortly."; }
+  }
   const pageUrl = (offset: number) => `/studies?${new URLSearchParams({ q: params.q || "", offset: String(offset) })}`;
   return (
     <div className="bg-white min-h-screen border-t border-gray-100">
