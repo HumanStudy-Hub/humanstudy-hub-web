@@ -52,7 +52,7 @@
   },
   "never_collected": [
     "continuous mouse/pointer positions or trajectories",
-    "individual keystrokes (a shortcut records only its name, e.g. shortcut:cmd+b, and only when no product action claimed it)",
+    "individual keystrokes (a shortcut records only its name, e.g. shortcut:cmd.b, and only when no product action claimed it)",
     "screen, DOM or session-replay recordings",
     "activity in other applications",
     "credentials, tokens, account email, absolute machine paths (scrubbed by scrubResearchValue before persistence)"

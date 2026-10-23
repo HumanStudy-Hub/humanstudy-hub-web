@@ -280,6 +280,21 @@ test("drain without the owner's web agreement leaves the batch pending", async (
   assert.match(supa.db.outbox.get(row.id).last_error, /^consent_missing$/);
 });
 
+test("rejected rows never starve newer batches: they are excluded in the outbox query, NULL errors kept", async () => {
+  const { supa, row } = forgedOutbox();
+  const valid = supa.db.outbox.get(row.id);
+  valid.created_at = "2026-10-20T00:00:00.000Z";
+  for (let i = 0; i < 250; i++) {
+    const id = `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+    supa.db.outbox.set(id, { ...structuredClone(valid), id, last_error: "rejected:invalid_event", attempts: 1, created_at: `2026-10-01T00:00:${String(i % 60).padStart(2, "0")}.${String(i).padStart(3, "0")}Z` });
+  }
+  assert.deepEqual(await outbox.drainAll(service), { checked: 1, delivered: 1, pending: 0, rejected: 0 });
+  assert.equal(supa.db.outbox.get(row.id).delivered_at !== null, true);
+  const owner = { ...service, ownerId: ids.owner, mode: "user" };
+  assert.deepEqual(await outbox.drainOwner(owner), { delivered: 0, pending: 0, rejected: 0 }, "per-owner drain reads the same filter");
+  assert.match(outbox.NOT_REJECTED_FILTER, /or=\(last_error\.is\.null,last_error\.not\.like\./);
+});
+
 test("validateOutboxPayload mirrors the research_text_is_clean check", () => {
   assert.equal(outbox.researchTextIsClean("https://example.org/Users/x/y and C:/tmp"), true);
   assert.equal(outbox.researchTextIsClean("/home/alice/secret.txt"), false);

@@ -247,8 +247,15 @@ export function due(rows: OutboxState[], now = Date.now()): OutboxState[] {
     (!r.last_attempt_at || now - Date.parse(r.last_attempt_at) >= Math.min(3_600_000, 30_000 * 2 ** Math.min(10, r.attempts))));
 }
 
+/**
+ * Rejected rows stay undelivered forever (kept for review), so they are excluded in the query
+ * itself; filtering them after the limit would let them fill every page and starve newer batches.
+ * `not.like` alone would also drop NULL last_error rows, hence the or().
+ */
+export const NOT_REJECTED_FILTER = '&or=(last_error.is.null,last_error.not.like.%22rejected:*%22)';
+
 async function pendingRows(t: Transport, filter: string, limit: number): Promise<OutboxState[]> {
-  const r = await call(t, `/rest/v1/${OUTBOX_TABLE}?delivered_at=is.null${filter}&select=id,owner_id,attempts,last_attempt_at,last_error&order=created_at.asc&limit=${limit}`);
+  const r = await call(t, `/rest/v1/${OUTBOX_TABLE}?delivered_at=is.null${NOT_REJECTED_FILTER}${filter}&select=id,owner_id,attempts,last_attempt_at,last_error&order=created_at.asc&limit=${limit}`);
   if (!r.ok) fail(r, 'outbox_list');
   return await r.json() as OutboxState[];
 }

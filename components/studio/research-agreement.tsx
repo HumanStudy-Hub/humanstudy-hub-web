@@ -5,12 +5,27 @@ import { RESEARCH_AGREEMENT, RESEARCH_CONSENT_VERSION } from '@/lib/research-dat
 import s from './projects.module.css';
 import {ResearchCollectionContext} from '@/lib/research-data/collection-context';
 
-/** Keep the actual editor unmounted until consent is checked, so effects cannot capture early. */
-export function ResearchAgreement({ children }: { children: ReactNode }) {
+/**
+ * First-use research agreement for /build. `collection` is the server's RESEARCH_COLLECTION_V1_ENABLED
+ * flag (read by the layout). With collection off nothing is checked or gated: the workspace renders
+ * immediately and no request can block it.
+ */
+export function ResearchAgreement({ collection, children }: { collection: boolean; children: ReactNode }) {
+  if (!collection) return <ResearchCollectionContext.Provider value={false}>{children}</ResearchCollectionContext.Provider>;
+  return <ResearchAgreementGate>{children}</ResearchAgreementGate>;
+}
+
+/**
+ * Keep the actual editor unmounted until consent is first checked, so effects cannot capture early.
+ * Later re-checks (after sign-in/sign-up, or a research_agreement_required response) keep the
+ * children mounted, so their state (e.g. a "confirm your email" notice) survives; the gate only
+ * returns when the agreement is actually needed.
+ */
+function ResearchAgreementGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false), [needed, setNeeded] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [enabled,setEnabled]=useState(false);
   const check = useCallback(async () => {
-    setReady(false); setError('');
+    setError('');
     try {
       const r = await fetch('/api/studio/research-consent', { cache: 'no-store' });
       if (r.status === 401) { setEnabled(true); setNeeded(false); setReady(true); return; }
@@ -28,6 +43,7 @@ export function ResearchAgreement({ children }: { children: ReactNode }) {
     } catch (e) { setError(e instanceof Error ? e.message : 'Could not save your agreement.'); }
     finally { setBusy(false); }
   }
+  // A failed re-check leaves an accepted workspace mounted; the API routes still enforce consent.
   if (ready) return <ResearchCollectionContext.Provider value={enabled}>{children}</ResearchCollectionContext.Provider>;
   return <div className={s.hub}><header className={s.hubHeader}><Link href="/">HumanStudy-Hub</Link></header><main className={s.authLayout}><section className={s.authCard} aria-labelledby="research-agreement-title">
     <h1 id="research-agreement-title">Research data agreement</h1>

@@ -18,6 +18,7 @@ type ScrollRun = { target?: string; start: number; end: number; max: number; sta
 const BATCH_SIZE = 50;
 const FLUSH_INTERVAL_MS = 5000;
 const MAX_BACKOFF_MS = 60_000;
+const REQUEST_TIMEOUT_MS = 10_000;
 export const SCROLL_SETTLE_MS = 800;
 // The server rejects events older than 30 days; never resend those from storage.
 // Browsers normally cap all outstanding keepalive bodies at about 64 KiB.
@@ -106,6 +107,7 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
     const stored = new Set<string>(), acknowledged = new Set<string>();
     const storageError = 'Local research storage is full or unavailable. Keep this page open until delivery succeeds.';
     let stopped = false;
+    let gone = false;
     let sending = false;
     let retryCount = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -139,7 +141,7 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
       ...fields,
     });
     const push = (event: StudioEvent) => {
-      if (stopped) return;
+      if (stopped || gone) return;
       event.research ??= { installId: installIdRef.current, seq: ++seqRef.current };
       queue.push(event);
       if (!durable.available()) setState(previous => ({ ...previous, deliveryError: storageError }));
@@ -151,22 +153,43 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
     };
     const enqueue = (type: StudioEvent["type"], fields: Partial<StudioEvent> = {}) => push(makeEvent(type, fields));
 
-    const flush = async () => {
-      if (stopped || sending || !queue.length || retryTimer) return;
-      sending = true;
-      const batch = queue.slice(0, BATCH_SIZE);
+    const backoff = () => {
+      retryCount++;
+      retryTimer = setTimeout(() => { retryTimer = undefined; void flush(); }, Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.min(16, retryCount - 1)));
+    };
+    /** The workspace no longer exists (404): its events can never be stored, so stop for good. */
+    const abandon = () => {
+      gone = true;
+      remove([...queue]);
+      setState((previous) => previous.deliveryError ? { ...previous, deliveryError: null } : previous);
+    };
+    /** One request, aborted by its own timeout or by unmount. */
+    const post = async (events: StudioEvent[], keepalive: boolean): Promise<Response> => {
       const controller = new AbortController();
       requestController = controller;
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      let retryable = true;
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       try {
-        const response = await fetch(endpoint, {
+        return await fetch(endpoint, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ events: batch }),
-          keepalive: true,
+          body: JSON.stringify({ events }),
+          ...(keepalive ? { keepalive: true } : {}),
           signal: controller.signal,
         });
+      } finally {
+        clearTimeout(timeout);
+        if (requestController === controller) requestController = null;
+      }
+    };
+
+    const flush = async () => {
+      if (stopped || gone || sending || !queue.length || retryTimer) return;
+      sending = true;
+      const batch = queue.slice(0, BATCH_SIZE);
+      let retryable = true;
+      try {
+        const response = await post(batch, true);
+        if (response.status === 404) { abandon(); return; }
         if (!response.ok) {
           // Auth expiry and server trouble are transient; other 4xx mean the batch itself is invalid.
           retryable = response.status === 401 || response.status === 403 || response.status === 408 || response.status === 429 || response.status >= 500;
@@ -180,32 +203,36 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
           if (!retryable) {
             // A whole batch must never be discarded because one event failed. Isolate the bad
             // record by retrying individually; preserve complete rejected records for recovery.
-            try { for (const event of batch) {
-              const single = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ events: [event] }) });
-              if (single.ok) remove([event]);
-              else if ([400, 413, 422].includes(single.status)) {
-                await durable.reject(event, single.status);
-                remove([event]);
-              } else throw new Error('Delivery needs retry.');
-            } } catch {
-              retryCount++;
-              retryTimer = setTimeout(() => { retryTimer = undefined; void flush(); }, Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.min(16, retryCount - 1)));
+            let rejected = 0;
+            try {
+              for (const event of batch) {
+                if (stopped) throw new Error("Stopped.");
+                const single = await post([event], false);
+                if (single.status === 404) { abandon(); return; }
+                if (single.ok) remove([event]);
+                else if ([400, 413, 422].includes(single.status)) {
+                  await durable.reject(event, single.status);
+                  remove([event]);
+                  rejected++;
+                } else throw new Error("Delivery needs retry.");
+              }
+              retryCount = 0;
+              if (!rejected) setState((previous) => previous.deliveryError ? { ...previous, deliveryError: null } : previous);
+            } catch {
+              if (!stopped) {
+                backoff();
+                if (!rejected) setState((previous) => ({ ...previous, deliveryError: "Telemetry delivery is retrying." }));
+              }
             }
-            setState((previous) => ({ ...previous, deliveryError: 'A rejected research record was retained locally for review.' }));
+            if (rejected && !stopped) setState((previous) => ({ ...previous, deliveryError: "A rejected research record was retained locally for review." }));
           } else {
-            retryCount++;
+            backoff();
             setState((previous) => ({ ...previous, deliveryError: "Telemetry delivery is retrying." }));
-            retryTimer = setTimeout(() => {
-              retryTimer = undefined;
-              void flush();
-            }, Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.min(16, retryCount - 1)));
           }
         }
       } finally {
-        clearTimeout(timeout);
-        requestController = null;
         sending = false;
-        if (!stopped && queue.length && !retryTimer) void flush();
+        if (!stopped && !gone && queue.length && !retryTimer) void flush();
       }
     };
 

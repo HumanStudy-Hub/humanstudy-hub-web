@@ -487,3 +487,63 @@ test("two tabs share durable storage without deleting each other's records", asy
   const other = loadTs("lib/studio/telemetry-store.ts", globals).createTelemetryStore("workspace-2");
   assert.equal((await other.all()).length, 0, "workspaces are isolated");
 });
+
+test("telemetry shows no rejection notice when isolation delivers every event, and resets its backoff", async () => {
+  const requests = [];
+  let batchStatus = 400;
+  const h = fakeTelemetry(async (_url, options) => {
+    const events = JSON.parse(options.body).events; requests.push({ events, signal: options.signal });
+    if (events.length > 1) return { ok: false, status: batchStatus };
+    return { ok: true, status: 200 };
+  });
+  for (let i = 0; i < 49; i++) h.hook.action("composer.send", { type: "chat", metadata: { action: "send" } });
+  await settle();
+  assert.equal(h.state.deliveryError, null, "no event was rejected, so no alert");
+  assert.ok(requests.slice(1).every((r) => r.events.length === 1 && r.signal), "isolation requests are abortable");
+  assert.equal([...h.timers.values()].some((t) => t.delay >= 1000 && t.delay <= 60_000 && t.delay !== 5000 && t.delay !== 10_000), false, "no backoff pending");
+  h.cleanup();
+});
+
+test("telemetry treats a 404 (workspace deleted) as terminal: no retries, nothing kept", async () => {
+  const requests = [], storage = fakeStorage();
+  const h = fakeTelemetry(async (_url, options) => { requests.push(JSON.parse(options.body).events); return { ok: false, status: 404 }; }, { storage });
+  for (let i = 0; i < 49; i++) h.hook.action("composer.send", { type: "chat", metadata: { action: "send" } });
+  await settle();
+  assert.equal(requests.length, 1, "one request, no per-event isolation");
+  assert.equal([...h.timers.values()].some((t) => t.delay === 1000), false, "no retry scheduled");
+  assert.equal(h.state.deliveryError, null);
+  h.hook.action("composer.send", { type: "chat", metadata: { action: "send" } });
+  for (const timer of [...h.timers.values()]) timer.fn();
+  await settle();
+  assert.equal(requests.length, 1, "nothing more is sent for a deleted workspace");
+  assert.equal([...storage.data.keys()].filter((k) => k.includes(":event:")).length, 0);
+  h.cleanup();
+});
+
+test("telemetry treats a 404 during per-event isolation as terminal", async () => {
+  const requests = [];
+  const h = fakeTelemetry(async (_url, options) => { const events = JSON.parse(options.body).events; requests.push(events); return { ok: false, status: events.length > 1 ? 400 : 404 }; });
+  for (let i = 0; i < 49; i++) h.hook.action("composer.send", { type: "chat", metadata: { action: "send" } });
+  await settle();
+  assert.equal(requests.length, 2);
+  assert.equal([...h.timers.values()].some((t) => t.delay === 1000), false, "no retry scheduled");
+  h.cleanup();
+});
+
+test("rejected-record quarantine is capped at the newest MAX_REJECTED records", async () => {
+  for (const withIdb of [false, true]) {
+    const storage = fakeStorage(), idb = withIdb ? fakeIndexedDB() : undefined;
+    const mod = loadTs("lib/studio/telemetry-store.ts", { localStorage: storage, ...(idb ? { indexedDB: idb } : {}) });
+    const store = mod.createTelemetryStore("workspace-1");
+    const realNow = Date.now; let clock = 1_800_000_000_000;
+    Date.now = () => ++clock;
+    try {
+      for (let i = 0; i < mod.MAX_REJECTED + 7; i++) await store.reject({ id: `r${i}`, sessionId: "s", type: "click", at: new Date(clock).toISOString() }, 400);
+    } finally { Date.now = realNow; }
+    await settle();
+    const kept = withIdb ? [...idb.stores.get("rejected").values()].map((row) => row.event.id) : [...storage.data.keys()].filter((k) => k.includes(":rejected:")).map((k) => k.split(":rejected:")[1]);
+    assert.equal(kept.length, mod.MAX_REJECTED, withIdb ? "indexeddb" : "localstorage");
+    for (let i = 0; i < 7; i++) assert.ok(!kept.includes(`r${i}`), `oldest r${i} pruned`);
+    assert.ok(kept.includes(`r${mod.MAX_REJECTED + 6}`), "newest kept");
+  }
+});

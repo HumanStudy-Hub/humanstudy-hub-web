@@ -154,13 +154,13 @@ test("web: scripted source-to-program session has one primary action per operati
     const r = await h.routes.workspace.PATCH(h.req("", { document: d, expectedRevision: db.workspace.revision, ...(actionId ? { actionId } : {}) }, "PATCH"), h.routeContext);
     assert.equal(r.status, 200); await h.runAfter();
   };
-  await tick(); ops.input("shortcut:cmd+s", "shortcut"); await tick();
+  await tick(); ops.input("shortcut:cmd.s", "shortcut"); await tick();
   const saved = op("workspace.save", ops.action("workspace.save")); await save(saved);
   // 9. An autosave no operation named: one server system operation, recorded only because it committed a version.
   op("workspace.autosave (server)", producer.serverEventId(ids.owner, `action:save:${ids.workspace}:${db.workspace.revision + 1}`)); await save();
 
   // 10. An unclaimed shortcut (palette open) records its name once; choosing a palette command is via menu.
-  await tick(); const palette = op("palette shortcut", ops.input("shortcut:cmd+shift+p", "shortcut")); await sleep(350);
+  await tick(); const palette = op("palette shortcut", ops.input("shortcut:cmd.shift.p", "shortcut")); await sleep(350);
   await tick(); ops.input("workspace.command.export", "menu"); await tick();
   const exported = op("workspace.export", ops.action("workspace.export"));
   // A second semantic name for the same operation is not a second primary.
@@ -195,7 +195,7 @@ test("web: scripted source-to-program session has one primary action per operati
   assert.equal(human.action_id, saved); assert.equal(human.metadata.trigger, "human-save"); assert.equal(primary(saved).metadata.via, "shortcut");
   assert.equal(primary(autosave.action_id).metadata.via, "system"); assert.equal(primary(autosave.action_id).target, "workspace.autosave");
   assert.equal(by("tool.start", r => r.metadata.mode === "sync")[0].action_id, review, "the package sync the decision started links to it");
-  assert.equal(primary(palette).target, "shortcut:cmd+shift+p");
+  assert.equal(primary(palette).target, "shortcut:cmd.shift.p");
   assert.equal(primary(exported).metadata.via, "menu"); assert.equal(primary(exported).target, "workspace.export");
   assert.ok(!by("action.invoke").some(r => r.target === "composer.enter"), "a composer Enter is never a record of its own");
 });
@@ -208,17 +208,42 @@ test("web operations: fallback window, joins, records and system actions", async
   const click = ops.input("button", "pointer"); await sleep(100);
   assert.equal(ops.action("composer.send", { type: "chat" }), click);
   // A synthetic click inside the same dispatch joins the operation in progress.
-  const key = ops.input("shortcut:cmd+b", "shortcut");
+  const key = ops.input("shortcut:cmd.b", "shortcut");
   assert.equal(ops.input("button", "pointer"), key, "same dispatch");
   await tick(); assert.equal(ops.input("button", "pointer", { join: true }), key, "synthetic click from the shortcut handler");
   await sleep(350);
-  assert.deepEqual(emitted.map(e => [e.type, e.target, e.metadata.via]), [["chat", "composer.send", "pointer"], ["click", "shortcut:cmd+b", "shortcut"]]);
+  assert.deepEqual(emitted.map(e => [e.type, e.target, e.metadata.via]), [["chat", "composer.send", "pointer"], ["click", "shortcut:cmd.b", "shortcut"]]);
   // Without a user input in progress an action is a system operation.
   await sleep(350); const sys = ops.action("package.sync"); assert.notEqual(sys, key, "after the decided operation's window");
   assert.equal(emitted.at(-1).metadata.via, "system");
   // An unclaimed composer Enter leaves no record; its completion records stand alone.
   emitted.length = 0; ops.input("composer.enter", "keyboard", { fallback: false }); await tick(); ops.record("layout", { action: "x" }); await sleep(350);
   assert.deepEqual(emitted.map(e => [e.type, e.actionId]), [["layout", undefined]]);
-  assert.equal(operations.shortcutName({ key: "s", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false }), "cmd+s");
+  assert.equal(operations.shortcutName({ key: "s", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false }), "cmd.s");
   assert.equal(operations.shortcutName({ key: "a", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }), null, "plain keys are never named");
+});
+
+test("shortcut targets satisfy the live studio_events.target check, and the events route agrees with it", () => {
+  const sql = fs.readFileSync(path.join(root, "supabase/migrations/20261005213611_studio.sql"), "utf8");
+  const db = new RegExp(sql.match(/target text check \(target ~ '([^']+)'\)/)[1]);
+  const route = fs.readFileSync(path.join(root, "app/api/studio/workspaces/[id]/events/route.ts"), "utf8");
+  const routeSrc = route.split("\n").find(line => line.includes(".test(event.target)"));
+  const routeRe = new RegExp(routeSrc.slice(routeSrc.indexOf("!/^") + 2, routeSrc.indexOf("$/.test(event.target)") + 1));
+  const name = (key, mods = {}) => operations.shortcutName({ key, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...mods });
+  assert.equal(name("k", { metaKey: true, shiftKey: true }), "cmd.shift.k");
+  assert.equal(name("ArrowUp", { ctrlKey: true, altKey: true }), "ctrl.alt.up");
+  assert.equal(name(",", { metaKey: true }), "cmd.comma");
+  assert.equal(name("C", { ctrlKey: true }), "ctrl.c");
+  for (const unnamed of ["?", "é", "˚", "Dead!", ""]) assert.equal(name(unnamed, { metaKey: true }), null, `no target for ${JSON.stringify(unnamed)}`);
+  const keys = ["a", "Z", "0", "Enter", "Escape", "Tab", "Backspace", "F12", "ArrowLeft", " ", ",", ".", "/", "\\", ";", "'", "`", "[", "]", "-", "=", "+", "!", "@", "#", "~", "<", "é", "ß", "Dead", "Unidentified"];
+  const mods = [{ metaKey: true }, { ctrlKey: true }, { metaKey: true, ctrlKey: true, altKey: true, shiftKey: true }];
+  for (const key of keys) for (const mod of mods) {
+    const n = name(key, mod);
+    if (n === null) continue;
+    assert.match(n, /^[a-z0-9]+(\.[a-z0-9]+)+$/);
+    const target = `shortcut:${n}`;
+    assert.ok(db.test(target), `${target} passes the DB check`);
+    assert.ok(routeRe.test(target), `${target} passes the route check`);
+  }
+  for (const sample of ["shortcut:cmd+c", "a b", "x".repeat(161), "", "source-pane", "tab:#1", "a/b[0]"]) assert.equal(routeRe.test(sample), db.test(sample), `route and DB agree on ${JSON.stringify(sample)}`);
 });

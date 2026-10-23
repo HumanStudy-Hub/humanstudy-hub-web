@@ -35,7 +35,7 @@ function validateEvent(input: unknown, workspaceId: string, ownerId: string, wor
   if(event.displayRevision !== undefined && (!Number.isSafeInteger(event.displayRevision) || event.displayRevision < 1 || event.displayRevision > workspaceRevision)) throw new StudioError(400,"invalid_event");
   const at = Date.parse(event.at);
   if (!Number.isFinite(at) || at < Date.parse('2026-01-01T00:00:00Z') || at > Date.now() + 300_000) throw new StudioError(400, "invalid_event");
-  if (event.target !== undefined && (typeof event.target !== "string" || !/^[a-zA-Z0-9_.:/#+\[\]-]{1,160}$/.test(event.target))) {
+  if (event.target !== undefined && (typeof event.target !== "string" || !/^[a-zA-Z0-9_.:/#\[\]-]{1,160}$/.test(event.target))) {
     throw new StudioError(400, "invalid_event");
   }
   // Coordinates are no longer collected; tolerate them from old clients but never store them.

@@ -48,11 +48,23 @@ interface Op {
   timer?: unknown;
 }
 
-/** "cmd+shift+k": modifiers plus a key name, as desktop capture.ts. No text is recorded. */
+/** Punctuation keys renamed so a shortcut name stays inside the studio_events.target charset. */
+const KEY_NAMES: Record<string, string> = {
+  ',': 'comma', '.': 'period', '/': 'slash', '\\': 'backslash', ';': 'semicolon', "'": 'quote', '`': 'backquote',
+  '[': 'bracketleft', ']': 'bracketright', '-': 'minus', '=': 'equal', '+': 'plus', ' ': 'space',
+};
+
+/**
+ * "cmd.shift.k": modifiers plus a key name joined by "." (desktop capture.ts uses "+", which the
+ * studio_events.target check rejects). Key names are [a-z0-9] only; anything else is not named.
+ * No text is recorded.
+ */
 export function shortcutName(e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }): string | null {
   if (['Meta', 'Control', 'Alt', 'Shift'].includes(e.key) || !(e.metaKey || e.ctrlKey)) return null;
-  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase().replace('arrow', '');
-  return [e.metaKey && 'cmd', e.ctrlKey && 'ctrl', e.altKey && 'alt', e.shiftKey && 'shift', k].filter(Boolean).join('+');
+  const raw = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase().replace(/^arrow/, '');
+  const k = KEY_NAMES[raw] ?? raw;
+  if (!/^[a-z0-9]{1,20}$/.test(k)) return null;
+  return [e.metaKey && 'cmd', e.ctrlKey && 'ctrl', e.altKey && 'alt', e.shiftKey && 'shift', k].filter(Boolean).join('.');
 }
 
 export function createWebOperations(deps: OperationDeps) {

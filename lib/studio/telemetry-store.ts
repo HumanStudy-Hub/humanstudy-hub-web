@@ -4,7 +4,8 @@
  * IndexedDB is primary (quota is far larger than localStorage's ~5 MB); localStorage is the
  * fallback when IndexedDB is unavailable or refuses a write. Every event is its own record keyed by
  * id, so tabs never rewrite or take ownership of each other's records and an acknowledgement only
- * removes the ids it confirmed. Nothing is pruned by count or age. A write neither store accepts is
+ * removes the ids it confirmed. Undelivered events are never pruned by count or age; only the
+ * quarantine of server-rejected records is capped (MAX_REJECTED, newest kept). A write neither store accepts is
  * reported to the caller so the page can show it.
  */
 import type { StudioEvent } from "./types";
@@ -13,9 +14,14 @@ export const STORAGE_PREFIX = "hs-studio-telemetry:";
 const DB_NAME = "hs-studio-research";
 const EVENTS = "events";
 const REJECTED = "rejected";
+/** Rejected records are kept for review, but bounded: only the newest are retained (all workspaces). */
+export const MAX_REJECTED = 500;
 
 type Row = { key: string; workspace: string; event: StudioEvent };
-type RejectedRow = { key: string; workspace: string; event: StudioEvent; status: number };
+type RejectedRow = { key: string; workspace: string; event: StudioEvent; status: number; rejectedAt?: number };
+
+const rejectedOrder = (row: { rejectedAt?: unknown; event?: { at?: unknown } } | null | undefined): number =>
+  typeof row?.rejectedAt === "number" ? row.rejectedAt : Date.parse(String(row?.event?.at ?? "")) || 0;
 
 export interface TelemetryStore {
   /** Synchronous: is any durable store present at all (not whether it has room)? */
@@ -154,18 +160,37 @@ export function createTelemetryStore(workspace: string): TelemetryStore {
       }
     },
     async reject(event, status) {
+      const rejectedAt = Date.now();
       const db = await database();
       if (db) {
         try {
-          const tx = db.transaction(REJECTED, "readwrite");
-          tx.objectStore(REJECTED).put({ key: `${workspace}:${event.id}`, workspace, event, status } satisfies RejectedRow);
-          await done(tx);
+          const tx = db.transaction(REJECTED, "readwrite"), objects = tx.objectStore(REJECTED), finished = done(tx);
+          objects.put({ key: `${workspace}:${event.id}`, workspace, event, status, rejectedAt } satisfies RejectedRow);
+          // Pruned inside the same transaction, from the request callback (keeps it active).
+          const all = objects.getAll();
+          all.onsuccess = () => {
+            const rows = all.result as RejectedRow[];
+            if (rows.length <= MAX_REJECTED) return;
+            for (const row of [...rows].sort((a, b) => rejectedOrder(a) - rejectedOrder(b)).slice(0, rows.length - MAX_REJECTED)) objects.delete(row.key);
+          };
+          await finished;
           return;
         } catch { /* fall back */ }
       }
       const store = local();
       if (!store) throw new Error("research_storage_unavailable");
-      store.setItem(`${prefix}rejected:${event.id}`, JSON.stringify({ event, status }));
+      store.setItem(`${prefix}rejected:${event.id}`, JSON.stringify({ event, status, rejectedAt }));
+      try {
+        const keys: Array<[string, number]> = [];
+        for (let i = 0; i < store.length; i++) {
+          const key = store.key(i);
+          if (!key?.startsWith(STORAGE_PREFIX) || !key.includes(":rejected:")) continue;
+          let order = 0;
+          try { order = rejectedOrder(JSON.parse(store.getItem(key) || "null")); } catch { /* corrupt: oldest */ }
+          keys.push([key, order]);
+        }
+        if (keys.length > MAX_REJECTED) for (const [key] of keys.sort((a, b) => a[1] - b[1]).slice(0, keys.length - MAX_REJECTED)) store.removeItem(key);
+      } catch { /* pruning is best effort */ }
     },
   };
 }

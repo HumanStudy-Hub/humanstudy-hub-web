@@ -88,6 +88,16 @@ function fakeSupabase(initial = doc()) {
       let rows = [...db.outbox.values()];
       if (q.get("delivered_at") === "is.null") rows = rows.filter(r => !r.delivered_at);
       if (id) rows = rows.filter(r => r.id === id);
+      const owner = q.get("owner_id")?.replace(/^eq\./, "");
+      if (owner) rows = rows.filter(r => r.owner_id === owner);
+      // PostgREST or=(last_error.is.null,last_error.not.like."rejected:*"): NULLs kept, rejected rows excluded.
+      const or = q.get("or");
+      if (or) {
+        if (or !== '(last_error.is.null,last_error.not.like."rejected:*")') throw new Error(`unmodelled or filter: ${or}`);
+        rows = rows.filter(r => r.last_error === null || r.last_error === undefined || !String(r.last_error).startsWith("rejected:"));
+      }
+      if (q.get("order") === "created_at.asc") rows.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+      if (q.get("limit")) rows = rows.slice(0, Number(q.get("limit")));
       return reply(rows.map(r => structuredClone(r)));
     }
     if (p === "/rest/v1/research_content") {
