@@ -10,7 +10,7 @@ Projects support search, rename, fork, archive/restore and export. The editor ex
 
 Autosave and Cmd/Ctrl-S retain revision conflict protection. Project navigation waits for pending saves. Cmd/Ctrl-B toggles the explorer, Cmd/Ctrl-P finds projects, and Cmd/Ctrl-Shift-P opens workspace commands. Settings share local appearance, text size, density and message-send preferences across the directory and editor. Circle drawing has been removed; PDF text/box annotations and program field comments remain. Language switching and version DAGs are not enabled. Collaborative sharing, custom folders, full undo/redo history and account password recovery are not implemented by this change.
 
-Apply `supabase/migrations/20261010001813_studio_project_origin.sql` after the existing research-history migration. Scientific snapshots now retain `origin.sampleId` and `origin.forkedFrom`; archive/copy state remain excluded. Analysts must treat seeded/forked initial knowledge separately from subsequent researcher decisions. The migration was applied to the development project; the transaction test exercises origin capture, draft/UI exclusion and cross-owner isolation without leaving test rows.
+Apply `supabase/migrations/20261010001831_studio_project_origin.sql` after the existing research-history migration. Scientific snapshots now retain `origin.sampleId` and `origin.forkedFrom`; archive/copy state remain excluded. Analysts must treat seeded/forked initial knowledge separately from subsequent researcher decisions. The migration was applied to the development project; the transaction test exercises origin capture, draft/UI exclusion and cross-owner isolation without leaving test rows.
 
 ## Configure a development service
 
@@ -18,12 +18,12 @@ Apply `supabase/migrations/20261010001813_studio_project_origin.sql` after the e
    `SUPABASE_PUBLISHABLE_KEY` in `.env.local`. The browser does not need a
    service-role key; all database and storage requests retain the signed-in
    user's token and RLS policies.
-2. Apply `supabase/migrations/202610050001_studio.sql` once through your migration
+2. Apply `supabase/migrations/20261005213611_studio.sql` once through your migration
    runner or Supabase SQL editor. It creates owner-scoped workspaces/events,
    the revision-check RPC, and the private `studio-sources` bucket. Apply
-   `supabase/migrations/20261006062534_studio_resources.sql` to enable resource
+   `supabase/migrations/20261006062606_studio_resources.sql` to enable resource
    MIME types and extend the same owner/workspace storage policies. Apply
-   `supabase/migrations/20261006065000_studio_layout_telemetry.sql` for semantic
+   `supabase/migrations/20261006064543_studio_layout_telemetry.sql` for semantic
    layout events and server-assigned event revision stamps.
 3. Enable email/password authentication and retain **Confirm email**. Follow the
    registration configuration below. Password reset and social sign-in are not
