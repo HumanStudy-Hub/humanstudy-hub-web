@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StudioEvent } from "./types";
+import { createTelemetryStore } from "./telemetry-store";
 
 // Collection contract (HumanStudy-Hub/humanstudy-desktop#27): one primary event per user
 // operation, scrolling summarized when it settles, and no pointer trajectories,
@@ -20,7 +21,7 @@ export const SCROLL_SETTLE_MS = 800;
 // The server rejects events older than 30 days; never resend those from storage.
 // Browsers normally cap all outstanding keepalive bodies at about 64 KiB.
 const KEEPALIVE_BUDGET = 60_000;
-export const STORAGE_PREFIX = "hs-studio-telemetry:";
+export { STORAGE_PREFIX } from "./telemetry-store";
 const METADATA_KEYS = new Set(["action", "area", "mode", "status", "sourceId", "conversationId", "entityId", "reviewId", "page", "count", "selectionLength", "button", "direction", "startDepth", "endDepth", "maxDepth"]);
 
 function cleanMetadata(metadata?: Metadata): Metadata | undefined {
@@ -61,50 +62,14 @@ function depth(element: Element): number | undefined {
 // Where each container's last scroll settled, so the next summary starts from there.
 const settledDepth = new WeakMap<Element, number>();
 
-function storage(): Storage | null {
-  try { return typeof localStorage === "undefined" ? null : localStorage; } catch { return null; }
-}
-
-function isStoredEvent(value: unknown): value is StudioEvent {
-  if (!value || typeof value !== "object") return false;
-  const event = value as Partial<StudioEvent>;
-  if (typeof event.id !== "string" || typeof event.sessionId !== "string" || typeof event.type !== "string" || typeof event.at !== "string") return false;
-  const at = Date.parse(event.at);
-  return event.type !== ("pointer" as string) && Number.isFinite(at);
-}
-
-/** Take over events that earlier pages (or remounts) left undelivered for this workspace. */
-function adoptStored(workspaceId: string, ownKey: string): StudioEvent[] {
-  const store = storage();
-  if (!store) return [];
-  const adopted: StudioEvent[] = [];
-  try {
-    const prefix = `${STORAGE_PREFIX}${workspaceId}:`;
-    const keys: string[] = [];
-    for (let i = 0; i < store.length; i++) {
-      const key = store.key(i);
-      if (key && key.startsWith(prefix) && key !== ownKey) keys.push(key);
-    }
-    const seen = new Set<string>();
-    for (const key of keys) {
-      if (key.includes(':rejected:')) continue;
-      try {
-        const parsed: unknown = JSON.parse(store.getItem(key) || "[]");
-        const values = Array.isArray(parsed) ? parsed : [parsed];
-        for (const event of values) if (isStoredEvent(event) && !seen.has(event.id)) { seen.add(event.id); adopted.push(event); }
-      } catch { /* retain corrupt data for recovery; never delete on adoption */ }
-    }
-  } catch { return adopted; }
-  return adopted;
-}
-
 export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, workspaceRevision }: { workspaceId?: string; enabled: boolean; surfaceVersion?: number | string; workspaceRevision?: number }): {
-  track: (type: ExplicitEvent, metadata?: Metadata) => void;
+  /** Returns the id of the primary event, so server producers can link to it (action_id). */
+  track: (type: ExplicitEvent, metadata?: Metadata) => string | undefined;
   droppedEvents: number;
   deliveryError: string | null;
 } {
   const [state, setState] = useState<TelemetryState>({ droppedEvents: 0, deliveryError: null });
-  const trackRef = useRef<((type: ExplicitEvent, metadata?: Metadata) => void) | null>(null);
+  const trackRef = useRef<((type: ExplicitEvent, metadata?: Metadata) => string) | null>(null);
   const sessionIdRef = useRef("");
   const installIdRef = useRef("");
   const seqRef = useRef(0);
@@ -112,7 +77,7 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
   useEffect(() => { revisionRef.current = workspaceRevision; }, [workspaceRevision]);
 
   const track = useCallback((type: ExplicitEvent, metadata?: Metadata) => {
-    trackRef.current?.(type, cleanMetadata(metadata));
+    return trackRef.current?.(type, cleanMetadata(metadata));
   }, []);
 
   useEffect(() => {
@@ -125,10 +90,12 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
     if (!sessionIdRef.current) sessionIdRef.current = crypto.randomUUID();
     if (!installIdRef.current) installIdRef.current = crypto.randomUUID();
     const endpoint = `/api/studio/workspaces/${encodeURIComponent(workspaceId)}/events`;
-    // One key per listener binding: a remount adopts (and removes) the previous binding's key.
-    const storageKey = `${STORAGE_PREFIX}${workspaceId}:${crypto.randomUUID()}`;
+    // IndexedDB first, localStorage fallback; one record per event id, never pruned.
+    const durable = createTelemetryStore(workspaceId);
     // Every undelivered event, including those in flight; removed by id only on success.
-    const queue: StudioEvent[] = adoptStored(workspaceId, storageKey);
+    const queue: StudioEvent[] = [];
+    const stored = new Set<string>(), acknowledged = new Set<string>();
+    const storageError = 'Local research storage is full or unavailable. Keep this page open until delivery succeeds.';
     let stopped = false;
     let sending = false;
     let retryCount = 0;
@@ -140,33 +107,21 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
     let requestController: AbortController | null = null;
     const scrollRuns = new Map<Element, ScrollRun>();
 
-    /** Returns whether the pending queue is now durable in storage. */
+    /** Synchronously writes whatever is not yet durable (unload paths). Returns whether all of it is. */
     const persistNow = (): boolean => {
       if (persistTimer) { clearTimeout(persistTimer); persistTimer = undefined; }
-      const store = storage();
-      if (!store) return false;
-      try {
-        // One independently addressed record per id. Tabs never rewrite or take ownership of
-        // another tab's active queue. Acknowledgement deletes only confirmed ids.
-        for (const event of queue) store.setItem(`${STORAGE_PREFIX}${workspaceId}:event:${event.id}`, JSON.stringify(event));
-        return true;
-      } catch { return false; /* quota or privacy mode: the in-memory queue still delivers */ }
+      const missing = queue.filter((event) => !stored.has(event.id));
+      if (!missing.length) return true;
+      // Tabs never rewrite or take ownership of another tab's records; each id is its own record.
+      if (!durable.putSync(missing)) return false;
+      for (const event of missing) stored.add(event.id);
+      return true;
     };
     const remove = (sent: StudioEvent[]) => {
       const ids = new Set(sent.map((event) => event.id));
       for (let i = queue.length - 1; i >= 0; i--) if (ids.has(queue[i].id)) queue.splice(i, 1);
-      const store = storage();
-      if (store) try {
-        for (const id of ids) store.removeItem(`${STORAGE_PREFIX}${workspaceId}:event:${id}`);
-        // Compatibility with saved pre-v1 arrays: remove acknowledged ids, never whole queues.
-        const keys = Array.from({ length: store.length }, (_, i) => store.key(i)).filter((k): k is string => Boolean(k?.startsWith(`${STORAGE_PREFIX}${workspaceId}:`) && !k.includes(':event:') && !k.includes(':rejected:')));
-        for (const key of keys) {
-          const parsed: unknown = JSON.parse(store.getItem(key) || '[]');
-          if (!Array.isArray(parsed)) continue;
-          const left = parsed.filter(e => !ids.has(e.id));
-          if (left.length) store.setItem(key, JSON.stringify(left)); else store.removeItem(key);
-        }
-      } catch { /* duplicate retry is harmless; a failed deletion never loses unacknowledged data */ }
+      for (const id of ids) { stored.delete(id); acknowledged.add(id); }
+      void durable.remove(ids);
     };
     const makeEvent = (type: StudioEvent["type"], fields: Partial<StudioEvent> = {}): StudioEvent => ({
       id: crypto.randomUUID(),
@@ -180,11 +135,11 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
       if (stopped) return;
       event.research ??= { installId: installIdRef.current, seq: ++seqRef.current };
       queue.push(event);
-      const store = storage();
-      try {
-        if (!store) throw new Error('unavailable');
-        store.setItem(`${STORAGE_PREFIX}${workspaceId}:event:${event.id}`, JSON.stringify(event));
-      } catch { setState(previous => ({ ...previous, deliveryError: 'Local research storage is unavailable. Keep this page open until delivery succeeds.' })); }
+      if (!durable.available()) setState(previous => ({ ...previous, deliveryError: storageError }));
+      else durable.put([event]).then(() => {
+        // Delivered before the write finished: remove the late record instead of resending it.
+        if (acknowledged.has(event.id)) void durable.remove([event.id]); else stored.add(event.id);
+      }, () => setState(previous => ({ ...previous, deliveryError: storageError })));
       if (queue.length >= BATCH_SIZE) void flush();
     };
     const enqueue = (type: StudioEvent["type"], fields: Partial<StudioEvent> = {}) => push(makeEvent(type, fields));
@@ -222,9 +177,7 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
               const single = await fetch(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ events: [event] }) });
               if (single.ok) remove([event]);
               else if ([400, 413, 422].includes(single.status)) {
-                const store = storage();
-                if (!store) throw new Error('Cannot retain a rejected event.');
-                store.setItem(`${STORAGE_PREFIX}${workspaceId}:rejected:${event.id}`, JSON.stringify({ event, status: single.status }));
+                await durable.reject(event, single.status);
                 remove([event]);
               } else throw new Error('Delivery needs retry.');
             } } catch {
@@ -280,7 +233,9 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
       // A semantic handler that runs for the same click owns it: one operation, one primary event.
       const click = pendingClick;
       if (click) { pendingClick = null; if (clickTimer) { clearTimeout(clickTimer); clickTimer = undefined; } }
-      enqueue(type, { ...(click?.target ? { target: click.target } : {}), ...(metadata ? { metadata } : {}) });
+      const event = makeEvent(type, { ...(click?.target ? { target: click.target } : {}), ...(metadata ? { metadata } : {}) });
+      push(event);
+      return event.id;
     };
 
     const onClick = (event: MouseEvent) => {
@@ -354,9 +309,16 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("pagehide", onPageHide);
     const interval = setInterval(() => { if (document.visibilityState === "visible") void flush(); }, FLUSH_INTERVAL_MS);
-    const adoptedCount = queue.length;
     if (visibleSince) enqueue("visibility", { metadata: { status: "visible" } });
-    if (adoptedCount) { persistNow(); void flush(); }
+    // Take over events earlier pages, remounts or other tabs left undelivered. Read only: records
+    // are deleted by id after acknowledgement, so a concurrent tab loses nothing.
+    void durable.all().then((events) => {
+      if (stopped) return;
+      const known = new Set(queue.map((event) => event.id));
+      let adopted = 0;
+      for (const event of events) if (!known.has(event.id) && !acknowledged.has(event.id)) { queue.push(event); stored.add(event.id); adopted++; }
+      if (adopted) void flush();
+    }, () => undefined);
 
     return () => {
       emitPendingClick();
@@ -379,8 +341,6 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
       // A keyed remount adopts the stored queue in this same commit. If nothing adopted it
       // (the studio really unmounted), deliver it now; whatever fails stays for the next visit.
       setTimeout(() => {
-        const store = storage();
-        if (!store) return;
         sendFinal(pending, (batch) => {
           remove(batch);
         });

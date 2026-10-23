@@ -372,3 +372,37 @@ whole-batch rejection deletion were removed. Server-owned messages, workflow too
 scientific snapshots are not yet fully routed to v1; legacy history remains the durable source.
 Do not enable the production rollout flag before this gap is closed. Canonical tracking:
 https://github.com/HumanStudy-Hub/humanstudy-desktop/issues/30.
+
+## Web server producers and outbox (T08) — 2026-10-22
+
+Contract unchanged (`contract.ts` 1.0.0; no event types added). Server records are built from
+server state at the producer (`lib/research-data/server-producer.ts`), never from browser input.
+Each committed change is one self-contained research session (`install_id = web-server`,
+`session.start` … `session.end` with `captured_through_seq`); ids derive from stable producer keys,
+so replays are the same rows. Causality matches desktop `research-agent.ts`.
+
+| Producer (route → function) | Events | Linkage |
+|---|---|---|
+| chat POST → `startPipeline` reservation commit | `action.invoke` (`via=system`, only if the browser sent no `actionId`), `agent.turn_start`, `conversation.message` (user, complete text) | `action_id` = browser chat/build action id; `message_id` = request id; `thread_id` = conversation |
+| `startPipeline` / `startPackageSync` / `retryPipeline` dispatch commit | `tool.start` target `humanstudy.pipeline`, `tool_call_id` = job id, complete runner input (no signed URLs) | `caused_by` turn start (or proposal decision for sync) |
+| pipeline POST → `syncDiscussion` / `syncPackage` result commit | `tool.end` (completed / error / interrupted, full output), assistant `conversation.message` (complete, or `partial` with `reason` when the received reply was unusable), `permission.request` for a model proposal, `conversation.error`, `agent.turn_end`; first build adds one `artifact.version` per generated package file | `caused_by` chain tool.start → tool.end → message → request |
+| proposals POST | `permission.decision` (apply/reject), then `program.version` / `artifact.version` (`by = agent-proposal`) | decision `caused_by` its request; versions `caused_by` the decision; `action_id` = browser review action |
+| `reconcilePackageApproval` | `permission.decision` target `pipeline.stage_approval`, `automatic = true` | |
+| workspace PATCH (autosave) | `program.version`, changed `artifact.version`s, `annotations.json` version (`by = human`) only when committed knowledge changed | `artifact_version` = committed workspace revision = `studio_research_history.revision` |
+
+Durability: `rpc studio_cas_workspace_research` runs the existing CAS and inserts the batch into
+`research_server_outbox` in the same transaction (outbox insert in a sub-transaction, so research can
+never fail the save). Delivery (content → Storage/`research_content`, then events, then read-back)
+runs after the response via `after()`, retries from the owner's next requests and from
+`/api/cron/research-outbox` (service role, re-checks the web agreement). `research_server_outbox_delivery`
+reports pending / failing / rejected / delivered_unconfirmed / delivered. Migration
+`20261023120000_research_server_outbox.sql` is additive and NOT applied.
+
+Not seen by the Vercel server, so not produced here: the runner's internal Claude Code tool calls,
+token usage, intermediate streamed text and model identity (they happen on the GitHub Actions
+runner; only the job's final turn/package and status are visible). New-workspace creation/fork
+baselines stay in `studio_research_history` (`initial`).
+
+Browser: undelivered UI events are stored per id in IndexedDB (`hs-studio-research`), falling back
+to localStorage; a write neither accepts is shown to the user. No count/age pruning; adoption is
+read-only and acknowledgement deletes only confirmed ids.

@@ -147,7 +147,7 @@ function fakeStorage(initial = {}) {
   };
 }
 
-function fakeTelemetry(fetchImpl, { storage, idOffset = 0 } = {}) {
+function fakeTelemetry(fetchImpl, { storage, idOffset = 0, indexedDB } = {}) {
   let cleanup;
   let effectIndex=0;
   const effects=[];
@@ -191,7 +191,7 @@ function fakeTelemetry(fetchImpl, { storage, idOffset = 0 } = {}) {
     useState: (value) => [value, (next) => { state = typeof next === "function" ? next(state) : next; }],
   };
   const globals = {
-    document: doc, window: win, Element: FakeElement, ...(storage ? { localStorage: storage } : {}),
+    document: doc, window: win, Element: FakeElement, ...(storage ? { localStorage: storage } : {}), ...(indexedDB ? { indexedDB } : {}),
     crypto: { randomUUID: () => `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}` },
     fetch: fetchImpl, AbortController, Date, Promise,
     setTimeout: (fn, delay) => { const id = ++nextId; timers.set(id, { fn, delay }); return id; },
@@ -200,6 +200,7 @@ function fakeTelemetry(fetchImpl, { storage, idOffset = 0 } = {}) {
     clearInterval: () => {},
   };
   const api = loadTs("lib/studio/use-telemetry.ts", globals, (name) => {
+    if (name === "./telemetry-store") return loadTs("lib/studio/telemetry-store.ts", globals);
     assert.equal(name, "react");
     return react;
   });
@@ -389,3 +390,89 @@ test("telemetry works when storage throws", async () => {
   assert.ok(sent.some((event) => event.type === "layout"));
 });
 
+
+// ---- T08: IndexedDB-backed durable queue ---------------------------------------------------
+/** Minimal IndexedDB: object stores keyed by keyPath, transactions completing in a microtask. */
+function fakeIndexedDB({ failPut = () => false } = {}) {
+  const stores = new Map();
+  const request = (result) => { const r = { result, onsuccess: null, onerror: null }; queueMicrotask(() => r.onsuccess?.()); return r; };
+  const db = {
+    objectStoreNames: { contains: (name) => stores.has(name) },
+    createObjectStore: (name) => { stores.set(name, new Map()); },
+    transaction(name) {
+      const tx = { oncomplete: null, onerror: null, onabort: null, error: null };
+      let failed = false;
+      tx.objectStore = () => ({
+        put(value) { if (failPut()) { failed = true; tx.error = new Error("QuotaExceededError"); } else stores.get(name).set(value.key, JSON.parse(JSON.stringify(value))); return request(undefined); },
+        delete(key) { stores.get(name).delete(key); return request(undefined); },
+        getAll() { return request([...stores.get(name).values()]); },
+      });
+      queueMicrotask(() => (failed ? tx.onabort?.() : tx.oncomplete?.()));
+      return tx;
+    },
+  };
+  return { stores, open() { const r = { result: db }; queueMicrotask(() => { if (!stores.size) r.onupgradeneeded?.(); r.onsuccess?.(); }); return r; } };
+}
+const idbEvents = (idb) => [...(idb.stores.get("events")?.values() ?? [])];
+
+test("telemetry stores undelivered events in IndexedDB, not localStorage, and resends them after a restart", async () => {
+  const idb = fakeIndexedDB(), storage = fakeStorage();
+  const offline = fakeTelemetry(async () => { throw new Error("offline"); }, { storage, indexedDB: idb });
+  for (let i = 0; i < 10; i++) offline.hook.track("review", { status: "open" });
+  await settle();
+  const saved = idbEvents(idb).map((row) => row.event.id);
+  assert.ok(saved.length >= 11, "every event, including the visibility record, is durable in IndexedDB");
+  assert.equal([...storage.data.keys()].filter((k) => k.includes(":event:")).length, 0, "localStorage stays free");
+  const delivered = [];
+  const online = fakeTelemetry(async (_url, options) => { delivered.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; }, { storage, indexedDB: idb, idOffset: 1_000_000 });
+  await settle(); await settle();
+  for (const id of saved) assert.ok(delivered.some((event) => event.id === id), "original id resent");
+  await settle();
+  assert.equal(idbEvents(idb).filter((row) => saved.includes(row.event.id)).length, 0, "acknowledged ids are removed");
+  online.cleanup(); offline.cleanup();
+});
+
+test("telemetry falls back to localStorage when IndexedDB refuses a write (quota)", async () => {
+  const idb = fakeIndexedDB({ failPut: () => true }), storage = fakeStorage();
+  const h = fakeTelemetry(async () => { throw new Error("offline"); }, { storage, indexedDB: idb });
+  h.hook.track("layout", { action: "collapse" });
+  await settle();
+  assert.equal(idbEvents(idb).length, 0);
+  assert.ok([...storage.data.keys()].filter((k) => k.includes(":event:")).length >= 2, "kept in the fallback store");
+  assert.notEqual(h.state.deliveryError, "Local research storage is full or unavailable. Keep this page open until delivery succeeds.");
+  h.cleanup();
+});
+
+test("telemetry shows a storage failure when neither store accepts an event, and drops nothing", async () => {
+  const idb = fakeIndexedDB({ failPut: () => true });
+  const full = { ...fakeStorage(), get length() { return 0; }, key: () => null, getItem: () => null, setItem() { throw new Error("QuotaExceededError"); }, removeItem() {} };
+  const sent = [];
+  let online = false;
+  const h = fakeTelemetry(async (_url, options) => { if (!online) throw new Error("offline"); sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; }, { storage: full, indexedDB: idb });
+  for (let i = 0; i < 49; i++) h.hook.track("review", { status: "open" });
+  await settle();
+  assert.equal(h.state.deliveryError, "Local research storage is full or unavailable. Keep this page open until delivery succeeds.");
+  assert.equal(h.state.droppedEvents, 0);
+  online = true;
+  const retry = [...h.timers].find(([, timer]) => timer.delay >= 1000);
+  h.timers.delete(retry[0]); retry[1].fn();
+  await settle();
+  assert.equal(sent.filter((event) => event.type === "review").length, 49, "the in-memory queue still delivers every event");
+  h.cleanup();
+});
+
+test("two tabs share durable storage without deleting each other's records", async () => {
+  const idb = fakeIndexedDB(), storage = fakeStorage();
+  const globals = { indexedDB: idb, localStorage: storage };
+  const a = loadTs("lib/studio/telemetry-store.ts", globals).createTelemetryStore("workspace-1");
+  const b = loadTs("lib/studio/telemetry-store.ts", globals).createTelemetryStore("workspace-1");
+  const ev = (id) => ({ id, sessionId: "s", type: "review", at: new Date().toISOString() });
+  assert.equal(await a.put([ev("a1"), ev("a2")]), "indexeddb");
+  await b.put([ev("b1")]);
+  assert.deepEqual([...(await b.all())].map((e) => e.id).sort(), ["a1", "a2", "b1"], "adoption reads everything");
+  assert.equal(idbEvents(idb).length, 3, "reading never deletes");
+  await b.remove(["b1", "a1"]);
+  assert.deepEqual(idbEvents(idb).map((row) => row.event.id), ["a2"], "only acknowledged ids are removed");
+  const other = loadTs("lib/studio/telemetry-store.ts", globals).createTelemetryStore("workspace-2");
+  assert.equal((await other.all()).length, 0, "workspaces are isolated");
+});
