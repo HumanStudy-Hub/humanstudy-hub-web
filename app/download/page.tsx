@@ -212,10 +212,10 @@ export default async function DownloadPage() {
     <div className="bg-white text-gray-950">
       <section className="mx-auto max-w-7xl px-4 pt-14 sm:px-8 sm:pt-20">
         <div className="max-w-4xl">
-          <h1 className="font-serif text-4xl font-bold leading-tight sm:text-6xl">Know in minutes whether a paper can be reproduced</h1>
+          <h1 className="font-serif text-4xl font-bold leading-tight sm:text-6xl">Find out whether a paper can be reproduced</h1>
           <p className="mt-5 max-w-2xl text-lg leading-8 text-gray-700">
             HumanStudy Hub for Mac rebuilds the study from its paper and lists what the paper does not state. Every item
-            is checked against the original PDF, page by page. A Windows preview is also available.
+            points back to the page of the original PDF it came from.{release.windows ? " A Windows preview is also available." : ""}
           </p>
           <div className="mt-8">
             <Downloads release={release} />
