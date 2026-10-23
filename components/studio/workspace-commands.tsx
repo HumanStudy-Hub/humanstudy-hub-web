@@ -23,7 +23,7 @@ export default function WorkspaceCommands({ commands, onClose }: { commands: Wor
     command.run();
   }
 
-  return <dialog ref={dialog} className={s.commandPalette} aria-label={t("Workspace commands")} onClose={onClose} onClick={event => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={event => {
+  return <dialog ref={dialog} data-research-via="menu" className={s.commandPalette} aria-label={t("Workspace commands")} onClose={onClose} onClick={event => { if (event.target === event.currentTarget) onClose(); }} onKeyDown={event => {
     if (event.key === "Escape") { event.stopPropagation(); return; }
     if (event.nativeEvent.isComposing) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {

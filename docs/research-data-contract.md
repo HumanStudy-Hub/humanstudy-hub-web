@@ -386,9 +386,9 @@ so replays are the same rows. Causality matches desktop `research-agent.ts`.
 | chat POST → `startPipeline` reservation commit | `action.invoke` (`via=system`, only if the browser sent no `actionId`), `agent.turn_start`, `conversation.message` (user, complete text) | `action_id` = browser chat/build action id; `message_id` = request id; `thread_id` = conversation |
 | `startPipeline` / `startPackageSync` / `retryPipeline` dispatch commit | `tool.start` target `humanstudy.pipeline`, `tool_call_id` = job id, complete runner input (no signed URLs) | `caused_by` turn start (or proposal decision for sync) |
 | pipeline POST → `syncDiscussion` / `syncPackage` result commit | `tool.end` (completed / error / interrupted, full output), assistant `conversation.message` (complete, or `partial` with `reason` when the received reply was unusable), `permission.request` for a model proposal, `conversation.error`, `agent.turn_end`; first build adds one `artifact.version` per generated package file | `caused_by` chain tool.start → tool.end → message → request |
-| proposals POST | `permission.decision` (apply/reject), then `program.version` / `artifact.version` (`by = agent-proposal`) | decision `caused_by` its request; versions `caused_by` the decision; `action_id` = browser review action |
+| proposals POST | `permission.decision` (apply/reject), then `program.version` / `artifact.version` (`by = agent-proposal`) | decision `caused_by` the answering review action (T10), `parent_action_id` the proposing turn; versions `caused_by` the decision; `action_id` = browser review action (or a server `via=system` one) |
 | `reconcilePackageApproval` | `permission.decision` target `pipeline.stage_approval`, `automatic = true` | |
-| workspace PATCH (autosave) | `program.version`, changed `artifact.version`s, `annotations.json` version (`by = human`) only when committed knowledge changed | `artifact_version` = committed workspace revision = `studio_research_history.revision` |
+| workspace PATCH (save / autosave) | `program.version`, changed `artifact.version`s, `annotations.json` version (`by = human`, `trigger = human-save`) only when committed knowledge changed; an autosave with no `actionId` adds one server `action.invoke` `workspace.autosave` (`via=system`) | `action_id` = `caused_by` = the save operation; `artifact_version` = committed workspace revision = `studio_research_history.revision` |
 
 Durability: `rpc studio_cas_workspace_research` runs the existing CAS and inserts the batch into
 `research_server_outbox` in the same transaction (outbox insert in a sub-transaction, so research can
@@ -406,3 +406,52 @@ baselines stay in `studio_research_history` (`initial`).
 Browser: undelivered UI events are stored per id in IndexedDB (`hs-studio-research`), falling back
 to localStorage; a write neither accepts is shown to the user. No count/age pruning; adoption is
 read-only and acknowledgement deletes only confirmed ids.
+
+### Drain validation (T08 follow-up)
+
+Owners can write `research_server_outbox` rows themselves (the save RPC runs as the user), and the
+scheduled drain delivers with the service role, which bypasses the `research_events` /
+`research_content` insert policies. Before delivering anything, `deliverBatch` therefore
+re-validates the whole payload (`validateOutboxPayload`, both user and service mode) exactly as RLS
+and the table checks would: contract validation of every row; `surface = web`; no `owner_id` other
+than the outbox owner (rows are always written with the outbox owner); `research_session_id` = the
+outbox row's id; `consent_version` = the owner's current web agreement (`sources` required for
+content); `occurred_at` between 2026-01-01 and now + 10 min; no prohibited types; no credentials or
+home paths (`research_text_is_clean`); no unknown columns, duplicate ids or `client_seq`; content refs
+only to the batch's own content, whose sha256 and size are re-checked and which the drain stores
+under `<owner>/<sha256>`; an existing `research_content` row is accepted only if its object exists.
+A failing batch is rejected whole (`last_error = rejected:invalid_payload`, payload kept, state
+`rejected` in `research_server_outbox_delivery`, not retried); nothing of it is delivered. A row the
+service refuses rejects the batch too (no per-row partial delivery). New migration
+`20261023140000_research_server_outbox_tighten.sql` (NOT applied) adds the structural part at insert
+time: the project must be the caller's workspace, counts match the payload, and every payload event
+is a web event of the row's session naming no other owner. Direct owner INSERT stays because the
+invoker RPC needs it; see the migration header.
+
+## Causality on the web (T10) — 2026-10-22
+
+Same rules as desktop (humanstudy-desktop `docs/research-data.md` "Causality (T10)"); the web column
+of `docs/research-coverage-map.json` lists every capture point, gap and `not_applicable`, and
+`tests/research-coverage.test.mjs` drives a scripted session through the browser operation tracker,
+the events route and the server producers against a mocked Supabase.
+
+- **One primary per operation** (`lib/research-data/web-operations.ts`, used by
+  `lib/studio/use-telemetry.ts`). A click (`via=pointer`, `keyboard` for a keyboard-activated click),
+  a cmd/ctrl shortcut (`shortcut`, target `shortcut:<name>`), a command-palette choice (`menu`) or a
+  composer Enter (`keyboard`) begins an operation. The first product action (`telemetry.action(...)`
+  in `editor.tsx`) is its single `action.invoke`; a generic click/shortcut is recorded only when
+  nothing claimed it within 300 ms, and a composer Enter never is. A synthetic click inside a
+  handler joins the operation. Opening the file picker is not an operation; choosing a file is
+  (`source.import`). A product action without user input is a `via=system` operation.
+- **Links.** `action_id` = the initiating operation; `caused_by` = the record that directly caused
+  this one; `metadata.parent_action_id` = the enclosing operation (a message sent while the other
+  lane's turn runs, a proposal decision inside the proposing turn, a retry inside the turn it
+  restarts). Requests carry the operation id as `actionId` (chat, proposals, pipeline retry/sync,
+  workspace PATCH, research-source); the server references it and records its own `via=system`
+  primary only when none was sent. Selection and layout records carry `actionId` of the operation in
+  progress; scroll and visibility summaries never do.
+- **Versions.** `human-save` (PATCH, linked to the save operation), `baseline` (a source archived
+  without a known import operation), `agent-proposal` (applied proposal, caused by the decision),
+  `agent-tool` (runner package files, caused by `tool.end`). `external` cannot occur on web.
+- **Native ids.** `thread_id` = conversation id, `message_id` = committed message id,
+  `tool_call_id` = GitHub Actions job id, `permission_id` = proposal id.

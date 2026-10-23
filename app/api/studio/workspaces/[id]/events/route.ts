@@ -8,7 +8,8 @@ import { drainSoon } from '@/lib/research-data/server-capture';
 
 type Context = { params: Promise<{ id: string }> };
 const eventTypes = new Set(["click", "scroll", "selection", "visibility", "chat", "review", "layout"]);
-const metadataKeys = new Set(["action", "area", "mode", "status", "sourceId", "conversationId", "entityId", "reviewId", "page", "count", "selectionLength", "button", "direction", "startDepth", "endDepth", "maxDepth"]);
+const metadataKeys = new Set(["action", "area", "mode", "status", "sourceId", "conversationId", "entityId", "reviewId", "page", "count", "selectionLength", "button", "direction", "startDepth", "endDepth", "maxDepth", "via", "parentActionId"]);
+const vias = new Set(["pointer", "keyboard", "shortcut", "menu", "touch", "system"]);
 
 /**
  * Events outside the collection contract (HumanStudy-Hub/humanstudy-desktop#27) that older
@@ -28,12 +29,13 @@ function isRetiredEvent(input: unknown): boolean {
 function validateEvent(input: unknown, workspaceId: string, ownerId: string, workspaceRevision: number): Record<string, unknown> {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new StudioError(400, "invalid_event");
   const event = input as Partial<StudioEvent> & { x?: unknown; y?: unknown };
+  if (event.actionId !== undefined && !isUuid(event.actionId)) throw new StudioError(400, "invalid_event");
   if (!isUuid(event.id) || typeof event.sessionId !== "string" || !/^[a-zA-Z0-9_-]{1,80}$/.test(event.sessionId) ||
       !eventTypes.has(event.type || "") || typeof event.at !== "string") throw new StudioError(400, "invalid_event");
   if(event.displayRevision !== undefined && (!Number.isSafeInteger(event.displayRevision) || event.displayRevision < 1 || event.displayRevision > workspaceRevision)) throw new StudioError(400,"invalid_event");
   const at = Date.parse(event.at);
   if (!Number.isFinite(at) || at < Date.parse('2026-01-01T00:00:00Z') || at > Date.now() + 300_000) throw new StudioError(400, "invalid_event");
-  if (event.target !== undefined && (typeof event.target !== "string" || !/^[a-zA-Z0-9_.:/#\[\]-]{1,160}$/.test(event.target))) {
+  if (event.target !== undefined && (typeof event.target !== "string" || !/^[a-zA-Z0-9_.:/#+\[\]-]{1,160}$/.test(event.target))) {
     throw new StudioError(400, "invalid_event");
   }
   // Coordinates are no longer collected; tolerate them from old clients but never store them.
@@ -52,6 +54,7 @@ function validateEvent(input: unknown, workspaceId: string, ownerId: string, wor
       throw new StudioError(400, "invalid_event");
     }
   }
+  if ((metadata.via !== undefined && !vias.has(metadata.via as string)) || (metadata.parentActionId !== undefined && !isUuid(metadata.parentActionId))) throw new StudioError(400, "invalid_event");
   return {
     id: event.id, workspace_id: workspaceId, owner_id: ownerId, workspace_revision: workspaceRevision,
     display_revision:event.displayRevision??null,

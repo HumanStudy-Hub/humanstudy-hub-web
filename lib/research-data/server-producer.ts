@@ -127,24 +127,34 @@ export const turnStartId = (owner: string, requestId: string) => serverEventId(o
 export const toolStartId = (owner: string, jobId: string) => serverEventId(owner, `tool.start:${jobId}`);
 export const serverActionId = (owner: string, requestId: string) => serverEventId(owner, `action:${requestId}`);
 
+/**
+ * The server's own primary action, for a request no browser operation named (an older client, a
+ * system follow-up such as an automatic package sync or an autosave). T10: still exactly one
+ * action.invoke per operation, `via: system`.
+ */
+export function systemActionEvent(key: string, target: string, view: string, parentActionId?: string | null): ServerEventInput {
+  return { key, event_type: 'action.invoke', view, target, metadata: { via: 'system', server_generated: true, ...(parentActionId ? { parent_action_id: parentActionId } : {}) } };
+}
+
 export interface SubmitInput {
   requestId: string; conversationId: string; text: string; mode: 'build' | 'discuss'; jobId: string;
   /** The browser's own primary action.invoke id (chat send). Without it the server records one. */
   actionId?: string | null;
   sourceRecordId?: string; modelAnchor?: unknown; sourceSelection?: unknown;
   parent?: Ref; replyTo?: Ref; mergedFrom?: Ref;
+  /** The enclosing operation when this message is sent while another turn runs (T10). */
+  parentActionId?: string | null;
 }
 /** The committed user message (reservation save of the chat route). */
 export function submitEvents(ctx: ProducerContext, s: SubmitInput): ServerEventInput[] {
   const action = s.actionId ?? serverActionId(ctx.ownerId, s.requestId), turn = turnStartId(ctx.ownerId, s.requestId);
-  const out: ServerEventInput[] = [];
-  if (!s.actionId) out.push({ key: `action:${s.requestId}`, event_type: 'action.invoke', view: 'agent', target: s.mode === 'build' ? 'build.start' : 'composer.send',
-    metadata: { via: 'system', server_generated: true } });
+  const out: ServerEventInput[] = [], parent = s.parentActionId && s.parentActionId !== action ? { parent_action_id: s.parentActionId } : {};
+  if (!s.actionId) out.push(systemActionEvent(`action:${s.requestId}`, s.mode === 'build' ? 'build.start' : 'composer.send', 'agent', s.parentActionId));
   out.push(
     { key: `turn_start:${s.requestId}`, event_type: 'agent.turn_start', thread_id: s.conversationId, action_id: action, caused_by: action,
-      metadata: { model: 'not-reported', mode: s.mode, job_id: s.jobId, runtime: 'github-actions' } },
+      metadata: { model: 'not-reported', mode: s.mode, job_id: s.jobId, runtime: 'github-actions', ...parent } },
     { key: `message:${s.requestId}`, event_type: 'conversation.message', thread_id: s.conversationId, message_id: s.requestId, action_id: action, caused_by: turn,
-      metadata: { role: 'user', part: 0, part_kind: 'text', status: 'complete', text: s.text,
+      metadata: { role: 'user', part: 0, part_kind: 'text', status: parent.parent_action_id ? 'submitted_while_busy' : 'complete', text: s.text, ...parent,
         ...(s.sourceRecordId ? { source_record_id: s.sourceRecordId } : {}),
         ...(s.modelAnchor ? { model_anchor: s.modelAnchor } : {}), ...(s.sourceSelection ? { source_selection: s.sourceSelection } : {}),
         ...(s.parent ? { parent: s.parent } : {}), ...(s.replyTo ? { reply_to: s.replyTo } : {}), ...(s.mergedFrom ? { merged_from: s.mergedFrom } : {}) } },
@@ -156,12 +166,15 @@ export interface DispatchInput {
   jobId: string; conversationId: string; actionId: string | null; causedBy: string | null; mode: string;
   /** Exactly what the runner receives (job request), not a summary. Signed URLs are never included. */
   input: unknown; retryOf?: string; state?: string;
+  /** The enclosing operation (a retry inside the turn it restarts). */
+  parentActionId?: string | null;
 }
 /** The web "tool call": dispatch of the study-building/discussion agent to GitHub Actions. */
 export function dispatchEvents(ctx: ProducerContext, d: DispatchInput): ServerEventInput[] {
   return [{ key: d.retryOf ? `tool.start:${d.jobId}:retry:${d.retryOf}` : `tool.start:${d.jobId}`, event_type: 'tool.start', thread_id: d.conversationId,
     tool_call_id: d.jobId, target: PIPELINE_TOOL, action_id: d.actionId, caused_by: d.retryOf ? toolStartId(ctx.ownerId, d.jobId) : d.causedBy,
-    metadata: { input: json(d.input), native_id_reported: true, state: d.state ?? 'queued', mode: d.mode, ...(d.retryOf ? { retry: true } : {}) } }];
+    metadata: { input: json(d.input), native_id_reported: true, state: d.state ?? 'queued', mode: d.mode, ...(d.retryOf ? { retry: true } : {}),
+      ...(d.parentActionId && d.parentActionId !== d.actionId ? { parent_action_id: d.parentActionId } : {}) } }];
 }
 
 export interface FinishInput {
@@ -210,18 +223,31 @@ export function dispatchFailedEvents(ctx: ProducerContext, f: { jobId: string; c
   ];
 }
 
-export interface DecisionInput { proposalId: string; decision: 'apply' | 'reject'; conversationId: string; messageId?: string; actionId?: string | null; automatic?: boolean; target?: string }
+export interface DecisionInput { proposalId: string; decision: 'apply' | 'reject'; conversationId: string; messageId?: string; actionId?: string | null; automatic?: boolean; target?: string;
+  /** The turn whose proposal this decides (T10 metadata.parent_action_id). */
+  parentActionId?: string | null }
 export function decisionEvents(ctx: ProducerContext, d: DecisionInput): ServerEventInput[] {
   const key = `permission.decision:${d.target ?? 'proposal.apply'}:${d.proposalId}`;
   return [{ key, event_type: 'permission.decision', thread_id: d.conversationId, target: d.target ?? 'proposal.apply', ...(d.messageId ? { message_id: d.messageId } : {}),
-    action_id: d.actionId ?? null, caused_by: d.target ? null : serverEventId(ctx.ownerId, `permission.request:${d.proposalId}`),
-    metadata: { permission_id: d.proposalId, reply: d.decision, automatic: Boolean(d.automatic) } }];
+    // T10 (desktop research-agent.ts): a researcher's reply is caused by the answering operation;
+    // an automatic decision by the request it resolves, when there is one.
+    action_id: d.actionId ?? null, caused_by: !d.automatic && d.actionId ? d.actionId : d.target ? null : serverEventId(ctx.ownerId, `permission.request:${d.proposalId}`),
+    metadata: { permission_id: d.proposalId, reply: d.decision, automatic: Boolean(d.automatic),
+      ...(d.parentActionId && d.parentActionId !== d.actionId ? { parent_action_id: d.parentActionId } : {}) } }];
 }
 export const decisionId = (owner: string, proposalId: string, target = 'proposal.apply') => serverEventId(owner, `permission.decision:${target}:${proposalId}`);
 
 type Artifact = { id: string; filename?: string; content?: string } & Record<string, unknown>;
 type Doc = { model?: unknown; artifacts?: Artifact[]; annotations?: unknown[] };
-export interface VersionInput { before: Doc | null; after: Doc; revision: number; by: string; actionId?: string | null; causedBy?: string | null; proposalId?: string; jobId?: string }
+export interface VersionInput { before: Doc | null; after: Doc; revision: number; by: 'human' | 'agent-proposal' | 'baseline'; actionId?: string | null; causedBy?: string | null; proposalId?: string; jobId?: string }
+/**
+ * T10 version labels (same meanings as desktop): human-save = a researcher's committed save, linked to
+ * the save operation; baseline = state a project starts with; agent-proposal (web) = an agent
+ * proposal the researcher applied, caused by that permission.decision; agent-tool = files the
+ * runner wrote, caused by the tool.end that returned them. `external` (a change no operation of
+ * this surface caused) cannot occur on web: every commit goes through a web request.
+ */
+const versionTrigger = (by: VersionInput['by']) => by === 'human' ? { trigger: 'human-save' } : by === 'baseline' ? { trigger: 'baseline' } : { trigger: 'agent-proposal', writer_link: 'permission-decision' };
 /**
  * Effective, committed versions only: the Human Program, each changed generated artifact and the
  * annotation set. artifact_version is the workspace revision that committed it (the same number
@@ -229,7 +255,7 @@ export interface VersionInput { before: Doc | null; after: Doc; revision: number
  */
 export function versionEvents(ctx: ProducerContext, v: VersionInput): ServerEventInput[] {
   const out: ServerEventInput[] = [], link = { action_id: v.actionId ?? null, caused_by: v.causedBy ?? null };
-  const extra = { ...(v.proposalId ? { proposal_id: v.proposalId } : {}), ...(v.jobId ? { job_id: v.jobId } : {}) };
+  const extra = { ...versionTrigger(v.by), ...(v.proposalId ? { proposal_id: v.proposalId } : {}), ...(v.jobId ? { job_id: v.jobId } : {}) };
   const model = JSON.stringify(v.after.model ?? null);
   if (v.after.model !== undefined && (!v.before || JSON.stringify(v.before.model ?? null) !== model))
     out.push({ key: `program:${ctx.projectId}:${v.revision}`, event_type: 'program.version', artifact_id: 'program.json', artifact_version: v.revision, ...link,
@@ -257,6 +283,6 @@ export function packageFileEvents(ctx: ProducerContext, p: { jobId: string; revi
   return p.files.map(file => {
     const text = typeof file.content === 'string' ? file.content : file.content.toString('utf8');
     return { key: `package:${p.jobId}:${file.path}`, event_type: 'artifact.version', artifact_id: `package/${file.path}`.slice(0, 200), artifact_version: p.revision,
-      action_id: p.actionId, caused_by: p.causedBy, metadata: { by: 'agent', job_id: p.jobId, committed_sha256: sha(text), file: text } };
+      action_id: p.actionId, caused_by: p.causedBy, metadata: { by: 'agent', trigger: 'agent-tool', writer_link: 'tool-result', job_id: p.jobId, committed_sha256: sha(text), file: text } };
   });
 }

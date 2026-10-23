@@ -5,7 +5,7 @@ import type { StudioDocument, StudioMessage, StudioMessageRef, StudioPipeline, S
 import type { ModelAnchor } from '@/app/build-preview/model-review';
 import { StudioError } from './http';
 import { saveWorkspaceResearch, type ResearchPlan } from '../research-data/server-capture';
-import { decisionEvents, decisionId, dispatchEvents, dispatchFailedEvents, finishEvents, packageFileEvents, serverActionId, serverEventId, submitEvents } from '../research-data/server-producer';
+import { decisionEvents, dispatchEvents, dispatchFailedEvents, finishEvents, packageFileEvents, serverActionId, serverEventId, submitEvents, systemActionEvent } from '../research-data/server-producer';
 import { adaptPipelinePackage, groundStudioModelEvidence } from './pipeline-adapter';
 import { validateStudioDocument, validateStudyModel } from './validation';
 import { modelFingerprint } from './model-version';
@@ -68,6 +68,8 @@ export async function startPipeline(ctx:StudioContext,w:StudioWorkspace,input:St
  const paperUrl=await signedPaper(ctx,w,source.id);
  const now=new Date().toISOString(),jobId=jobIdFor(w,input.requestId);
  const researchActionId=input.actionId||serverActionId(ctx.user.id,input.requestId);
+ // T10: a message sent while the other lane's turn runs happens inside that operation.
+ const runningAction=[document.pipeline,document.discussion].find(active)?.researchActionId;
  const state:StudioPipeline={jobId,requestId:input.requestId,conversationId:input.conversationId,sourceId:source.id,status:'preparing',message:mode==='build'?'Preparing the original study-building agent':'Preparing the agent response',updatedAt:now,baseModelFingerprint:modelFingerprint(document.model),researchActionId,...(mode==='build'?{kind:'initial' as const}:{})};
  const userMessage:StudioMessage={id:input.requestId,role:'user',text:input.text,createdAt:now,...(input.modelAnchor?{modelAnchor:input.modelAnchor}:{}),...(input.sourceSelection?{sourceSelection:input.sourceSelection}:{}),...(input.replyTo?{replyTo:input.replyTo}:{}),...(input.mergedFrom?{mergedFrom:input.mergedFrom}:{})};
  const existing=document.conversations.find(c=>c.id===input.conversationId);
@@ -76,7 +78,7 @@ export async function startPipeline(ctx:StudioContext,w:StudioWorkspace,input:St
  // The CAS reservation precedes every remote mutation and limits each lane to one job.
  const turnLink=serverEventId(ctx.user.id,`turn_start:${input.requestId}`);
  let current=await save(ctx,w,{...document,[lane]:state,activeConversationId:input.conversationId,conversations:[...document.conversations.filter(c=>c.id!==input.conversationId),conversation]},
-  (_revision,p)=>[{producer:'chat.submit',key:`turn:${input.requestId}:submit`,events:submitEvents(p,{requestId:input.requestId,conversationId:input.conversationId,text:input.text,mode,jobId,actionId:input.actionId,sourceRecordId:source.id,modelAnchor:input.modelAnchor,sourceSelection:input.sourceSelection,parent:input.parent,replyTo:input.replyTo,mergedFrom:input.mergedFrom})}]);
+  (_revision,p)=>[{producer:'chat.submit',key:`turn:${input.requestId}:submit`,events:submitEvents(p,{requestId:input.requestId,conversationId:input.conversationId,text:input.text,mode,jobId,actionId:input.actionId,sourceRecordId:source.id,modelAnchor:input.modelAnchor,sourceSelection:input.sourceSelection,parent:input.parent,replyTo:input.replyTo,mergedFrom:input.mergedFrom,parentActionId:runningAction})}]);
  let dispatchInput:unknown={job_id:jobId,mode};
  try {
   const materials=await prepareStudioResourceArchive(ctx,current,source.id);
@@ -118,7 +120,9 @@ export async function startPackageSync(ctx:StudioContext,w:StudioWorkspace,propo
  const proposalMessage=document.conversations.flatMap(c=>c.messages).find(m=>m.proposal?.id===proposalId);
  const conversationId=document.conversations.find(c=>c.messages.includes(proposalMessage!))?.id||document.activeConversationId||document.conversations[0]?.id;
  if(!conversationId)throw new StudioError(409,'pipeline_conversation_missing');
- const researchActionId=actionId||decisionId(ctx.user.id,proposalId);
+ // The decision operation that asked for the sync; an automatic re-sync is a system operation of its own.
+ const researchActionId=actionId||serverActionId(ctx.user.id,requestId);
+ const systemAction=actionId?[]:[systemActionEvent(`action:${requestId}`,'package.sync','agent')];
  const state:StudioPipeline={jobId,requestId,conversationId,sourceId:source.id,status:'preparing',message:'Preparing package for the accepted model',updatedAt:now,kind:'sync',targetModelFingerprint:fingerprint,researchActionId};
  let dispatchInput:unknown={job_id:jobId,mode:'sync'};
  let current=await save(ctx,w,{...document,pipeline:state});
@@ -132,12 +136,12 @@ export async function startPackageSync(ctx:StudioContext,w:StudioWorkspace,propo
   const job=await createStudioPipelineJob({id:jobId,identity:{...identity(ctx,w),requestId,conversationId},paperName:source.name,paperUrl,openMaterialsUrl:materials?.url,openMaterialsPathname:materials?.path,openMaterialsSourceIds:materials?.sourceIds||[],previousJobId,request});
   await dispatchStudioPipelineJob(job);
   current=await save(ctx,current,{...current.document,pipeline:{...state,status:'queued',message:job.message,updatedAt:new Date().toISOString()}},
-   (_revision,p)=>[{producer:'pipeline.dispatch',key:`tool:${jobId}:dispatch`,events:dispatchEvents(p,{jobId,conversationId,actionId:researchActionId,causedBy:decisionId(ctx.user.id,proposalId),mode:'sync',input:dispatchInput})}]);
+   (_revision,p)=>[{producer:'pipeline.dispatch',key:`tool:${jobId}:dispatch`,events:[...systemAction,...dispatchEvents(p,{jobId,conversationId,actionId:researchActionId,causedBy:researchActionId,mode:'sync',input:{...dispatchInput as object,proposal_id:proposalId}})]}]);
  }catch(error){
   if(error instanceof StudioError&&error.code==='revision_conflict')throw error;
   const message=failureMessage(error)||'Package sync could not start. Retry from the package status.';
   current=await save(ctx,current,{...current.document,pipeline:{...state,status:'failed',message,updatedAt:new Date().toISOString()}},
-   (_revision,p)=>[{producer:'pipeline.dispatch_failed',key:`tool:${jobId}:dispatch-failed`,events:dispatchFailedEvents(p,{jobId,conversationId,actionId:researchActionId,error:message,input:dispatchInput})}]);
+   (_revision,p)=>[{producer:'pipeline.dispatch_failed',key:`tool:${jobId}:dispatch-failed`,events:[...systemAction,...dispatchFailedEvents(p,{jobId,conversationId,actionId:researchActionId,error:message,input:dispatchInput})]}]);
  }
  return current;
 }
@@ -261,7 +265,7 @@ export async function reconcilePackageApproval(ctx:StudioContext,w:StudioWorkspa
  // The server approves the runner's review stage on the user's behalf once the package is accepted.
  return save(ctx,w,{...w.document,acceptedPackage:confirmed},thread?(_r,p)=>[{producer:'pipeline.stage_approval',key:`approval:${accepted.jobId}`,events:decisionEvents(p,{proposalId:accepted.jobId,decision:'apply',conversationId:thread,target:'pipeline.stage_approval',automatic:true,actionId:w.document.pipeline?.jobId===accepted.jobId?w.document.pipeline.researchActionId??null:null})}]:undefined);
 }
-export async function retryPipeline(ctx:StudioContext,w:StudioWorkspace,lane:'pipeline'|'discussion'='pipeline'){
+export async function retryPipeline(ctx:StudioContext,w:StudioWorkspace,lane:'pipeline'|'discussion'='pipeline',actionId?:string){
  const state=w.document[lane];
  if(!state)throw new StudioError(404,lane==='pipeline'?'pipeline_not_found':'discussion_not_found');
  // A first build that failed or stalled may run again; once it has succeeded, the study continues in the app.
@@ -278,7 +282,12 @@ export async function retryPipeline(ctx:StudioContext,w:StudioWorkspace,lane:'pi
   const materialsUrl=materialsPath?await signPrivateSource(ctx,materialsPath):undefined;
   const retried=await retryStudioPipelineJob(job.id,identity(ctx,w),paperUrl,materialsUrl);
   return save(ctx,w,{...w.document,[lane]:{...state,status:'queued',message:retried.message,updatedAt:retried.updatedAt}},
-   (_r,p)=>[{producer:'pipeline.retry',key:`tool:${job.id}:retry:${retried.updatedAt}`,events:dispatchEvents(p,{jobId:job.id,conversationId:state.conversationId,actionId:state.researchActionId??null,causedBy:null,mode:lane,input:{job_id:job.id,retry:true,previous_status:job.status,materials:Boolean(materialsPath)},retryOf:retried.updatedAt})}]);
+   (_r,p)=>{
+    // T10: the retry is its own operation inside the turn it restarts.
+    const key=`tool:${job.id}:retry:${retried.updatedAt}`,retryAction=actionId||serverEventId(p.ownerId,`action:${key}`);
+    return [{producer:'pipeline.retry',key,events:[...(actionId?[]:[systemActionEvent(`action:${key}`,'agent.retry','agent',state.researchActionId)]),
+     ...dispatchEvents(p,{jobId:job.id,conversationId:state.conversationId,actionId:retryAction,parentActionId:state.researchActionId,causedBy:null,mode:lane,input:{job_id:job.id,retry:true,previous_status:job.status,materials:Boolean(materialsPath)},retryOf:retried.updatedAt})]}];
+   });
  }catch(error){
   if((state.status==='preparing'&&age>300000||state.status==='failed')&&(error as {status?:number}).status===404){
    return save(ctx,w,{...w.document,[lane]:{...state,status:'failed',message:'No remote job was created. Send again to restart.',updatedAt:new Date().toISOString()}},

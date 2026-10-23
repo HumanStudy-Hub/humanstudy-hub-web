@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { StudioEvent } from "./types";
 import { createTelemetryStore } from "./telemetry-store";
+import { createWebOperations, shortcutName, type ActionOptions, type WebOperations } from "../research-data/web-operations";
 
-// Collection contract (HumanStudy-Hub/humanstudy-desktop#27): one primary event per user
-// operation, scrolling summarized when it settles, and no pointer trajectories,
-// keystrokes or continuous recordings.
+// Collection contract (HumanStudy-Hub/humanstudy-desktop#27, causality T10): one primary event per
+// user operation (lib/research-data/web-operations.ts), scrolling summarized when it settles, and no
+// pointer trajectories, keystrokes or continuous recordings.
 
-type ExplicitEvent = Extract<StudioEvent["type"], "selection" | "chat" | "review" | "layout">;
+type ExplicitEvent = Extract<StudioEvent["type"], "selection" | "layout">;
 type Metadata = StudioEvent["metadata"];
 type TelemetryState = { droppedEvents: number; deliveryError: string | null };
 type ScrollRun = { target?: string; start: number; end: number; max: number; startedAt: number; timer?: ReturnType<typeof setTimeout> };
@@ -22,7 +23,7 @@ export const SCROLL_SETTLE_MS = 800;
 // Browsers normally cap all outstanding keepalive bodies at about 64 KiB.
 const KEEPALIVE_BUDGET = 60_000;
 export { STORAGE_PREFIX } from "./telemetry-store";
-const METADATA_KEYS = new Set(["action", "area", "mode", "status", "sourceId", "conversationId", "entityId", "reviewId", "page", "count", "selectionLength", "button", "direction", "startDepth", "endDepth", "maxDepth"]);
+const METADATA_KEYS = new Set(["action", "area", "mode", "status", "sourceId", "conversationId", "entityId", "reviewId", "page", "count", "selectionLength", "button", "direction", "startDepth", "endDepth", "maxDepth", "via", "parentActionId"]);
 
 function cleanMetadata(metadata?: Metadata): Metadata | undefined {
   if (!metadata) return undefined;
@@ -63,13 +64,18 @@ function depth(element: Element): number | undefined {
 const settledDepth = new WeakMap<Element, number>();
 
 export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, workspaceRevision }: { workspaceId?: string; enabled: boolean; surfaceVersion?: number | string; workspaceRevision?: number }): {
-  /** Returns the id of the primary event, so server producers can link to it (action_id). */
-  track: (type: ExplicitEvent, metadata?: Metadata) => string | undefined;
+  /** A completion record (selection, layout), linked to the operation in progress. */
+  track: (type: ExplicitEvent, metadata?: Metadata) => void;
+  /**
+   * A semantic product action. Names the operation in progress (or starts a system one) and returns
+   * its id, so server producers link to it (action_id) instead of recording a second primary.
+   */
+  action: (name: string, options?: ActionOptions) => string | undefined;
   droppedEvents: number;
   deliveryError: string | null;
 } {
   const [state, setState] = useState<TelemetryState>({ droppedEvents: 0, deliveryError: null });
-  const trackRef = useRef<((type: ExplicitEvent, metadata?: Metadata) => string) | null>(null);
+  const opsRef = useRef<WebOperations | null>(null);
   const sessionIdRef = useRef("");
   const installIdRef = useRef("");
   const seqRef = useRef(0);
@@ -77,7 +83,10 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
   useEffect(() => { revisionRef.current = workspaceRevision; }, [workspaceRevision]);
 
   const track = useCallback((type: ExplicitEvent, metadata?: Metadata) => {
-    return trackRef.current?.(type, cleanMetadata(metadata));
+    opsRef.current?.record(type, cleanMetadata(metadata));
+  }, []);
+  const action = useCallback((name: string, options: ActionOptions = {}) => {
+    return opsRef.current?.action(name, { ...options, metadata: cleanMetadata(options.metadata) });
   }, []);
 
   useEffect(() => {
@@ -101,8 +110,6 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
     let retryCount = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     let persistTimer: ReturnType<typeof setTimeout> | undefined;
-    let clickTimer: ReturnType<typeof setTimeout> | undefined;
-    let pendingClick: StudioEvent | null = null;
     let visibleSince = document.visibilityState === "visible" ? Date.now() : 0;
     let requestController: AbortController | null = null;
     const scrollRuns = new Map<Element, ScrollRun>();
@@ -223,28 +230,39 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
       sendFinal([...queue], remove);
     };
 
-    const emitPendingClick = () => {
-      if (clickTimer) { clearTimeout(clickTimer); clickTimer = undefined; }
-      const click = pendingClick;
-      pendingClick = null;
-      if (click) push(click);
-    };
-    trackRef.current = (type, metadata) => {
-      // A semantic handler that runs for the same click owns it: one operation, one primary event.
-      const click = pendingClick;
-      if (click) { pendingClick = null; if (clickTimer) { clearTimeout(clickTimer); clickTimer = undefined; } }
-      const event = makeEvent(type, { ...(click?.target ? { target: click.target } : {}), ...(metadata ? { metadata } : {}) });
-      push(event);
-      return event.id;
-    };
+    const ops = createWebOperations({
+      emit: (type, fields) => push(makeEvent(type, fields)),
+      uuid: () => crypto.randomUUID(), now: () => Date.now(),
+      later: (fn, ms) => setTimeout(fn, ms), cancel: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+      microtask: (fn) => queueMicrotask(fn),
+    });
+    opsRef.current = ops;
 
     const onClick = (event: MouseEvent) => {
+      if (!(event.target instanceof Element) || !root.contains(event.target)) return;
+      // Opening the system file picker is not an operation by itself; choosing files is.
+      const element = event.target.closest("[data-event],button,a,input,select,textarea,[role],label") ?? event.target;
+      if (element instanceof HTMLInputElement && element.type === "file") return;
+      if (element instanceof HTMLLabelElement && element.control instanceof HTMLInputElement && element.control.type === "file") return;
       const target = semanticTarget(event.target, root);
       if (!target) return;
-      emitPendingClick();
-      // React's semantic handlers run later in this same dispatch; wait one task for them.
-      pendingClick = makeEvent("click", { target });
-      clickTimer = setTimeout(emitPendingClick, 0);
+      const via = event.target.closest('[data-research-via="menu"]') ? "menu" : event.detail === 0 ? "keyboard" : "pointer";
+      ops.input(target, via, { join: event.isTrusted === false });
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.isComposing || !(event.target instanceof Element)) return;
+      const menu = event.target.closest('[data-research-via="menu"]');
+      if (menu && event.key === "Enter") {
+        const active = menu.querySelector('[aria-selected="true"][data-event]')?.getAttribute("data-event");
+        ops.input(active || "menu.command", "menu");
+        return;
+      }
+      // Only the shortcut's name is kept, and only when no product action claims it.
+      const name = shortcutName(event);
+      if (name) { ops.input(`shortcut:${name}`, "shortcut"); return; }
+      // Composer Enter: an operation only if a product action (the send) claims it; never a record.
+      if (event.key === "Enter" && !event.shiftKey && event.target instanceof HTMLTextAreaElement && root.contains(event.target))
+        ops.input("composer.enter", "keyboard", { fallback: false });
     };
 
     const endScroll = (element: Element, status: string) => {
@@ -283,7 +301,7 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
 
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
-        emitPendingClick();
+        ops.settleAll();
         endAllScrolls("hidden");
         enqueue("visibility", { durationMs: visibleSince ? Math.min(86_400_000, Date.now() - visibleSince) : 0, metadata: { status: "hidden" } });
         visibleSince = 0;
@@ -295,7 +313,7 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
       }
     };
     const onPageHide = () => {
-      emitPendingClick();
+      ops.settleAll();
       endAllScrolls("unload");
       if (visibleSince) {
         enqueue("visibility", { durationMs: Math.min(86_400_000, Date.now() - visibleSince), metadata: { status: "hidden" } });
@@ -304,7 +322,8 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
       persistAndSend();
     };
 
-    root.addEventListener("click", onClick);
+    root.addEventListener("click", onClick, { capture: true });
+    window.addEventListener("keydown", onKeyDown, { capture: true });
     root.addEventListener("scroll", onScroll, { capture: true, passive: true });
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("pagehide", onPageHide);
@@ -321,14 +340,15 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
     }, () => undefined);
 
     return () => {
-      emitPendingClick();
+      ops.settleAll();
       endAllScrolls("view");
       if (visibleSince) enqueue("visibility", { durationMs: Math.min(86_400_000, Date.now() - visibleSince), metadata: { status: "hidden" } });
       const durable = persistNow();
       const pending = [...queue];
       stopped = true;
-      trackRef.current = null;
-      root.removeEventListener("click", onClick);
+      opsRef.current = null;
+      root.removeEventListener("click", onClick, { capture: true });
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
       root.removeEventListener("scroll", onScroll, { capture: true });
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("pagehide", onPageHide);
@@ -348,5 +368,5 @@ export function useStudioTelemetry({ workspaceId, enabled, surfaceVersion, works
     };
   }, [enabled, workspaceId, surfaceVersion]);
 
-  return { track, droppedEvents: state.droppedEvents, deliveryError: state.deliveryError };
+  return { track, action, droppedEvents: state.droppedEvents, deliveryError: state.deliveryError };
 }

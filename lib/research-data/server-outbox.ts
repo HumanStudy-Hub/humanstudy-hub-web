@@ -14,7 +14,7 @@
  */
 import { createHash } from 'node:crypto';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { CONTENT_BUCKET, LIMITS, MANIFEST_FORMAT, type ResearchContentRow, type ResearchEvent } from './contract';
+import { CONTENT_BUCKET, LIMITS, MANIFEST_FORMAT, isProhibitedEventType, validateResearchEvent, type ResearchContentRow, type ResearchEvent } from './contract';
 import type { ServerBatch, ServerContent } from './server-producer';
 
 export const OUTBOX_TABLE = 'research_server_outbox';
@@ -31,7 +31,7 @@ export interface OutboxState { id: string; owner_id?: string; attempts: number; 
 export class DeliveryError extends Error { constructor(public code: string, public rejected = false) { super(code); } }
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
-const SESSION_COLUMNS = ['id', 'contract_version', 'surface', 'install_id', 'research_session_id', 'client_seq', 'data_type', 'event_type', 'occurred_at',
+export const SESSION_COLUMNS = ['id', 'contract_version', 'surface', 'install_id', 'research_session_id', 'client_seq', 'data_type', 'event_type', 'occurred_at',
   'project_id', 'view', 'target', 'action_id', 'caused_by', 'thread_id', 'message_id', 'tool_call_id', 'source_id', 'artifact_id', 'artifact_version',
   'duration_ms', 'metadata', 'content_refs', 'app_version', 'collector_version', 'consent_version', 'platform'] as const;
 
@@ -75,8 +75,13 @@ export function encodeContent(c: ServerContent): Array<{ sha256: string; data: B
 async function storeObject(t: Transport, o: { sha256: string; data: Buffer; row: ResearchContentRow }): Promise<void> {
   const seen = await call(t, `/rest/v1/research_content?owner_id=eq.${t.ownerId}&sha256=eq.${o.sha256}&select=sha256&limit=1`);
   if (!seen.ok) fail(seen, 'content_check');
-  if ((await seen.json() as unknown[]).length) return;
   const path = `${t.ownerId}/${o.sha256}`;
+  if ((await seen.json() as unknown[]).length) {
+    // The row stands for an object under this owner's prefix; confirm the object is really there.
+    const info = await call(t, `/storage/v1/object/info/authenticated/${CONTENT_BUCKET}/${path}`);
+    if (!info.ok) fail(info, 'content_object_missing');
+    return;
+  }
   const put = await call(t, `/storage/v1/object/${CONTENT_BUCKET}/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'x-upsert': 'false' }, body: new Uint8Array(o.data) });
   if (!put.ok) {
     const error = await put.json().catch(() => ({})) as { statusCode?: string; error?: string };
@@ -101,28 +106,98 @@ const normalize = (e: ResearchEvent, owner: string) => {
   return out;
 };
 
-/** Deliver one batch: content first (so no event references missing bytes), then events, then read back. */
-export async function deliverBatch(t: Transport, payload: OutboxPayload, sessionId: string): Promise<void> {
-  if (t.mode === 'service') {
-    // The service role bypasses RLS, so the agreement check the policy performs is repeated here.
-    const agreed = await call(t, `/rest/v1/research_consents?owner_id=eq.${t.ownerId}&surface=eq.web&version=eq.3&select=version&limit=1`);
-    if (!agreed.ok) fail(agreed, 'consent_check');
-    if (!(await agreed.json() as unknown[]).length) throw new DeliveryError('consent_missing');
+// ---- server-side re-validation (the drain may run as service_role, which bypasses RLS) -------
+
+/** Same rules as public.research_text_is_clean (contract migration): credentials and home paths. */
+const UNCLEAN_RES = [
+  /(?<![A-Za-z0-9_])sk-[A-Za-z0-9_-]{20,}/,
+  /(?<![A-Za-z0-9_])hsk_[A-Za-z0-9_-]{8,}/,
+  /(?<![A-Za-z0-9_])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/,
+  /(?<![A-Za-z0-9_])(ghp|gho|github_pat|xoxa|xoxb|xoxp)_[A-Za-z0-9_]{12,}/,
+  /(^|[^A-Za-z0-9_.~-])\/(Users|home)\/[A-Za-z0-9._-]+\//,
+  /(^|[^A-Za-z0-9_])[A-Za-z]:[\\/]+Users[\\/]+[A-Za-z0-9._ -]+[\\/]/,
+];
+export const researchTextIsClean = (text: string | null | undefined): boolean => !text || !UNCLEAN_RES.some(re => re.test(text));
+/** Lower bound of research_events_insert (clocks before the collector existed). */
+export const OCCURRED_MIN = Date.parse('2026-01-01T00:00:00Z');
+export interface OutboxCheck { ownerId: string; sessionId: string; consentVersion: number; sources: boolean; now?: number }
+
+/**
+ * Everything the research_events / research_content / storage insert policies and table checks
+ * would enforce for an authenticated owner, applied to a whole outbox payload before any of it
+ * is delivered. Owners can write outbox rows themselves (the save RPC runs as the user), so a
+ * payload is untrusted input: the service-role drain must not deliver what RLS would refuse.
+ * Returns problems; empty means the whole batch may be delivered.
+ */
+export function validateOutboxPayload(payload: unknown, c: OutboxCheck): string[] {
+  const now = c.now ?? Date.now();
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return ['payload must be an object'];
+  const p = payload as Partial<OutboxPayload>;
+  if (!Array.isArray(p.events) || !p.events.length || p.events.length > 10_000) return ['payload.events must be a non-empty array'];
+  if (!Array.isArray(p.content) || p.content.length > 10_000) return ['payload.content must be an array'];
+  const errors: string[] = [];
+  const content = new Map<string, number>();
+  for (const [i, item] of p.content.entries()) {
+    const ci = item as Partial<ServerContent> | null;
+    if (!ci || typeof ci !== 'object' || typeof ci.text !== 'string' || typeof ci.sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(ci.sha256)) { errors.push(`content[${i}] invalid`); continue; }
+    const raw = Buffer.from(ci.text, 'utf8');
+    if (sha(raw) !== ci.sha256 || raw.length !== ci.bytes) { errors.push(`content[${i}] hash or size mismatch`); continue; }
+    if (typeof ci.mime !== 'string' || !/^[a-z0-9][a-z0-9.+-]*\/[a-z0-9][a-z0-9.+-]*$/.test(ci.mime)) errors.push(`content[${i}] mime invalid`);
+    content.set(ci.sha256, raw.length);
   }
+  if (content.size && !c.sources) errors.push('content requires the owner\'s source agreement');
+  const ids = new Set<string>(), seqs = new Set<number>();
+  for (const [i, raw] of p.events.entries()) {
+    const at = `events[${i}]`;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) { errors.push(`${at} must be an object`); continue; }
+    const e = raw as ResearchEvent & Record<string, unknown>;
+    // The row is written with the outbox owner; a payload naming any other owner is forged.
+    if ('owner_id' in e && e.owner_id !== c.ownerId) errors.push(`${at} owner_id is not the outbox owner`);
+    for (const key of Object.keys(e)) if (key !== 'owner_id' && !(SESSION_COLUMNS as readonly string[]).includes(key)) errors.push(`${at} unknown column ${key.slice(0, 40)}`);
+    errors.push(...validateResearchEvent(e, now).map(m => `${at} ${m}`));
+    if (e.surface !== 'web') errors.push(`${at} surface must be web`);
+    if (e.research_session_id !== c.sessionId) errors.push(`${at} research_session_id is not the outbox session`);
+    if (e.consent_version !== c.consentVersion) errors.push(`${at} consent_version is not the owner's accepted web agreement`);
+    const t = typeof e.occurred_at === 'string' ? Date.parse(e.occurred_at) : NaN;
+    if (!(t >= OCCURRED_MIN && t <= now + LIMITS.futureSkewMs)) errors.push(`${at} occurred_at outside policy bounds`);
+    if (typeof e.event_type === 'string' && isProhibitedEventType(e.event_type)) errors.push(`${at} prohibited event type`);
+    if (!researchTextIsClean(e.target) || !researchTextIsClean(e.view) || !researchTextIsClean(JSON.stringify(e.metadata ?? {}))) errors.push(`${at} contains a credential or home path`);
+    if (typeof e.id === 'string') { if (ids.has(e.id)) errors.push(`${at} duplicate id`); ids.add(e.id); }
+    if (typeof e.client_seq === 'number') { if (seqs.has(e.client_seq)) errors.push(`${at} duplicate client_seq`); seqs.add(e.client_seq); }
+    // Content may only be the batch's own bytes, stored by this drain under the owner's prefix.
+    for (const ref of Array.isArray(e.content_refs) ? e.content_refs : []) {
+      const size = content.get(ref?.sha256);
+      if (size === undefined) errors.push(`${at} references content outside the batch`);
+      else if (ref.bytes !== size) errors.push(`${at} content ref size mismatch`);
+    }
+  }
+  return errors;
+}
+
+async function ownerAgreement(t: Transport): Promise<{ version: number; sources: boolean }> {
+  const agreed = await call(t, `/rest/v1/research_consents?owner_id=eq.${t.ownerId}&surface=eq.web&select=version,sources&order=version.desc&limit=1`);
+  if (!agreed.ok) fail(agreed, 'consent_check');
+  const [row] = await agreed.json() as Array<{ version?: number; sources?: boolean }>;
+  if (!row || !Number.isSafeInteger(row.version)) throw new DeliveryError('consent_missing');
+  return { version: row.version as number, sources: row.sources !== false };
+}
+
+/**
+ * Deliver one batch: validate all of it, then content (so no event references missing bytes),
+ * then events, then read back. A batch that fails validation is rejected whole; nothing of it is
+ * delivered.
+ */
+export async function deliverBatch(t: Transport, payload: OutboxPayload, sessionId: string): Promise<void> {
+  const agreement = await ownerAgreement(t);
+  const problems = validateOutboxPayload(payload, { ownerId: t.ownerId, sessionId, consentVersion: agreement.version, sources: agreement.sources });
+  if (problems.length) throw new DeliveryError('invalid_payload', true);
   for (const c of payload.content) for (const o of encodeContent(c)) await storeObject(t, o);
   const rows = payload.events.map(e => normalize(e, t.ownerId));
   for (let at = 0; at < rows.length; at += LIMITS.batchSize) {
     const slice = rows.slice(at, at + LIMITS.batchSize);
     const r = await call(t, '/rest/v1/research_events?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, json: slice });
-    if (r.ok) continue;
-    if (![400, 409, 413, 422].includes(r.status)) fail(r, 'events');
-    // Isolate: deliver every valid row, keep the batch pending and flag it as rejected for review.
-    let rejected = 0;
-    for (const one of slice) {
-      const single = await call(t, '/rest/v1/research_events?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, json: [one] });
-      if (!single.ok) { if ([400, 409, 413, 422].includes(single.status)) rejected++; else fail(single, 'events'); }
-    }
-    if (rejected) throw new DeliveryError(`rejected_${r.status}`, true);
+    // A refused slice rejects the batch for review; rows are never delivered one by one around it.
+    if (!r.ok) fail(r, [400, 409, 413, 422].includes(r.status) ? 'rejected' : 'events');
   }
   const ids = new Set(payload.events.map(e => e.id));
   const back = await call(t, `/rest/v1/research_events?owner_id=eq.${t.ownerId}&research_session_id=eq.${sessionId}&select=id&limit=${ids.size + 1}`);

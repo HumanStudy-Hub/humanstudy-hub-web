@@ -26,4 +26,4 @@ export type StudioDocument = {
 export type StudioWorkspace = { id:string; title:string; revision:number; document:StudioDocument; created_at:string; updated_at:string };
 export type StudioProjectSummary = Omit<StudioWorkspace,"document"> & { project?:StudioDocument["project"] };
 export type StudioUser = { id:string; email?:string };
-export type StudioEvent = { id:string; sessionId:string; research?:{installId:string;seq:number}; displayRevision?:number; type:"click"|"scroll"|"selection"|"visibility"|"chat"|"review"|"layout"; at:string; target?:string; durationMs?:number; metadata?:Record<string,string|number|boolean> };
+export type StudioEvent = { id:string; sessionId:string; research?:{installId:string;seq:number}; /** Research v1: the operation (action.invoke id) a completion record belongs to. */ actionId?:string; displayRevision?:number; type:"click"|"scroll"|"selection"|"visibility"|"chat"|"review"|"layout"; at:string; target?:string; durationMs?:number; metadata?:Record<string,string|number|boolean> };

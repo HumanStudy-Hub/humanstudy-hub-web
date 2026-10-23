@@ -132,7 +132,11 @@ class FakeElement {
   getAttribute(name) { return name in this.attrs ? this.attrs[name] : null; }
   setAttribute(name, value) { this.attrs[name] = String(value); }
   hasAttribute(name) { return name in this.attrs; }
-  closest(selector) { return selector === "[data-event]" ? ("data-event" in this.attrs ? this : null) : this; }
+  closest(selector) {
+    const attr = /^\[([a-z-]+)(?:="([^"]*)")?\]$/.exec(selector);
+    if (attr) return attr[1] in this.attrs && (attr[2] === undefined || this.attrs[attr[1]] === attr[2]) ? this : null;
+    return this;
+  }
 }
 
 function fakeStorage(initial = {}) {
@@ -193,7 +197,8 @@ function fakeTelemetry(fetchImpl, { storage, idOffset = 0, indexedDB } = {}) {
   const globals = {
     document: doc, window: win, Element: FakeElement, ...(storage ? { localStorage: storage } : {}), ...(indexedDB ? { indexedDB } : {}),
     crypto: { randomUUID: () => `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}` },
-    fetch: fetchImpl, AbortController, Date, Promise,
+    fetch: fetchImpl, AbortController, Date, Promise, queueMicrotask,
+    HTMLInputElement: class {}, HTMLLabelElement: class {}, HTMLTextAreaElement: class {},
     setTimeout: (fn, delay) => { const id = ++nextId; timers.set(id, { fn, delay }); return id; },
     clearTimeout: (id) => timers.delete(id),
     setInterval: () => ++nextId,
@@ -201,6 +206,7 @@ function fakeTelemetry(fetchImpl, { storage, idOffset = 0, indexedDB } = {}) {
   };
   const api = loadTs("lib/studio/use-telemetry.ts", globals, (name) => {
     if (name === "./telemetry-store") return loadTs("lib/studio/telemetry-store.ts", globals);
+    if (name === "../research-data/web-operations") return loadTs("lib/research-data/web-operations.ts", globals);
     assert.equal(name, "react");
     return react;
   });
@@ -226,7 +232,7 @@ test("telemetry batches 50 events, retries with stable IDs, and sends a bounded 
     if (failures--) return Promise.reject(new Error("offline"));
     return Promise.resolve({ ok: true, status: 200 });
   });
-  for (let i = 0; i < 49; i++) harness.hook.track("chat", { action: "send", ignoredText: "private content" });
+  for (let i = 0; i < 49; i++) harness.hook.action("composer.send", { type: "chat", metadata: { action: "send", ignoredText: "private content" } });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests.length, 1);
   assert.equal(requests[0].events.length, 50);
@@ -249,7 +255,7 @@ test("telemetry preserves all offline events and bounds every unload batch", asy
     requests.push({ url, options, events: JSON.parse(options.body).events });
     return new Promise(() => {});
   });
-  for (let i = 0; i < 5100; i++) harness.hook.track("review", { status: "open" });
+  for (let i = 0; i < 5100; i++) harness.hook.action("proposal.apply", { type: "review", metadata: { status: "open" } });
   assert.equal(harness.state.droppedEvents, 0, "no count-based pruning");
   harness.listeners.get("window:pagehide")();
   const unload = requests.slice(1);
@@ -265,7 +271,7 @@ test("telemetry quarantines single rejected events without dropping the rest of 
     const events=JSON.parse(options.body).events;requests.push(events);
     return {ok:events.length===1&&events[0].type!=="visibility",status:events.length===1&&events[0].type!=="visibility"?200:400};
   },{storage});
-  for (let i=0;i<49;i++)harness.hook.track("chat",{action:"send"});
+  for (let i=0;i<49;i++)harness.hook.action("composer.send",{type:"chat",metadata:{action:"send"}});
   await settle();
   assert.equal(harness.state.droppedEvents,0);
   assert.equal(requests.length,51);
@@ -342,22 +348,27 @@ test("a click handled by a semantic event is recorded once", async () => {
   const h = fakeTelemetry(async (_url, options) => { sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; });
   const send = new FakeElement({ tag: "button", attrs: { "data-event": "chat-send" } });
   h.root.events.get("click")({ target: send });
-  h.hook.track("chat", { action: "send" });
-  runTimers(h, 0);
+  await Promise.resolve();
+  const id = h.hook.action("composer.send", { type: "chat", metadata: { action: "send" } });
+  runTimers(h, 300);
   const other = new FakeElement({ tag: "button", attrs: { "data-event": "tab-sources" } });
   h.root.events.get("click")({ target: other });
-  runTimers(h, 0);
+  await Promise.resolve();
+  h.hook.track("layout", { action: "collapse" });
+  runTimers(h, 300);
   h.listeners.get("window:pagehide")();
   await settle();
   const actions = sent.filter((event) => event.type === "click" || event.type === "chat");
-  assert.deepEqual(actions.map((event) => [event.type, event.target]), [["chat", "chat-send"], ["click", "tab-sources"]]);
+  assert.deepEqual(actions.map((event) => [event.type, event.target, event.metadata.via]), [["chat", "composer.send", "pointer"], ["click", "tab-sources", "pointer"]]);
+  assert.equal(actions[0].id, id, "the send names the click's operation; its id is the action id");
+  assert.equal(sent.find((event) => event.type === "layout").actionId, actions[1].id, "the layout change links to the generic click");
 });
 
 test("telemetry keeps failed events with backoff, persists them, and resends the same ids next visit", async () => {
   const storage = fakeStorage();
   const attempts = [];
   const offline = fakeTelemetry(async (_url, options) => { attempts.push(JSON.parse(options.body).events); throw new Error("offline"); }, { storage });
-  for (let i = 0; i < 49; i++) offline.hook.track("review", { status: "open" });
+  for (let i = 0; i < 49; i++) offline.hook.action("proposal.apply", { type: "review", metadata: { status: "open" } });
   for (let i = 0; i < 8; i++) {
     await settle();
     const retry = [...offline.timers].find(([, timer]) => timer.delay >= 1000 && timer.delay !== 1500);
@@ -418,7 +429,7 @@ const idbEvents = (idb) => [...(idb.stores.get("events")?.values() ?? [])];
 test("telemetry stores undelivered events in IndexedDB, not localStorage, and resends them after a restart", async () => {
   const idb = fakeIndexedDB(), storage = fakeStorage();
   const offline = fakeTelemetry(async () => { throw new Error("offline"); }, { storage, indexedDB: idb });
-  for (let i = 0; i < 10; i++) offline.hook.track("review", { status: "open" });
+  for (let i = 0; i < 10; i++) offline.hook.action("proposal.apply", { type: "review", metadata: { status: "open" } });
   await settle();
   const saved = idbEvents(idb).map((row) => row.event.id);
   assert.ok(saved.length >= 11, "every event, including the visibility record, is durable in IndexedDB");
@@ -449,7 +460,7 @@ test("telemetry shows a storage failure when neither store accepts an event, and
   const sent = [];
   let online = false;
   const h = fakeTelemetry(async (_url, options) => { if (!online) throw new Error("offline"); sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; }, { storage: full, indexedDB: idb });
-  for (let i = 0; i < 49; i++) h.hook.track("review", { status: "open" });
+  for (let i = 0; i < 49; i++) h.hook.action("proposal.apply", { type: "review", metadata: { status: "open" } });
   await settle();
   assert.equal(h.state.deliveryError, "Local research storage is full or unavailable. Keep this page open until delivery succeeds.");
   assert.equal(h.state.droppedEvents, 0);
