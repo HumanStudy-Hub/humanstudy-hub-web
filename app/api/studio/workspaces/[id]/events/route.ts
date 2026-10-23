@@ -4,6 +4,7 @@ import { assertSameOrigin, isUuid, readJsonBody, routeError, studioFetch, Studio
 import { getWorkspaceMetadata } from "@/lib/studio/store";
 import type { StudioEvent } from "@/lib/studio/types";
 import {webResearchEvent} from '@/lib/research-data/web-event';
+import { drainSoon } from '@/lib/research-data/server-capture';
 
 type Context = { params: Promise<{ id: string }> };
 const eventTypes = new Set(["click", "scroll", "selection", "visibility", "chat", "review", "layout"]);
@@ -89,6 +90,8 @@ export async function POST(request: Request, context: Context) {
       if (response.status === 401 || response.status === 403) throw new StudioError(401, "unauthorized");
       throw new StudioError(response.status >= 500 ? 502 : 400, response.status >= 500 ? "service_unavailable" : "invalid_events");
     }
+    // An open editor flushes regularly: retry this owner's pending server batches (throttled, after the response).
+    if (unified) drainSoon(ctx);
     return NextResponse.json({ accepted: rows.length, ignored: events.length - rows.length });
   } catch (error) { return routeError(error); }
 }

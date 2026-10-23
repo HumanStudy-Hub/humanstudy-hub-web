@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { webcrypto } from "node:crypto";
+import { researchDeps } from "./helpers/research.mjs";
 
 const requireLocal = createRequire(import.meta.url);
 const ts = requireLocal("typescript");
@@ -88,9 +89,10 @@ function harness(initial = document()) {
       return sourceIds.length ? { path: `${ids.owner}/${ids.workspace}/${ids.next}.zip`, url: "https://storage.test/materials.zip", sourceIds } : null;
     },
   };
-  const pipeline = load("lib/studio/pipeline.ts", { "./web-access": webPolicy,  "@/lib/github-jobs": github, "./http": http, "./store": store, "./pipeline-adapter": adapter, "./validation": validation, "./model-version": modelVersion, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": resourceServer });
+  const research = researchDeps(load, { store, http });
+  const pipeline = load("lib/studio/pipeline.ts", { ...research.deps, "./web-access": webPolicy,  "@/lib/github-jobs": github, "./http": http, "./store": store, "./pipeline-adapter": adapter, "./validation": validation, "./model-version": modelVersion, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": resourceServer });
   const auth = { async requireStudioUser() { return ctx; } };
-  const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/model-version": modelVersion, "@/lib/studio/pipeline": pipeline, "@/lib/github-jobs": github };
+  const deps = { ...research.deps, "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/model-version": modelVersion, "@/lib/studio/pipeline": pipeline, "@/lib/github-jobs": github };
   const chat = load("app/api/studio/workspaces/[id]/chat/route.ts", deps);
   const sync = load("app/api/studio/workspaces/[id]/pipeline/route.ts", deps);
   const proposals = load("app/api/studio/workspaces/[id]/proposals/route.ts", deps);

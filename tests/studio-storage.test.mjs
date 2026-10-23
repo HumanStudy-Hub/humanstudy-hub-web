@@ -238,6 +238,7 @@ test("store rejects foreign source paths and invalid revisions before calling st
 }));
 
 const eventRoute = load("app/api/studio/workspaces/[id]/events/route.ts", {
+  "@/lib/research-data/server-capture": { drainSoon: () => undefined },
   "next/server": nextServer, "@/lib/studio/auth": { requireStudioUser: async () => ctx },
   "@/lib/studio/http": http, "@/lib/studio/store": { getWorkspaceMetadata: async () => ({ id: workspaceId, revision: 7 }) }, "@/lib/studio/resources": resources,
 });

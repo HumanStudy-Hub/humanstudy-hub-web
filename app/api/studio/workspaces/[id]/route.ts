@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireStudioResearchUser as requireStudioUser } from "@/lib/research-data/consent-server";
 import { assertSameOrigin, readJsonBody, routeError, StudioError } from "@/lib/studio/http";
-import { getWorkspace, saveWorkspace } from "@/lib/studio/store";
+import { getWorkspace } from "@/lib/studio/store";
+import { saveWorkspaceResearch } from "@/lib/research-data/server-capture";
+import { versionEvents } from "@/lib/research-data/server-producer";
 import { validateStudioDocument } from "@/lib/studio/validation";
 
 type Context = { params: Promise<{ id: string }> };
@@ -47,7 +49,11 @@ export async function PATCH(request: Request, context: Context) {
       return {...c,messages:[...incoming,...messages.values()]};
     });
     validated.conversations.push(...authoritative.values());
-    const result = await saveWorkspace(ctx, id, validated, expectedRevision as number);
+    // Committed human edits: one version per saved change of the program, an artifact or the annotation set.
+    const result = await saveWorkspaceResearch(ctx, id, validated, expectedRevision as number, (revision, p) => [{
+      producer: "workspace.save", key: `save:${id}:${revision}`,
+      events: versionEvents(p, { before: existing.document, after: validated, revision, by: "human" }),
+    }]);
     if ("conflict" in result) {
       if (!result.latest) throw new StudioError(404, "not_found");
       return NextResponse.json({ error: "revision_conflict", workspace: result.latest }, { status: 409 });
