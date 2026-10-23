@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireStudioUser } from "@/lib/studio/auth";
+import { requireStudioResearchUser as requireStudioUser } from "@/lib/research-data/consent-server";
 import { startPipeline } from "@/lib/studio/pipeline";
 import { assertSameOrigin, isUuid, readJsonBody, routeError, StudioError } from "@/lib/studio/http";
 import { getWorkspace } from "@/lib/studio/store";
@@ -42,8 +42,10 @@ export async function POST(request: Request, { params }: Context) {
       throw new StudioError(400, "invalid_conversation_parent");
     }
     for (const ref of [replyTo, mergedFrom]) if (ref && !document.conversations.some(conversation => conversation.id === ref.conversationId && conversation.messages.some(message => message.id === ref.messageId))) throw new StudioError(400, "invalid_message_reference");
+    // The browser's primary action for this send, so server events link to it instead of duplicating it.
+    const actionId=isUuid(body.actionId)?body.actionId:undefined;
     if(body.sourceId!==undefined&&(!isUuid(body.sourceId)||!document.sources.some(source=>source.id===body.sourceId)))throw new StudioError(400,"invalid_source");
-    const saved = await startPipeline(ctx, workspace, {sourceId:body.sourceId as string|undefined,conversationId,requestId,text:body.text.trim(),modelAnchor,sourceSelection,parent,replyTo,mergedFrom,intent:body.intent as 'build'|'discuss'|undefined});
+    const saved = await startPipeline(ctx, workspace, {actionId,sourceId:body.sourceId as string|undefined,conversationId,requestId,text:body.text.trim(),modelAnchor,sourceSelection,parent,replyTo,mergedFrom,intent:body.intent as 'build'|'discuss'|undefined});
     return NextResponse.json({workspace:saved}, {status:202});
   } catch (error) { return routeError(error); }
 }

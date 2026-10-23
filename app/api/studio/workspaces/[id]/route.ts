@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireStudioUser } from "@/lib/studio/auth";
-import { assertSameOrigin, readJsonBody, routeError, StudioError } from "@/lib/studio/http";
-import { getWorkspace, saveWorkspace } from "@/lib/studio/store";
+import { requireStudioResearchUser as requireStudioUser } from "@/lib/research-data/consent-server";
+import { assertSameOrigin, isUuid, readJsonBody, routeError, StudioError } from "@/lib/studio/http";
+import { getWorkspace } from "@/lib/studio/store";
+import { saveWorkspaceResearch } from "@/lib/research-data/server-capture";
+import { serverEventId, systemActionEvent, versionEvents } from "@/lib/research-data/server-producer";
 import { validateStudioDocument } from "@/lib/studio/validation";
 
 type Context = { params: Promise<{ id: string }> };
@@ -24,6 +26,8 @@ export async function PATCH(request: Request, context: Context) {
     const body = await readJsonBody(request, 2_000_000);
     if (!body || typeof body !== "object") throw new StudioError(400, "invalid_request");
     const { document, expectedRevision } = body as Record<string, unknown>;
+    // The browser operation this save belongs to (explicit save, or the operation that flushed first).
+    const actionId = isUuid((body as Record<string, unknown>).actionId) ? (body as { actionId: string }).actionId : null;
     const validated = validateStudioDocument(document);
     const existing = await getWorkspace(ctx,id);
     if(!existing)throw new StudioError(404,"not_found");
@@ -47,7 +51,14 @@ export async function PATCH(request: Request, context: Context) {
       return {...c,messages:[...incoming,...messages.values()]};
     });
     validated.conversations.push(...authoritative.values());
-    const result = await saveWorkspace(ctx, id, validated, expectedRevision as number);
+    // Committed human edits: one version per saved change of the program, an artifact or the annotation set,
+    // linked to the save operation (T10 trigger human-save). An autosave no browser operation named is a
+    // system operation recorded here, only when it commits a version.
+    const result = await saveWorkspaceResearch(ctx, id, validated, expectedRevision as number, (revision, p) => {
+      const key = `save:${id}:${revision}`, action = actionId ?? serverEventId(p.ownerId, `action:${key}`);
+      const versions = versionEvents(p, { before: existing.document, after: validated, revision, by: "human", actionId: action, causedBy: action });
+      return [versions.length > 0 && { producer: "workspace.save", key, events: [...(actionId ? [] : [systemActionEvent(`action:${key}`, "workspace.autosave", "workspace")]), ...versions] }];
+    });
     if ("conflict" in result) {
       if (!result.latest) throw new StudioError(404, "not_found");
       return NextResponse.json({ error: "revision_conflict", workspace: result.latest }, { status: 409 });

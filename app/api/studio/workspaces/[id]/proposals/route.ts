@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireStudioUser } from "@/lib/studio/auth";
+import { requireStudioResearchUser as requireStudioUser } from "@/lib/research-data/consent-server";
 import { assertSameOrigin, isUuid, readJsonBody, routeError, StudioError } from "@/lib/studio/http";
-import { getWorkspace, saveWorkspace } from "@/lib/studio/store";
+import { getWorkspace } from "@/lib/studio/store";
+import { saveWorkspaceResearch } from "@/lib/research-data/server-capture";
+import { decisionEvents, decisionId, serverEventId, systemActionEvent, versionEvents } from "@/lib/research-data/server-producer";
 import { validateStudioDocument, validateModelAnchor } from "@/lib/studio/validation";
 import { modelFingerprint } from "@/lib/studio/model-version";
 import { reconcilePackageApproval, startPackageSync } from "@/lib/studio/pipeline";
@@ -55,13 +57,28 @@ export async function POST(request: Request, { params }: Context) {
     let updated;
     try { updated = validateStudioDocument({ ...document, model: nextModel, ...(nextArtifacts !== undefined ? { artifacts: nextArtifacts } : {}), conversations,...(initialJobId?{acceptedPackage:{jobId:initialJobId,modelFingerprint:modelFingerprint(nextModel),acceptedAt:new Date().toISOString(),...(initialJobStatus==='review'?{approvalPending:true}:{})},pipeline:{...document.pipeline!,status:'complete',message:'Study package accepted',updatedAt:new Date().toISOString()}}:{}) }); }
     catch { throw new StudioError(409, "proposal_breaks_references", "This model would break live annotation references. Reassign those annotations first."); }
-    const saved = await saveWorkspace(ctx, id, updated, body.revision as number);
+    const browserAction = isUuid(body.actionId) ? body.actionId : undefined;
+    // T10: the reply operation; without a browser id the server records a system one. The turn that
+    // made the proposal is the enclosing operation (metadata.parent_action_id).
+    const actionId = browserAction ?? serverEventId(ctx.user.id, `action:decision:${body.proposalId}`);
+    const parentActionId = [document.discussion, document.pipeline].find(state => state && state.jobId === proposal.jobId)?.researchActionId ?? null;
+    const thread = document.conversations.find(conversation => conversation.messages.some(message => message.proposal?.id === body.proposalId));
+    const messageId = thread?.messages.find(message => message.proposal?.id === body.proposalId)?.id;
+    const saved = await saveWorkspaceResearch(ctx, id, updated, body.revision as number, (revision, p) => [thread && {
+      producer: "proposal.decision", key: `decision:${body.proposalId}`,
+      events: [
+        ...(browserAction ? [] : [systemActionEvent(`action:decision:${body.proposalId}`, `proposal.${body.decision}`, "agent", parentActionId)]),
+        ...decisionEvents(p, { proposalId: body.proposalId as string, decision: body.decision as "apply" | "reject", conversationId: thread.id, messageId, actionId, parentActionId }),
+        // The effective program/artifacts the decision committed, linked to the decision.
+        ...(status === "applied" ? versionEvents(p, { before: document, after: updated, revision, by: "agent-proposal", actionId, causedBy: decisionId(p.ownerId, body.proposalId as string), proposalId: body.proposalId as string, jobId: proposal.jobId }) : []),
+      ],
+    }]);
     if ("conflict" in saved) return NextResponse.json({ error: "revision_conflict", latest: saved.latest }, { status: 409 });
     // Save the authoritative model before any remote work. A sync failure leaves
     // an applied proposal and an explicit retry path, never a half-approved job.
     let result=saved;
     if(status==='applied'){
-      try{result=initialJobId?await reconcilePackageApproval(ctx,saved):await startPackageSync(ctx,saved,proposal.id);}
+      try{result=initialJobId?await reconcilePackageApproval(ctx,saved):await startPackageSync(ctx,saved,proposal.id,actionId);}
       catch{return NextResponse.json({workspace:saved,proposalId:body.proposalId,status,packageSync:'retry_required'});}
     }
     return NextResponse.json({ workspace: result, proposalId: body.proposalId, status });

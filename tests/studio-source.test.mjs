@@ -125,12 +125,38 @@ test("PDF abort cancels rendering and destroys the loading task", async () => {
   assert.equal(harness.revoked.length, 0);
 });
 
-function fakeTelemetry(fetchImpl) {
+class FakeElement {
+  constructor({ tag = "div", attrs = {}, scrollHeight = 0, clientHeight = 0, scrollTop = 0 } = {}) {
+    this.tagName = tag.toUpperCase();this.attrs = { ...attrs };this.scrollHeight = scrollHeight;this.clientHeight = clientHeight;this.scrollTop = scrollTop;
+  }
+  getAttribute(name) { return name in this.attrs ? this.attrs[name] : null; }
+  setAttribute(name, value) { this.attrs[name] = String(value); }
+  hasAttribute(name) { return name in this.attrs; }
+  closest(selector) {
+    const attr = /^\[([a-z-]+)(?:="([^"]*)")?\]$/.exec(selector);
+    if (attr) return attr[1] in this.attrs && (attr[2] === undefined || this.attrs[attr[1]] === attr[2]) ? this : null;
+    return this;
+  }
+}
+
+function fakeStorage(initial = {}) {
+  const data = new Map(Object.entries(initial));
+  return {
+    data,
+    get length() { return data.size; },
+    key: (i) => [...data.keys()][i] ?? null,
+    getItem: (key) => data.has(key) ? data.get(key) : null,
+    setItem: (key, value) => { data.set(key, String(value)); },
+    removeItem: (key) => { data.delete(key); },
+  };
+}
+
+function fakeTelemetry(fetchImpl, { storage, idOffset = 0, indexedDB } = {}) {
   let cleanup;
   let effectIndex=0;
   const effects=[];
   let state = { droppedEvents: 0, deliveryError: null };
-  let nextId = 0;
+  let nextId = idOffset;
   let refIndex = 0;
   const refs = [];
   const timers = new Map();
@@ -169,15 +195,18 @@ function fakeTelemetry(fetchImpl) {
     useState: (value) => [value, (next) => { state = typeof next === "function" ? next(state) : next; }],
   };
   const globals = {
-    document: doc, window: win, Element: class {},
+    document: doc, window: win, Element: FakeElement, ...(storage ? { localStorage: storage } : {}), ...(indexedDB ? { indexedDB } : {}),
     crypto: { randomUUID: () => `00000000-0000-4000-8000-${String(++nextId).padStart(12, "0")}` },
-    fetch: fetchImpl, AbortController, Date, Promise,
+    fetch: fetchImpl, AbortController, Date, Promise, queueMicrotask,
+    HTMLInputElement: class {}, HTMLLabelElement: class {}, HTMLTextAreaElement: class {},
     setTimeout: (fn, delay) => { const id = ++nextId; timers.set(id, { fn, delay }); return id; },
     clearTimeout: (id) => timers.delete(id),
     setInterval: () => ++nextId,
     clearInterval: () => {},
   };
   const api = loadTs("lib/studio/use-telemetry.ts", globals, (name) => {
+    if (name === "./telemetry-store") return loadTs("lib/studio/telemetry-store.ts", globals);
+    if (name === "../research-data/web-operations") return loadTs("lib/research-data/web-operations.ts", globals);
     assert.equal(name, "react");
     return react;
   });
@@ -203,7 +232,7 @@ test("telemetry batches 50 events, retries with stable IDs, and sends a bounded 
     if (failures--) return Promise.reject(new Error("offline"));
     return Promise.resolve({ ok: true, status: 200 });
   });
-  for (let i = 0; i < 49; i++) harness.hook.track("chat", { action: "send", ignoredText: "private content" });
+  for (let i = 0; i < 49; i++) harness.hook.action("composer.send", { type: "chat", metadata: { action: "send", ignoredText: "private content" } });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(requests.length, 1);
   assert.equal(requests[0].events.length, 50);
@@ -220,14 +249,14 @@ test("telemetry batches 50 events, retries with stable IDs, and sends a bounded 
   assert.ok(requests.slice(2).every((request) => request.events.length <= 50 && request.options.keepalive));
 });
 
-test("telemetry caps an offline queue and every unload batch", async () => {
+test("telemetry preserves all offline events and bounds every unload batch", async () => {
   const requests = [];
   const harness = fakeTelemetry((url, options) => {
     requests.push({ url, options, events: JSON.parse(options.body).events });
     return new Promise(() => {});
   });
-  for (let i = 0; i < 600; i++) harness.hook.track("review", { status: "open" });
-  assert.ok(harness.state.droppedEvents >= 50);
+  for (let i = 0; i < 5100; i++) harness.hook.action("proposal.apply", { type: "review", metadata: { status: "open" } });
+  assert.equal(harness.state.droppedEvents, 0, "no count-based pruning");
   harness.listeners.get("window:pagehide")();
   const unload = requests.slice(1);
   assert.ok(unload.length > 0);
@@ -236,18 +265,19 @@ test("telemetry caps an offline queue and every unload batch", async () => {
   harness.cleanup();
 });
 
-test("telemetry drops rejected batches without retrying a client error", async () => {
-  const requests = [];
-  const harness = fakeTelemetry((url, options) => {
-    requests.push({ url, options });
-    return Promise.resolve({ ok: false, status: 400 });
-  });
-  for (let i = 0; i < 49; i++) harness.hook.track("chat", { action: "send" });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(requests.length, 1);
-  assert.equal(harness.state.droppedEvents, 50);
-  assert.equal(harness.state.deliveryError, "Telemetry delivery failed; some events were dropped.");
-  assert.equal([...harness.timers.values()].filter((timer) => timer.delay === 1000).length, 0);
+test("telemetry quarantines single rejected events without dropping the rest of a batch", async () => {
+  const requests = [], storage=fakeStorage();
+  const harness = fakeTelemetry(async (url, options) => {
+    const events=JSON.parse(options.body).events;requests.push(events);
+    return {ok:events.length===1&&events[0].type!=="visibility",status:events.length===1&&events[0].type!=="visibility"?200:400};
+  },{storage});
+  for (let i=0;i<49;i++)harness.hook.action("composer.send",{type:"chat",metadata:{action:"send"}});
+  await settle();
+  assert.equal(harness.state.droppedEvents,0);
+  assert.equal(requests.length,51);
+  assert.equal([...storage.data.keys()].filter(k=>k.includes(':rejected:')).length,1);
+  assert.equal([...storage.data.keys()].filter(k=>k.includes(':event:')).length,0);
+  assert.match(harness.state.deliveryError,/retained locally/);
   harness.cleanup();
 });
 
@@ -277,4 +307,243 @@ test('telemetry keeps the displayed revision of each event while an autosave adv
  h.hook.track('selection',{entityId:'design'});h.render(0,2);h.hook.track('selection',{entityId:'analysis'});h.cleanup();await new Promise(resolve=>setImmediate(resolve));
  const selections=sent.flatMap(batch=>batch.events).filter(e=>e.type==='selection');
  assert.deepEqual(selections.map(e=>e.displayRevision),[1,2]);assert.equal(selections[0].sessionId,selections[1].sessionId);
+});
+
+const settle = async () => { for (let i = 0; i < 3; i++) await new Promise((resolve) => setImmediate(resolve)); };
+const runTimers = (harness, delay) => { for (const [id, timer] of [...harness.timers]) if (timer.delay === delay) { harness.timers.delete(id); timer.fn(); } };
+
+test("telemetry never listens to pointer movement and sends no coordinates", async () => {
+  const sent = [];
+  const h = fakeTelemetry(async (_url, options) => { sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; });
+  assert.equal(h.root.events.has("pointermove"), false);
+  assert.equal([...h.root.events.keys()].some((type) => type.startsWith("pointer") || type.startsWith("mouse") || type.startsWith("key")), false);
+  const pane = new FakeElement({ attrs: { "data-event": "source-pane" }, scrollHeight: 2000, clientHeight: 1000 });
+  for (const top of [100, 400, 900, 700]) { pane.scrollTop = top; h.root.events.get("scroll")({ target: pane }); }
+  h.listeners.get("window:pagehide")();
+  await settle();
+  assert.ok(sent.every((event) => event.type !== "pointer" && event.x === undefined && event.y === undefined));
+});
+
+test("telemetry summarizes a scroll once it settles instead of recording every event", async () => {
+  const sent = [];
+  const h = fakeTelemetry(async (_url, options) => { sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; });
+  const pane = new FakeElement({ attrs: { "data-event": "source-pane" }, scrollHeight: 2000, clientHeight: 1000 });
+  for (const top of [100, 200, 500, 900, 600]) { pane.scrollTop = top; h.root.events.get("scroll")({ target: pane }); }
+  assert.equal([...h.timers.values()].filter((timer) => timer.delay === 800).length, 1, "one pending settle timer per container");
+  runTimers(h, 800);
+  pane.scrollTop = 0; h.root.events.get("scroll")({ target: pane });
+  h.render(1); // view change ends the open run
+  h.cleanup();
+  await settle();
+  const scrolls = sent.filter((event) => event.type === "scroll");
+  assert.equal(scrolls.length, 2);
+  assert.deepEqual(scrolls[0].metadata, { status: "settled", startDepth: 100, endDepth: 600, maxDepth: 900 });
+  assert.equal(scrolls[0].target, "source-pane");
+  assert.ok(Number.isInteger(scrolls[0].durationMs));
+  assert.deepEqual(scrolls[1].metadata, { status: "view", startDepth: 600, endDepth: 0, maxDepth: 600 });
+});
+
+test("a click handled by a semantic event is recorded once", async () => {
+  const sent = [];
+  const h = fakeTelemetry(async (_url, options) => { sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; });
+  const send = new FakeElement({ tag: "button", attrs: { "data-event": "chat-send" } });
+  h.root.events.get("click")({ target: send });
+  await Promise.resolve();
+  const id = h.hook.action("composer.send", { type: "chat", metadata: { action: "send" } });
+  runTimers(h, 300);
+  const other = new FakeElement({ tag: "button", attrs: { "data-event": "tab-sources" } });
+  h.root.events.get("click")({ target: other });
+  await Promise.resolve();
+  h.hook.track("layout", { action: "collapse" });
+  runTimers(h, 300);
+  h.listeners.get("window:pagehide")();
+  await settle();
+  const actions = sent.filter((event) => event.type === "click" || event.type === "chat");
+  assert.deepEqual(actions.map((event) => [event.type, event.target, event.metadata.via]), [["chat", "composer.send", "pointer"], ["click", "tab-sources", "pointer"]]);
+  assert.equal(actions[0].id, id, "the send names the click's operation; its id is the action id");
+  assert.equal(sent.find((event) => event.type === "layout").actionId, actions[1].id, "the layout change links to the generic click");
+});
+
+test("telemetry keeps failed events with backoff, persists them, and resends the same ids next visit", async () => {
+  const storage = fakeStorage();
+  const attempts = [];
+  const offline = fakeTelemetry(async (_url, options) => { attempts.push(JSON.parse(options.body).events); throw new Error("offline"); }, { storage });
+  for (let i = 0; i < 49; i++) offline.hook.action("proposal.apply", { type: "review", metadata: { status: "open" } });
+  for (let i = 0; i < 8; i++) {
+    await settle();
+    const retry = [...offline.timers].find(([, timer]) => timer.delay >= 1000 && timer.delay !== 1500);
+    assert.ok(retry, `retry ${i} scheduled`);
+    offline.timers.delete(retry[0]);retry[1].fn();
+  }
+  await settle();
+  assert.equal(offline.state.droppedEvents, 0);
+  assert.ok(attempts.length >= 9);
+  offline.listeners.get("window:pagehide")();
+  const stored = [...storage.data.entries()].filter(([key]) => key.startsWith("hs-studio-telemetry:workspace-1:"));
+  assert.ok(stored.length >= 51);
+  const storedIds = stored.map(([,value]) => JSON.parse(value).id);
+  assert.ok(storedIds.length >= 51);
+  const delivered = [];
+  const online = fakeTelemetry(async (_url, options) => { delivered.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; }, { storage, idOffset: 1_000_000 });
+  await settle();
+  for (const id of storedIds) assert.ok(delivered.some((event) => event.id === id), "stored event resent with its original id");
+  runTimers(online, 1500);
+  assert.equal([...storage.data.keys()].filter((key) => key.startsWith("hs-studio-telemetry:")).length, 0, "delivered events leave storage");
+});
+
+test("telemetry works when storage throws", async () => {
+  const sent = [];
+  const broken = { get length() { throw new Error("denied"); }, key() { throw new Error("denied"); }, getItem() { throw new Error("denied"); }, setItem() { throw new Error("denied"); }, removeItem() { throw new Error("denied"); } };
+  const h = fakeTelemetry(async (_url, options) => { sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; }, { storage: broken });
+  h.hook.track("layout", { action: "collapse" });
+  h.cleanup();
+  await settle();
+  assert.ok(sent.some((event) => event.type === "layout"));
+});
+
+
+// ---- T08: IndexedDB-backed durable queue ---------------------------------------------------
+/** Minimal IndexedDB: object stores keyed by keyPath, transactions completing in a microtask. */
+function fakeIndexedDB({ failPut = () => false } = {}) {
+  const stores = new Map();
+  const request = (result) => { const r = { result, onsuccess: null, onerror: null }; queueMicrotask(() => r.onsuccess?.()); return r; };
+  const db = {
+    objectStoreNames: { contains: (name) => stores.has(name) },
+    createObjectStore: (name) => { stores.set(name, new Map()); },
+    transaction(name) {
+      const tx = { oncomplete: null, onerror: null, onabort: null, error: null };
+      let failed = false;
+      tx.objectStore = () => ({
+        put(value) { if (failPut()) { failed = true; tx.error = new Error("QuotaExceededError"); } else stores.get(name).set(value.key, JSON.parse(JSON.stringify(value))); return request(undefined); },
+        delete(key) { stores.get(name).delete(key); return request(undefined); },
+        getAll() { return request([...stores.get(name).values()]); },
+      });
+      queueMicrotask(() => (failed ? tx.onabort?.() : tx.oncomplete?.()));
+      return tx;
+    },
+  };
+  return { stores, open() { const r = { result: db }; queueMicrotask(() => { if (!stores.size) r.onupgradeneeded?.(); r.onsuccess?.(); }); return r; } };
+}
+const idbEvents = (idb) => [...(idb.stores.get("events")?.values() ?? [])];
+
+test("telemetry stores undelivered events in IndexedDB, not localStorage, and resends them after a restart", async () => {
+  const idb = fakeIndexedDB(), storage = fakeStorage();
+  const offline = fakeTelemetry(async () => { throw new Error("offline"); }, { storage, indexedDB: idb });
+  for (let i = 0; i < 10; i++) offline.hook.action("proposal.apply", { type: "review", metadata: { status: "open" } });
+  await settle();
+  const saved = idbEvents(idb).map((row) => row.event.id);
+  assert.ok(saved.length >= 11, "every event, including the visibility record, is durable in IndexedDB");
+  assert.equal([...storage.data.keys()].filter((k) => k.includes(":event:")).length, 0, "localStorage stays free");
+  const delivered = [];
+  const online = fakeTelemetry(async (_url, options) => { delivered.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; }, { storage, indexedDB: idb, idOffset: 1_000_000 });
+  await settle(); await settle();
+  for (const id of saved) assert.ok(delivered.some((event) => event.id === id), "original id resent");
+  await settle();
+  assert.equal(idbEvents(idb).filter((row) => saved.includes(row.event.id)).length, 0, "acknowledged ids are removed");
+  online.cleanup(); offline.cleanup();
+});
+
+test("telemetry falls back to localStorage when IndexedDB refuses a write (quota)", async () => {
+  const idb = fakeIndexedDB({ failPut: () => true }), storage = fakeStorage();
+  const h = fakeTelemetry(async () => { throw new Error("offline"); }, { storage, indexedDB: idb });
+  h.hook.track("layout", { action: "collapse" });
+  await settle();
+  assert.equal(idbEvents(idb).length, 0);
+  assert.ok([...storage.data.keys()].filter((k) => k.includes(":event:")).length >= 2, "kept in the fallback store");
+  assert.notEqual(h.state.deliveryError, "Local research storage is full or unavailable. Keep this page open until delivery succeeds.");
+  h.cleanup();
+});
+
+test("telemetry shows a storage failure when neither store accepts an event, and drops nothing", async () => {
+  const idb = fakeIndexedDB({ failPut: () => true });
+  const full = { ...fakeStorage(), get length() { return 0; }, key: () => null, getItem: () => null, setItem() { throw new Error("QuotaExceededError"); }, removeItem() {} };
+  const sent = [];
+  let online = false;
+  const h = fakeTelemetry(async (_url, options) => { if (!online) throw new Error("offline"); sent.push(...JSON.parse(options.body).events); return { ok: true, status: 200 }; }, { storage: full, indexedDB: idb });
+  for (let i = 0; i < 49; i++) h.hook.action("proposal.apply", { type: "review", metadata: { status: "open" } });
+  await settle();
+  assert.equal(h.state.deliveryError, "Local research storage is full or unavailable. Keep this page open until delivery succeeds.");
+  assert.equal(h.state.droppedEvents, 0);
+  online = true;
+  const retry = [...h.timers].find(([, timer]) => timer.delay >= 1000);
+  h.timers.delete(retry[0]); retry[1].fn();
+  await settle();
+  assert.equal(sent.filter((event) => event.type === "review").length, 49, "the in-memory queue still delivers every event");
+  h.cleanup();
+});
+
+test("two tabs share durable storage without deleting each other's records", async () => {
+  const idb = fakeIndexedDB(), storage = fakeStorage();
+  const globals = { indexedDB: idb, localStorage: storage };
+  const a = loadTs("lib/studio/telemetry-store.ts", globals).createTelemetryStore("workspace-1");
+  const b = loadTs("lib/studio/telemetry-store.ts", globals).createTelemetryStore("workspace-1");
+  const ev = (id) => ({ id, sessionId: "s", type: "review", at: new Date().toISOString() });
+  assert.equal(await a.put([ev("a1"), ev("a2")]), "indexeddb");
+  await b.put([ev("b1")]);
+  assert.deepEqual([...(await b.all())].map((e) => e.id).sort(), ["a1", "a2", "b1"], "adoption reads everything");
+  assert.equal(idbEvents(idb).length, 3, "reading never deletes");
+  await b.remove(["b1", "a1"]);
+  assert.deepEqual(idbEvents(idb).map((row) => row.event.id), ["a2"], "only acknowledged ids are removed");
+  const other = loadTs("lib/studio/telemetry-store.ts", globals).createTelemetryStore("workspace-2");
+  assert.equal((await other.all()).length, 0, "workspaces are isolated");
+});
+
+test("telemetry shows no rejection notice when isolation delivers every event, and resets its backoff", async () => {
+  const requests = [];
+  let batchStatus = 400;
+  const h = fakeTelemetry(async (_url, options) => {
+    const events = JSON.parse(options.body).events; requests.push({ events, signal: options.signal });
+    if (events.length > 1) return { ok: false, status: batchStatus };
+    return { ok: true, status: 200 };
+  });
+  for (let i = 0; i < 49; i++) h.hook.action("composer.send", { type: "chat", metadata: { action: "send" } });
+  await settle();
+  assert.equal(h.state.deliveryError, null, "no event was rejected, so no alert");
+  assert.ok(requests.slice(1).every((r) => r.events.length === 1 && r.signal), "isolation requests are abortable");
+  assert.equal([...h.timers.values()].some((t) => t.delay >= 1000 && t.delay <= 60_000 && t.delay !== 5000 && t.delay !== 10_000), false, "no backoff pending");
+  h.cleanup();
+});
+
+test("telemetry treats a 404 (workspace deleted) as terminal: no retries, nothing kept", async () => {
+  const requests = [], storage = fakeStorage();
+  const h = fakeTelemetry(async (_url, options) => { requests.push(JSON.parse(options.body).events); return { ok: false, status: 404 }; }, { storage });
+  for (let i = 0; i < 49; i++) h.hook.action("composer.send", { type: "chat", metadata: { action: "send" } });
+  await settle();
+  assert.equal(requests.length, 1, "one request, no per-event isolation");
+  assert.equal([...h.timers.values()].some((t) => t.delay === 1000), false, "no retry scheduled");
+  assert.equal(h.state.deliveryError, null);
+  h.hook.action("composer.send", { type: "chat", metadata: { action: "send" } });
+  for (const timer of [...h.timers.values()]) timer.fn();
+  await settle();
+  assert.equal(requests.length, 1, "nothing more is sent for a deleted workspace");
+  assert.equal([...storage.data.keys()].filter((k) => k.includes(":event:")).length, 0);
+  h.cleanup();
+});
+
+test("telemetry treats a 404 during per-event isolation as terminal", async () => {
+  const requests = [];
+  const h = fakeTelemetry(async (_url, options) => { const events = JSON.parse(options.body).events; requests.push(events); return { ok: false, status: events.length > 1 ? 400 : 404 }; });
+  for (let i = 0; i < 49; i++) h.hook.action("composer.send", { type: "chat", metadata: { action: "send" } });
+  await settle();
+  assert.equal(requests.length, 2);
+  assert.equal([...h.timers.values()].some((t) => t.delay === 1000), false, "no retry scheduled");
+  h.cleanup();
+});
+
+test("rejected-record quarantine is capped at the newest MAX_REJECTED records", async () => {
+  for (const withIdb of [false, true]) {
+    const storage = fakeStorage(), idb = withIdb ? fakeIndexedDB() : undefined;
+    const mod = loadTs("lib/studio/telemetry-store.ts", { localStorage: storage, ...(idb ? { indexedDB: idb } : {}) });
+    const store = mod.createTelemetryStore("workspace-1");
+    const realNow = Date.now; let clock = 1_800_000_000_000;
+    Date.now = () => ++clock;
+    try {
+      for (let i = 0; i < mod.MAX_REJECTED + 7; i++) await store.reject({ id: `r${i}`, sessionId: "s", type: "click", at: new Date(clock).toISOString() }, 400);
+    } finally { Date.now = realNow; }
+    await settle();
+    const kept = withIdb ? [...idb.stores.get("rejected").values()].map((row) => row.event.id) : [...storage.data.keys()].filter((k) => k.includes(":rejected:")).map((k) => k.split(":rejected:")[1]);
+    assert.equal(kept.length, mod.MAX_REJECTED, withIdb ? "indexeddb" : "localstorage");
+    for (let i = 0; i < 7; i++) assert.ok(!kept.includes(`r${i}`), `oldest r${i} pruned`);
+    assert.ok(kept.includes(`r${mod.MAX_REJECTED + 6}`), "newest kept");
+  }
 });

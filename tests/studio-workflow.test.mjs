@@ -1,4 +1,5 @@
 import { test } from "node:test";
+import { researchDeps } from "./helpers/research.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -10,6 +11,7 @@ const ts = requireLocal("typescript");
 const JSZip = requireLocal("jszip");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 function load(file, dependencies = {}) {
+ if (dependencies["@/lib/studio/auth"]?.requireStudioUser) dependencies["@/lib/research-data/consent-server"] = {requireStudioResearchUser: dependencies["@/lib/studio/auth"].requireStudioUser};
   const source = fs.readFileSync(path.join(root, file), "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const loadedModule = { exports: {} };
@@ -85,8 +87,9 @@ for(const format of ['legacy','v2','v2-removed-field'])test(`${format}: complete
       approvals++;
     },
   };
-  const pipeline = load("lib/studio/pipeline.ts", { "./web-access": { webAgentAllowed: () => true },  "@/lib/github-jobs": github, "./http": http, "./store": store, "./validation": validation, "./model-version": modelVersion, "./pipeline-adapter": {}, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": {} });
-  const deps = { "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/model-version": modelVersion, "@/lib/studio/pipeline": pipeline, "@/lib/studio/resources": resources, "@/lib/github-jobs": github, jszip: JSZip };
+  const research = researchDeps(load, { store, http });
+  const pipeline = load("lib/studio/pipeline.ts", { ...research.deps, "./web-access": { webAgentAllowed: () => true },  "@/lib/github-jobs": github, "./http": http, "./store": store, "./validation": validation, "./model-version": modelVersion, "./pipeline-adapter": {}, "./conversation-tree": conversationTree, "./resources": resources, "./resource-server": {} });
+  const deps = { ...research.deps, "next/server": nextServer, "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/studio/store": store, "@/lib/studio/validation": validation, "@/lib/studio/model-version": modelVersion, "@/lib/studio/pipeline": pipeline, "@/lib/studio/resources": resources, "@/lib/github-jobs": github, jszip: JSZip };
   const proposals = load("app/api/studio/workspaces/[id]/proposals/route.ts", deps);
   const exportRoute = load("app/api/studio/workspaces/[id]/export/route.ts", deps);
   const context = { params: Promise.resolve({ id: workspaceId }) };

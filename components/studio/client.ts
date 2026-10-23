@@ -58,6 +58,7 @@ export class StudioApiError extends Error {
 export async function studioApi<T>(path:string,init?:RequestInit):Promise<T>{
  const response=await fetch(path,{...init,credentials:'same-origin',cache:'no-store',headers:{...(init?.body?{'Content-Type':'application/json'}:{}),...init?.headers}});
  const body=await response.json().catch(()=>({error:'Invalid server response'}));
+ if(body.error==='research_agreement_required'||path==='/api/studio/auth'&&response.ok&&init?.method==='POST')window.dispatchEvent(new Event('studio-auth-changed'));
  if(!response.ok)throw new StudioApiError(response.status,body);
  return body as T;
 }

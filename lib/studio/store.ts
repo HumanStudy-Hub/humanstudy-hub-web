@@ -20,7 +20,7 @@ function assertSources(ctx: StudioContext, id: string, sources: StudioSource[]):
   }
 }
 
-function assertDocument(ctx: StudioContext, id: string, document: StudioDocument): void {
+export function assertDocument(ctx: StudioContext, id: string, document: StudioDocument): void {
   if (!document || typeof document !== "object" || typeof document.title !== "string" || document.title.trim().length < 1 || document.title.length > 160) {
     throw new StudioError(400, "invalid_document");
   }

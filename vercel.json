@@ -3,6 +3,14 @@
     {
       "path": "/api/blob/cleanup",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/research-integrity",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/research-outbox",
+      "schedule": "30 4 * * *"
     }
   ]
 }

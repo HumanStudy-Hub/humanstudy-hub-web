@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {createRequire} from 'node:module';
+import {researchDeps} from './helpers/research.mjs';
 const require=createRequire(import.meta.url),ts=require('typescript');
 const root=path.resolve(import.meta.dirname,'..');
 const next={NextResponse:{json:(body,init={})=>({body,status:init.status||200})}};
 function load(file,deps={}){
+ if (deps["@/lib/studio/auth"]?.requireStudioUser) deps["@/lib/research-data/consent-server"] = {requireStudioResearchUser: deps["@/lib/studio/auth"].requireStudioUser};
  const js=ts.transpileModule(fs.readFileSync(path.join(root,file),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
  const m={exports:{}};
  new Function('require','module','exports',js)(id=>{
@@ -86,7 +88,8 @@ test('project rename/archive/restore enforce owner lookup and optimistic revisio
 test('directory lists metadata only and autosave preserves server-owned provenance',async()=>{
  let selection;const store=load('lib/studio/store.ts',{'./http':{...http,studioFetch:async(url)=>{selection=url;return Response.json([]);}}});await store.listWorkspaces(ctx);assert.match(selection,/project:document->project/);assert.doesNotMatch(selection,/revision,document,/);
  const w=workspace();w.document.project={sampleId:'intentional-action',copyState:'ready'};let saved;
- const route=load('app/api/studio/workspaces/[id]/route.ts',{'@/lib/studio/auth':{requireStudioUser:async()=>ctx},'@/lib/studio/http':http,'@/lib/studio/store':{getWorkspace:async()=>w,saveWorkspace:async(_,__,doc)=>{saved=doc;return {...w,document:doc};}},'@/lib/studio/validation':validation});
+ const routeStore={getWorkspace:async()=>w,saveWorkspace:async(_,__,doc)=>{saved=doc;return {...w,document:doc};}};
+ const route=load('app/api/studio/workspaces/[id]/route.ts',{...researchDeps(load,{store:routeStore,http}).deps,'@/lib/studio/auth':{requireStudioUser:async()=>ctx},'@/lib/studio/http':http,'@/lib/studio/store':routeStore,'@/lib/studio/validation':validation});
  const forged={...w.document,project:{sampleId:'forged',archived:true}};
  const response=await route.PATCH(request({document:forged,expectedRevision:2}),{params:Promise.resolve({id})});assert.equal(response.status,200);assert.deepEqual(saved.project,w.document.project);
  w.document.project.copyState='preparing';assert.equal((await route.PATCH(request({document:forged,expectedRevision:2}),{params:Promise.resolve({id})})).status,409);
