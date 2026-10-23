@@ -1,0 +1,56 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+const { PGlite } = require(process.env.PGLITE_MODULE || '@electric-sql/pglite');
+
+test('real PostgreSQL: atomic catalog publication, search, permissions and immutable versions', async () => {
+  const db = new PGlite();
+  try {
+    await db.exec('create role anon; create role authenticated; create role service_role bypassrls; grant usage on schema public to anon,authenticated,service_role;');
+    await db.exec(await readFile(new URL('../supabase/migrations/20261021191855_research_catalog.sql', import.meta.url), 'utf8'));
+    const catalog = JSON.parse(await readFile(new URL('../data/research_index.json', import.meta.url), 'utf8'));
+    const publish = async (payload, expected = null) => (await db.query('select public.publish_research_catalog($1::jsonb,$2::text) as snapshot', [JSON.stringify(payload), expected])).rows[0].snapshot;
+    await db.exec('set role service_role');
+    assert.equal(await publish(catalog), catalog.snapshot);
+    assert.equal(await publish(catalog), catalog.snapshot, 'same import is idempotent');
+    await db.exec('set role anon');
+    const search = async (query, offset = 0, limit = 30, concepts = []) => (await db.query('select public.search_research_catalog($1,$2::text[],null,$3,$4) as result',[query, concepts, offset, limit])).rows[0].result;
+    const en = await search('framing effect'), zh = await search('框架效应');
+    assert.ok(en.items.some(p => p.aliases.includes('bench:study_003')));
+    assert.ok(zh.items.some(p => p.aliases.includes('bench:study_003')));
+    assert.equal(zh.items.find(p => p.aliases.includes('bench:study_003')).matchedBy, 'reviewed-concept');
+    const emptyPage = await search('', 100000);
+    assert.equal(emptyPage.items.length, 0);
+    assert.equal(emptyPage.total, catalog.papers.length, 'an empty page must not erase the total');
+    assert.equal((await search('',0,30,['not-a-concept'])).total,0);
+    await assert.rejects(db.query("update public.research_papers set title='forged'"), /permission denied/);
+    await assert.rejects(publish(catalog), /permission denied/);
+    await assert.rejects(db.query('select * from public.research_ingestion_batches'), /permission denied/);
+    await db.exec('set role authenticated');
+    await assert.rejects(publish(catalog), /permission denied/);
+    await db.exec('set role service_role');
+    const updated = structuredClone(catalog); updated.snapshot = 'b'.repeat(64);
+    updated.papers = [structuredClone(catalog.papers[0])];
+    updated.papers[0].currentRevision='e'.repeat(64);
+    updated.papers[0].assetFiles=[{path:'program.json',sha256:'f'.repeat(64),bytes:3}];
+    await assert.rejects(publish(updated,'c'.repeat(64)), /catalog changed/);
+    assert.equal((await search('')).total,catalog.papers.length,'stale write is fully rolled back');
+    await publish(updated,catalog.snapshot);
+    await db.exec('set role anon');
+    assert.equal((await search('')).total,1,'old snapshot rows are hidden');
+    assert.equal((await db.query('select count(*)::integer as n from public.research_papers')).rows[0].n,1,'RLS also applies outside the RPC');
+    await db.exec('set role service_role');
+    const reused=structuredClone(updated);reused.papers[0].title='Changed under the same snapshot';
+    await assert.rejects(publish(reused,updated.snapshot), /snapshot identity was reused/);
+    const tampered=structuredClone(updated);tampered.snapshot='c'.repeat(64);tampered.papers[0].assetFiles[0].sha256='1'.repeat(64);
+    await assert.rejects(publish(tampered,updated.snapshot), /immutable revision manifest changed/);
+    assert.equal((await search('')).snapshot,updated.snapshot);
+    const broken=structuredClone(updated);broken.snapshot='d'.repeat(64);broken.papers.push({...broken.papers[0],id:'bad'});
+    await assert.rejects(publish(broken,updated.snapshot), /invalid paper/);
+    assert.equal((await search('')).snapshot,updated.snapshot,'invalid catalog never advances its pointer');
+    await publish(catalog,updated.snapshot);
+    assert.equal((await search('')).total,catalog.papers.length,'an exact historical snapshot can be restored');
+  } finally { await db.close(); }
+});

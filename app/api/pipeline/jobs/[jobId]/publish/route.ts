@@ -9,6 +9,9 @@ export async function POST(
   _request: Request,
   context: { params: Promise<{ jobId: string }> },
 ) {
+  if (process.env.COMMUNITY_CATALOG_ENABLED === "true") {
+    return NextResponse.json({ error: "Contributions now update one recommended research version. Export the community package and submit it at /contribute.", contributionUrl: "/contribute" }, { status: 410 });
+  }
   try {
     const token = process.env.GITHUB_TOKEN;
     if (!token) return NextResponse.json({ error: "GITHUB_TOKEN is not configured." }, { status: 503 });

@@ -1,115 +1,44 @@
 import Link from "next/link";
-import { getStudies } from "@/lib/studies";
+import { searchResearch, validateResearchQuery, type ResearchPaper } from "@/lib/research";
 
-type Contributor = { name: string; github?: string; institution?: string };
-type StudySummary = {
-  study_id: string;
-  title: string;
-  authors: string[];
-  year: number | null;
-  contributors?: Contributor[];
-};
-
-export default async function StudiesPage() {
-  const studies: StudySummary[] = await getStudies();
-
+export default async function StudiesPage({ searchParams }: { searchParams: Promise<{ q?: string; offset?: string }> }) {
+  const params = await searchParams;
+  const raw = new URLSearchParams();
+  if (typeof params.q === "string") raw.set("q", params.q);
+  if (typeof params.offset === "string") raw.set("offset", params.offset);
+  let input, error = "";
+  try { input = validateResearchQuery(raw); }
+  catch (e) { error = e instanceof Error ? e.message : "Invalid search."; }
+  let result: Awaited<ReturnType<typeof searchResearch>> | null = null;
+  if (input) {
+    try { result = await searchResearch(input); }
+    catch { error = "The research library could not be loaded. Try again shortly."; }
+  }
+  const pageUrl = (offset: number) => `/studies?${new URLSearchParams({ q: params.q || "", offset: String(offset) })}`;
   return (
-    <div className="bg-white min-h-screen">
-      <div className="py-12 border-t border-gray-100">
-        <div className="mx-auto max-w-7xl px-6 lg:px-8">
-          <div className="mx-auto max-w-2xl text-center mb-8">
-            <h1 className="text-xl font-bold tracking-tight text-gray-900 sm:text-2xl font-serif">
-              Study Catalog
-            </h1>
-            <p className="mt-1 text-gray-500 text-xs">
-              Standardized human study replays.
-            </p>
+    <div className="bg-white min-h-screen border-t border-gray-100">
+      <div className="mx-auto max-w-5xl px-6 py-12 lg:px-8">
+        <h1 className="text-2xl font-bold font-serif text-gray-900">Research library</h1>
+        <form action="/studies" className="my-6 flex gap-2" role="search">
+          <input name="q" defaultValue={params.q || ""} aria-label="Search research" placeholder="Search a topic, paper or author" className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-cyan-500" />
+          <button className="rounded-lg bg-cyan-700 px-4 py-2 text-sm text-white">Search</button>
+        </form>
+        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+        {result && <>
+          <p className="mb-4 text-xs text-gray-500">{result.total} papers in the indexed collection{result.source === "snapshot" ? " · Catalog snapshot" : ""}</p>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {result.items.map((paper: ResearchPaper) => <Link key={paper.id} href={`/studies/${paper.id}`} className="rounded-xl border border-gray-200 p-4 hover:border-cyan-300 transition-colors">
+              <p className="text-sm font-semibold text-gray-900">{paper.title}</p>
+              {(paper.authors.length > 0 || paper.year) && <p className="mt-1 text-xs text-gray-500">{[paper.authors.join(", "), paper.year].filter(Boolean).join(" · ")}</p>}
+              <p className="mt-2 text-xs text-cyan-800">{paper.currentRevision ? "Human Program" : paper.legacyStudyId ? "Study materials" : "Source indexed"}</p>
+            </Link>)}
           </div>
-          
-          <div className="mx-auto grid max-w-2xl grid-cols-1 gap-3 lg:max-w-none lg:grid-cols-2">
-            {studies.slice(0, 12).map((study, idx) => (
-              <div key={study.study_id} className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2.5 hover:border-cyan-300 hover:shadow-sm transition-all">
-                <div className="flex items-center gap-3 overflow-hidden">
-                  <span className="inline-flex h-6 min-w-8 items-center justify-center rounded-md border border-cyan-100 bg-cyan-50 px-1 text-[10px] font-bold text-cyan-700 shrink-0">
-                    {(idx + 1).toString().padStart(3, '0')}
-                  </span>
-                  <Link
-                    href={`/studies/${study.study_id}`}
-                    className="text-xs font-semibold text-gray-900 hover:text-cyan-700 transition-colors truncate"
-                  >
-                    {study.title}
-                  </Link>
-                </div>
-
-                {study.contributors?.[0] && (
-                  <div className="flex items-center gap-2 shrink-0 ml-4">
-                    {study.contributors[0].github ? (
-                      <a
-                        href={study.contributors[0].github}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] text-gray-500 hover:text-cyan-700 transition-colors"
-                      >
-                        @{study.contributors[0].github}
-                      </a>
-                    ) : (
-                      <span className="text-[10px] text-gray-500">
-                        {study.contributors[0].name}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {studies.length > 12 && (
-            <>
-              <div className="mx-auto max-w-2xl lg:max-w-none my-8 flex items-center gap-4">
-                <div className="flex-1 border-t border-gray-300" />
-                <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Community Contributions</span>
-                <div className="flex-1 border-t border-gray-300" />
-              </div>
-
-              <div className="mx-auto grid max-w-2xl grid-cols-1 gap-3 lg:max-w-none lg:grid-cols-2">
-                {studies.slice(12).map((study, idx) => (
-                  <div key={study.study_id} className="flex items-center justify-between rounded-xl border border-gray-200 bg-white px-3 py-2.5 hover:border-cyan-300 hover:shadow-sm transition-all">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <span className="inline-flex h-6 min-w-8 items-center justify-center rounded-md border border-cyan-100 bg-cyan-50 px-1 text-[10px] font-bold text-cyan-700 shrink-0">
-                        {(idx + 13).toString().padStart(3, '0')}
-                      </span>
-                      <Link
-                        href={`/studies/${study.study_id}`}
-                        className="text-xs font-semibold text-gray-900 hover:text-cyan-700 transition-colors truncate"
-                      >
-                        {study.title}
-                      </Link>
-                    </div>
-
-                    {study.contributors?.[0] && (
-                      <div className="flex items-center gap-2 shrink-0 ml-4">
-                        {study.contributors[0].github ? (
-                          <a
-                            href={study.contributors[0].github}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[10px] text-gray-500 hover:text-cyan-700 transition-colors"
-                          >
-                            @{study.contributors[0].github}
-                          </a>
-                        ) : (
-                          <span className="text-[10px] text-gray-500">
-                            {study.contributors[0].name}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+          {result.total === 0 && <p className="py-8 text-sm text-gray-600">No matching papers in this collection.</p>}
+          <nav aria-label="Research pages" className="mt-6 flex justify-between text-sm text-cyan-800">
+            {result.offset > 0 ? <Link href={pageUrl(Math.max(0,result.offset-result.limit))}>← Previous</Link> : <span />}
+            {result.nextOffset !== null && <Link href={pageUrl(result.nextOffset)}>Next →</Link>}
+          </nav>
+        </>}
       </div>
     </div>
   );

@@ -14,7 +14,9 @@ const lib = load('lib/community.ts', { './access': access, 'adm-zip': admZip });
 // Same cases as HumanStudy-Bench tests/test_community.py.
 test('paper keys match scripts/community.py', () => {
   assert.equal(lib.makePaperKey({ doi: 'https://doi.org/10.1111/ABC.1', title: 't', year: 2000, firstAuthor: 'A B' }), 'doi:10.1111/abc.1');
-  assert.equal(lib.makePaperKey({ doi: 'doi: 10.1/x', title: 't', year: 2000, firstAuthor: 'A B' }), 'doi:10.1/x');
+  assert.equal(lib.makePaperKey({ doi: 'doi: 10.1234/x', title: 't', year: 2000, firstAuthor: 'A B' }), 'doi:10.1234/x');
+  // Bench rejects DOIs outside 10.NNNN/…; such input keys by title so the proposal can still validate.
+  assert.equal(lib.makePaperKey({ doi: 'doi: 10.1/x', title: 't', year: 2000, firstAuthor: 'A B' }), 'title:t-2000-b');
   assert.equal(lib.makePaperKey({ title: 'Intentional Action & Side-Effects!', year: 2003, firstAuthor: 'Joshua Knobe' }), 'title:intentional-action-side-effects-2003-knobe');
   assert.equal(lib.makePaperKey({ doi: '', title: 'Café Müller', year: 1999, firstAuthor: 'Müller, Hans' }), 'title:cafe-muller-1999-muller');
   assert.equal(lib.makePaperKey({ doi: 'not-a-doi', title: 'T', year: null, firstAuthor: 'Ada Lovelace' }), 'title:t-nd-lovelace');
@@ -74,8 +76,9 @@ test('zip validation explains each problem', () => {
   const has = (errs, re) => assert.ok(errs.some((e) => re.test(e)), `${re} in ${JSON.stringify(errs)}`);
   has(lib.validateContributionZip([f('program.json')]), /no CONTRIBUTION\.json/);
   has(lib.validateContributionZip([f('CONTRIBUTION.json')]), /no program\.json/);
-  has(lib.validateContributionZip([...good, f('notes.txt'), f('sources/paper.txt')]), /notes\.txt, sources\//);
-  has(lib.validateContributionZip([...good, f('artifacts/other/x.md')]), /artifacts\//);
+  has(lib.validateContributionZip([...good, f('notes.txt'), f('sources/paper.txt')]), /notes\.txt/);
+  assert.deepEqual(lib.validateContributionZip([...good, f('artifacts/other/x.md'), f('sources/paper.txt')]), []);
+  has(lib.validateContributionZip([...good, f('package/.humanstudy/threads.json')]), /private project/);
   has(lib.validateContributionZip([...good, f('package/big.bin', 26 * 1024 * 1024)]), /package\/big\.bin is 26 MB/);
   has(lib.validateContributionZip(good, { zipBytes: 41 * 1024 * 1024 }), /41 MB, over the 40 MB/);
   has(lib.validateContributionZip([...good, f('package/../../etc/passwd')]), /path that is not allowed/);
@@ -183,9 +186,10 @@ test('without a connected GitHub account the bot opens the PR with a signed Hub 
   assert.equal(Fake.instances[0].auth, 'bot-token');
   assert.equal(call(Fake, 'repos.createFork').length, 0);
   const tree = call(Fake, 'git.createTree')[0];
-  assert.ok(tree.tree.every((t) => t.path.startsWith('community/doi_10.1111_1468-0017.00215/')));
-  assert.ok(tree.tree.some((t) => t.path === 'community/doi_10.1111_1468-0017.00215/paper.json'));
-  assert.ok(tree.tree.some((t) => t.path === 'community/doi_10.1111_1468-0017.00215/knobe-2003--hub-7f3a91c2/package/knobe-2003/study.json'));
+  assert.ok(tree.tree.every((t) => t.path.startsWith('community/paper_')));
+  assert.ok(tree.tree.every((t) => t.path.includes('/proposals/')));
+  assert.ok(!tree.tree.some((t) => t.path.endsWith('/current.json')));
+  assert.ok(tree.tree.some((t) => t.path.endsWith('/package/knobe-2003/study.json')));
   const meta = committedJson(Fake, 'CONTRIBUTION.json');
   assert.deepEqual(meta.contributor.hub, { id: userId, signature: lib.signHub(userId) });
   assert.equal(meta.contributor.github, undefined);
@@ -195,14 +199,15 @@ test('without a connected GitHub account the bot opens the PR with a signed Hub 
   assert.equal(commit.owner, 'HumanStudy-Hub');
   assert.deepEqual([commit.author.name, commit.author.email], ['Ada Lovelace', `${userId}@users.humanstudy-hub.com`]);
   assert.match(commit.message, /Co-authored-by: Ada Lovelace/);
-  assert.deepEqual(call(Fake, 'git.createRef')[0].ref, 'refs/heads/community/knobe-2003--hub-7f3a91c2');
+  assert.equal(call(Fake, 'git.createRef')[0].ref, `refs/heads/community/${r.id}`);
+  assert.equal(call(Fake, 'git.updateRef').length, 0, 'immutable proposals are never force-pushed');
   const pr = call(Fake, 'pulls.create')[0];
-  assert.equal(pr.head, 'HumanStudy-Hub:community/knobe-2003--hub-7f3a91c2');
+  assert.equal(pr.head, `HumanStudy-Hub:community/${r.id}`);
   assert.equal(pr.title, 'Community: Intentional action and side effects (2003) — Ada Lovelace');
   assert.match(pr.body, /Ada Lovelace/);
   assert.match(pr.body, /HumanStudy Hub/);
   assert.equal(inserted.length, 1);
-  assert.deepEqual([inserted[0].owner_id, inserted[0].status, inserted[0].pr_number, inserted[0].folder], [userId, 'pr_open', 42, 'knobe-2003--hub-7f3a91c2']);
+  assert.deepEqual([inserted[0].owner_id, inserted[0].status, inserted[0].pr_number, inserted[0].folder], [userId, 'pr_open', 42, r.id]);
 });
 
 test('with a connected GitHub account the PR comes from the user\'s fork', async () => {
@@ -215,21 +220,24 @@ test('with a connected GitHub account the PR comes from the user\'s fork', async
   const meta = committedJson(Fake, 'CONTRIBUTION.json');
   assert.equal(meta.contributor.github, 'Ada');
   assert.equal(meta.contributor.hub, undefined);
-  assert.ok(call(Fake, 'git.createTree')[0].tree.some((t) => t.path.includes('knobe-2003--gh-ada/')));
+  assert.ok(call(Fake, 'git.createTree')[0].tree.every((t) => t.path.includes(`/proposals/${r.id}/`)));
   assert.equal(call(Fake, 'git.createCommit')[0].author, undefined);
   const pr = call(Fake, 'pulls.create')[0];
   assert.equal(pr.owner, 'HumanStudy-Hub');
-  assert.equal(pr.head, 'Ada:community/knobe-2003--gh-ada');
+  assert.equal(pr.head, `Ada:community/${r.id}`);
 });
 
-test('paper.json is only added when the base branch lacks it, and updates get a new version', async () => {
-  const { Fake, publish } = setup({ existingDir: ['paper.json', 'knobe-2003--hub-7f3a91c2'] });
-  const r = await publish({ userId, zip: zipOf(), body: body() });
-  assert.equal(r.ok, true, JSON.stringify(r));
-  const paths = call(Fake, 'git.createTree')[0].tree.map((t) => t.path);
-  assert.ok(!paths.some((p) => p.endsWith('/paper.json')));
-  assert.ok(paths.some((p) => p.includes('/knobe-2003--hub-7f3a91c2-v2/')));
-  assert.equal(committedJson(Fake, 'CONTRIBUTION.json').supersedes, 'knobe-2003--hub-7f3a91c2');
+test('new submissions retain their real baseline and do not create competing public versions', async () => {
+  const { Fake, publish } = setup();
+  const first = await publish({ userId, zip: zipOf(), body: body({baseRevision:'a'.repeat(64)}) });
+  assert.equal(first.ok,true,JSON.stringify(first));
+  assert.equal(committedJson(Fake,'CONTRIBUTION.json').baseRevision,'a'.repeat(64));
+  const second = await publish({ userId, zip: zipOf(), body: body() });
+  assert.equal(second.ok,true);assert.notEqual(first.id,second.id);
+  const paths=call(Fake,'git.createTree').flatMap(t=>t.tree.map(f=>f.path));
+  assert.ok(paths.every(p=>p.includes('/proposals/')));
+  assert.ok(!paths.some(p=>p.endsWith('/current.json')||p.endsWith('/paper.json')));
+  assert.equal((await publish({userId,zip:zipOf(),body:body({baseRevision:'main'})})).error,'bad_baseline');
 });
 
 test('publish refuses bad input, big zips, PDFs and the sixth publish in an hour', async () => {
