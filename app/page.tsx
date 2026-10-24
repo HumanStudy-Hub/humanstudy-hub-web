@@ -27,7 +27,7 @@ export default function Home() {
 
           <dl className="mt-6 grid max-w-3xl gap-x-6 gap-y-3 border-t border-gray-300/70 pt-5 sm:grid-cols-3">
             {[
-              ["Forum", "Discuss human studies, share questions, and connect with other researchers. Opening soon."],
+              ["Forum", "Discuss human studies, share questions, and connect with other researchers."],
               ["Explore studies", "Browse the human studies already turned into reusable data you can download."],
               ["Desktop app", "Rebuild a published study from its paper and check every item against the PDF."],
             ].map(([term, detail]) => (
