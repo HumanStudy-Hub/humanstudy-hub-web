@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { isStudioEditorRoute } from "@/lib/studio/editor-route";
 
 const links = [
+  { name: "Forum", href: "/forum" },
   { name: "Datasets", href: "/dataset" },
   { name: "Desktop app", href: "/download" },
   { name: "Playground", href: "/playground" },
