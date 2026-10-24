@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { accountPath } from "@/lib/studio/auth-policy";
 import { StudioApiError, studioApi } from "./client";
 import s from "./reset-password.module.css";
 
 type Mode = "request" | "verify" | "password" | "done";
 type Recovery = { ready: true; email: string };
 
-export default function ResetPassword({ tokenHash, invalid, changeMode = false }: { tokenHash?: string; invalid: boolean; changeMode?: boolean }) {
+export default function ResetPassword({ tokenHash, invalid, changeMode = false, returnTo }: { tokenHash?: string; invalid: boolean; changeMode?: boolean; returnTo?: string }) {
   const [mode, setMode] = useState<Mode>(tokenHash && !invalid ? "verify" : "request");
   const [email, setEmail] = useState("");
   const [verifiedEmail, setVerifiedEmail] = useState("");
@@ -27,7 +28,7 @@ export default function ResetPassword({ tokenHash, invalid, changeMode = false }
     const fragmentToken = fragment.get("access_token");
     const fragmentType = fragment.get("type");
     const fragmentError = fragment.has("error") || fragment.has("error_code");
-    window.history.replaceState(null, "", changeMode ? "/auth/reset?mode=change" : "/auth/reset");
+    window.history.replaceState(null, "", accountPath(returnTo, changeMode ? "/auth/reset?mode=change" : "/auth/reset"));
     if (changeMode) return;
     if (invalid) return;
     if (fragmentError) {
@@ -54,7 +55,7 @@ export default function ResetPassword({ tokenHash, invalid, changeMode = false }
         if (result.ready && result.email) { setVerifiedEmail(result.email); setMode("password"); }
       }).catch(() => { /* The request form remains available when recovery expired. */ });
     }
-  }, [changeMode, invalid, tokenHash]);
+  }, [changeMode, invalid, tokenHash, returnTo]);
 
   useEffect(() => {
     if (!cooldown) return;
@@ -67,7 +68,7 @@ export default function ResetPassword({ tokenHash, invalid, changeMode = false }
     if (busy || cooldown) return;
     setBusy(true); setError(""); setMessage("");
     try {
-      await studioApi<{ sent: true }>("/api/studio/auth", { method: "POST", body: JSON.stringify({ action: "forgot-password", email: email.trim() }) });
+      await studioApi<{ sent: true }>("/api/studio/auth", { method: "POST", body: JSON.stringify({ action: "forgot-password", email: email.trim(), returnTo }) });
       setMessage("If an account matches that address, a reset link is on its way. Check your inbox and spam folder.");
       setCooldown(60);
     } catch (cause) {
@@ -120,7 +121,7 @@ export default function ResetPassword({ tokenHash, invalid, changeMode = false }
       {mode === "done" ? <>
         <h1>Password updated.</h1>
         <p>{changeMode ? "Your password has been changed." : "Your password has been changed. Desktop users: return to the app and sign in with your new password."}</p>
-        <Link className={s.button} href="/build/projects">{changeMode ? "Back to workspace" : "Sign in"}</Link>
+        <Link className={s.button} href={returnTo ? accountPath(returnTo) : "/build/projects"}>{changeMode ? "Back to workspace" : "Sign in"}</Link>
       </> : changeMode ? <>
         <h1>Change your password.</h1>
         <p>Enter your current password to verify your account, then choose a new password.</p>
@@ -157,7 +158,7 @@ export default function ResetPassword({ tokenHash, invalid, changeMode = false }
       </>}
       {error && <p className={s.error} role="alert">{error}</p>}
       {message && <p className={s.message} role="status">{message}</p>}
-      {mode !== "done" && <Link className={s.back} href="/build/projects">Back to sign in</Link>}
+      {mode !== "done" && <Link className={s.back} href={returnTo ? accountPath(returnTo) : "/build/projects"}>Back to sign in</Link>}
     </section>
   </main>;
 }

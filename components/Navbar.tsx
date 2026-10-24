@@ -10,6 +10,7 @@ const links = [
   { name: "Desktop app", href: "/download" },
   { name: "Benchmark", href: "/results" },
   { name: "Partnerships", href: "/collaboration" },
+  { name: "Account", href: "/account" },
 ];
 
 export default function Navbar() {

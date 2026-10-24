@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
-import { clearStudioSession, establishStudioSession, requireStudioUser, studioConfirmationUrl } from "@/lib/studio/auth";
+import { migrateStudioSession, clearStudioSession, establishStudioSession, requireStudioUser, studioConfirmationUrl } from "@/lib/studio/auth";
 import { assertSameOrigin, readJsonBody, routeError, studioConfig, studioFetch, upstreamJson, StudioError } from "@/lib/studio/http";
 import type { StudioUser } from "@/lib/studio/types";
 
@@ -20,6 +19,7 @@ export async function GET() {
     studioConfig();
     try {
       const { user } = await requireStudioUser();
+      await migrateStudioSession();
       return NextResponse.json({ user, configured: true }, { headers: { "Cache-Control": "no-store" } });
     } catch (error) {
       if (error instanceof StudioError && error.status === 401) {
@@ -41,10 +41,15 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const body = await readJsonBody(request, 8_192);
     if (!body || typeof body !== "object") throw new StudioError(400, "invalid_request");
-    const { action, email, password, tokenHash, type } = body as Record<string, unknown>;
+    const { action, email, password, tokenHash, type, returnTo } = body as Record<string, unknown>;
     if (action === "signout") {
-      const currentToken = (await cookies()).get("studio_access")?.value;
-      if (currentToken) await studioFetch("/auth/v1/logout", { method: "POST", token: currentToken }).catch(() => undefined);
+      let currentToken: string | undefined;
+      try { currentToken = (await requireStudioUser()).accessToken; }
+      catch (error) { if (!(error instanceof StudioError && error.status === 401)) throw error; }
+      if (currentToken) {
+        const result = await studioFetch("/auth/v1/logout", { method: "POST", token: currentToken });
+        if (!result.ok && result.status !== 401 && result.status !== 403) throw new StudioError(502, "service_unavailable");
+      }
       await clearStudioSession();
       return NextResponse.json({ user: null });
     }
@@ -61,7 +66,7 @@ export async function POST(request: Request) {
     if (typeof email !== "string" || email.trim().length > 254 || !/^\S+@\S+\.\S+$/.test(email.trim())) throw new StudioError(400, "invalid_credentials");
     if (action === "resend" || action === "forgot-password") {
       const reset = action === "forgot-password";
-      const response = await studioFetch(`/auth/v1/${reset ? 'recover' : 'resend'}?redirect_to=${encodeURIComponent(studioConfirmationUrl(request, reset ? 'reset' : 'confirm'))}`, { method: "POST", body: { email: email.trim(), ...(!reset ? { type: "signup" } : {}) } });
+      const response = await studioFetch(`/auth/v1/${reset ? 'recover' : 'resend'}?redirect_to=${encodeURIComponent(studioConfirmationUrl(request, reset ? 'reset' : 'confirm', returnTo))}`, { method: "POST", body: { email: email.trim(), ...(!reset ? { type: "signup" } : {}) } });
       // Do not disclose whether an address has an account.
       if (!response.ok) {
         const detail = await response.clone().json().catch(() => ({}));
@@ -72,7 +77,7 @@ export async function POST(request: Request) {
     if (typeof password !== "string" || password.length < 8 || password.length > 128) {
       throw new StudioError(400, "invalid_credentials");
     }
-    const response = await studioFetch(action === "signup" ? `/auth/v1/signup?redirect_to=${encodeURIComponent(studioConfirmationUrl(request))}` : "/auth/v1/token?grant_type=password", {
+    const response = await studioFetch(action === "signup" ? `/auth/v1/signup?redirect_to=${encodeURIComponent(studioConfirmationUrl(request, "confirm", returnTo))}` : "/auth/v1/token?grant_type=password", {
       method: "POST", body: { email: email.trim(), password },
     });
     await checkAuthResponse(response);

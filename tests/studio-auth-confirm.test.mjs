@@ -12,7 +12,7 @@ function load(file, dependencies) {
   const source = fs.readFileSync(path.join(root, file), "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   const loadedModule = { exports: {} };
-  new Function("require", "module", "exports", compiled)(name => dependencies[name] || require(name), loadedModule, loadedModule.exports);
+  new Function("require", "module", "exports", compiled)(name => dependencies[name] || (name === "@/lib/studio/auth-policy" ? load("lib/studio/auth-policy.ts", {}) : require(name)), loadedModule, loadedModule.exports);
   return loadedModule.exports;
 }
 
