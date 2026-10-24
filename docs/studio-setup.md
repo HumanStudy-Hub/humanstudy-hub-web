@@ -109,6 +109,12 @@ and [template changes](https://supabase.com/changelog/46599-changes-to-email-tem
 Keep email confirmation enabled; do not grant participants project admin access
 to bypass delivery restrictions.
 
+**Current (2026-10-24):** the only domain is `humanstudy-hub.com`. Do not use `clawder.ai`
+for anything. Supabase Auth sends as `HumanStudy Hub <no-reply@humanstudy-hub.com>` through
+Resend SMTP. `hs-bench.clawder.ai` and `www.hs-bench.clawder.ai` only 308-redirect to
+`https://humanstudy-hub.com` (path kept) so that old links still work. The notes below about
+`clawder.ai` are history.
+
 Configure the provider's SMTP host, port, username, password and verified sender
 directly in Supabase; disable auth-link tracking at the email provider. SMTP secrets
 do not belong in the frontend or repository. Development return URLs are saved
