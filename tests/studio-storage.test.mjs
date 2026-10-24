@@ -32,10 +32,10 @@ const jarValues = new Map();
 const cookieWrites = [];
 const jar = {
   get: key => jarValues.has(key) ? { value: jarValues.get(key) } : undefined,
-  set: (key, value, options) => { jarValues.set(key, value); cookieWrites.push({ key, value, options }); },
+  set: (key, value, options) => { if (options.maxAge === 0) jarValues.delete(key); else jarValues.set(key, value); cookieWrites.push({ key, value, options }); },
   delete: key => { jarValues.delete(key); },
 };
-const auth = load("lib/studio/auth.ts", { "next/headers": { cookies: async () => jar }, "./http": http });
+const auth = load("lib/studio/auth.ts", { "next/headers": { cookies: async () => jar }, "./http": http, "./auth-policy": load("lib/studio/auth-policy.ts") });
 
 async function withService(run) {
   const prior = {
