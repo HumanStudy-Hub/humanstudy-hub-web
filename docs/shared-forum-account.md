@@ -26,6 +26,24 @@ Shared cookie authorization calls Supabase `/auth/v1/user` and the additive auth
 
 ## Email callbacks
 
-Sign-up, resend and password-reset requests accept an allowlisted `returnTo` and include it in the existing `/auth/confirm` or `/auth/reset` redirect. Email templates must preserve the redirect URL, including its query. Configure Supabase redirect allowlist for those central callback paths, including query parameters. Custom token-hash confirmation remains click-to-confirm; implicit default callback fragments are scrubbed and the user signs in normally. Password recovery authority remains isolated in the existing short-lived recovery cookie. Password reset does not automatically sign a user in. Without `returnTo`, existing desktop/web recovery and confirmation behavior is unchanged.
+Sign-up, resend and password-reset requests accept an allowlisted `returnTo` and include it in the existing `/auth/confirm` or `/auth/reset` redirect. Email templates must preserve the redirect URL, including its query, as an encoded nested callback using the canonical templates below. Do not append `?token_hash=...` directly to `{{ .RedirectTo }}`: the redirect may already contain `?returnTo=...`. Configure Supabase redirect allowlist for those central callback paths, including query parameters. Custom token-hash confirmation remains click-to-confirm; implicit default callback fragments are scrubbed and the user signs in normally. Password recovery authority remains isolated in the existing short-lived recovery cookie. Password reset does not automatically sign a user in. Without `returnTo`, existing desktop/web recovery and confirmation behavior is unchanged.
 
 No access or refresh token is passed between Hub and forum in a URL. Account and callback pages are omitted from website analytics.
+
+### Canonical Supabase email links
+
+Confirm signup (HTML href):
+
+```html
+<a href="https://humanstudy-hub.com/auth/confirm?token_hash={{ .TokenHash }}&amp;type=email&amp;callback={{ .RedirectTo | urlquery }}">Confirm email</a>
+```
+
+Reset password (HTML href):
+
+```html
+<a href="https://humanstudy-hub.com/auth/reset?token_hash={{ .TokenHash }}&amp;type=recovery&amp;callback={{ .RedirectTo | urlquery }}">Reset password</a>
+```
+
+The fixed outer URL guarantees that `token_hash` and `type` are actual callback-page parameters. Supabase's Go template `urlquery` encodes the whole RedirectTo URL; the application parses the outer query once, then accepts a nested callback only at the exact `https://humanstudy-hub.com/auth/confirm` or `/auth/reset` path matching the current page. Only its one allowlisted `returnTo` value is retained. Nested credentials, fragments, extra query keys, cross-flow paths, arbitrary hosts and oversized values are discarded. No nested access/refresh tokens are forwarded. Existing bare confirmation and recovery links without `callback` remain supported. Explicit allowlisted `returnTo` on old links also remains supported.
+
+Roll out callback-page support before replacing production email templates. These templates are shared with existing desktop accounts; retain each template's matching email/recovery type.
