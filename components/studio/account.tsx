@@ -58,7 +58,7 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
     {loading ? <p role="status">Loading your account…</p> : user ? <>
       <h1>{logout ? 'Sign out?' : 'Your account'}</h1>
       <p>{user.email}</p><p>One account for HumanStudy Hub, the desktop app, and the forum.</p>
-      {!logout && <><Link className={s.button} href={accountPath(returnTo, '/auth/reset?mode=change')}>Change password</Link><Link className={s.back} href="https://forum.humanstudy-hub.com/">Forum</Link><Link className={s.back} href="/build/projects">Your projects</Link></>}
+      {!logout && <nav className={s.actions} aria-label="Account links"><Link className={s.button} href={accountPath(returnTo, '/auth/reset?mode=change')}>Change password</Link><Link className={s.back} href="https://forum.humanstudy-hub.com/">Forum</Link><Link className={s.back} href="/build/projects">Your projects</Link></nav>}
       <button className={s.button} disabled={busy} onClick={() => void signout()}>{busy ? 'Signing out…' : 'Sign out'}</button>
       {logout && <Link className={s.back} href={returnTo || '/'}>Cancel</Link>}
     </> : <>
