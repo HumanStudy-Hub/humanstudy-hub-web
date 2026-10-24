@@ -20,16 +20,16 @@ export default function Home() {
             Turn published human studies into reusable datasets and runnable experiments for AI agents.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
-            <Link href="/forum" className="bg-cyan-800 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-700">Forum</Link>
+            <Link href="/forum" className="bg-cyan-800 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-700">Join the forum</Link>
+            <Link href="/dataset" className="border border-gray-400 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:border-cyan-700 hover:text-cyan-800">Explore studies</Link>
             <Link href="/download" className="border border-gray-400 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:border-cyan-700 hover:text-cyan-800">Get the desktop app</Link>
-            <Link href="/playground" className="border border-gray-400 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:border-cyan-700 hover:text-cyan-800">Playground</Link>
           </div>
 
           <dl className="mt-6 grid max-w-3xl gap-x-6 gap-y-3 border-t border-gray-300/70 pt-5 sm:grid-cols-3">
             {[
-              ["Forum", "Discuss ideas, ask questions, and share what you learn about people and society."],
+              ["Forum", "Discuss human studies, share questions, and connect with other researchers."],
+              ["Explore studies", "Browse the human studies already turned into reusable data you can download."],
               ["Desktop app", "Rebuild a published study from its paper and check every item against the PDF."],
-              ["Playground", "Run a model through one of those studies and see how it compares to real people."],
             ].map(([term, detail]) => (
               <div key={term}>
                 <dt className="text-xs font-bold uppercase text-cyan-800">{term}</dt>

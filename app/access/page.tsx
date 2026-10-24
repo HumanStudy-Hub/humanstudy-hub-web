@@ -52,9 +52,9 @@ function AccessForm() {
         Enter your promo code
       </h1>
       <p className="mt-3 text-sm leading-6 text-gray-600">
-        Building studies and running the playground are available to subscribed
-        researchers. Enter your promo code to continue. Browsing the datasets and
-        agent evaluations stays open.
+        Building studies is available to subscribed
+        researchers. Enter your promo code to continue. Browsing the study library and
+        benchmark stays open.
       </p>
 
       <form onSubmit={submit} className="mt-8">
@@ -91,7 +91,7 @@ function AccessForm() {
         </Link>{" "}
         or{" "}
         <Link href="/results" className="font-semibold text-cyan-700 hover:underline">
-          view agent evaluations
+          view benchmark
         </Link>
         .
       </p>
