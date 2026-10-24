@@ -5,10 +5,10 @@ import { usePathname } from "next/navigation";
 import { isStudioEditorRoute } from "@/lib/studio/editor-route";
 
 const links = [
-  { name: "Datasets", href: "/dataset" },
+  { name: "Forum", href: "/forum" },
+  { name: "Study Library", href: "/dataset" },
   { name: "Desktop app", href: "/download" },
-  { name: "Playground", href: "/playground" },
-  { name: "Agent Evaluations", href: "/results" },
+  { name: "Benchmark", href: "/results" },
   { name: "Partnerships", href: "/collaboration" },
 ];
 
@@ -27,7 +27,7 @@ export default function Navbar() {
             const external = link.href.startsWith("http");
             const active = !external && (pathname === link.href || pathname.startsWith(`${link.href}/`));
             const className = `whitespace-nowrap px-3 py-2 text-xs font-semibold transition-colors ${
-              active ? "bg-cyan-50 text-cyan-800" : "text-gray-500 hover:text-gray-950"
+              active ? "bg-cyan-50 text-cyan-800" : link.href === "/forum" ? "text-cyan-800 hover:bg-cyan-50" : "text-gray-500 hover:text-gray-950"
             }`;
             return external ? (
               <a key={link.name} href={link.href} target="_blank" rel="noopener noreferrer" className={className}>{link.name}</a>
