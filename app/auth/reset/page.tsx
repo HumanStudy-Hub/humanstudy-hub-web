@@ -1,4 +1,4 @@
-import { accountReturnTo } from "@/lib/studio/auth-policy";
+import { emailCallbackReturnTo } from "@/lib/studio/auth-policy";
 import type { Metadata } from "next";
 import ResetPassword from "@/components/studio/reset-password";
 
@@ -16,5 +16,5 @@ export default async function ResetPasswordPage({ searchParams }: {
   const changeMode = params.mode === "change";
   const tokenHash = typeof params.token_hash === "string" && /^[a-f0-9]{40,128}$/i.test(params.token_hash) ? params.token_hash : undefined;
   const invalid = Boolean(params.token_hash && !tokenHash) || Boolean(tokenHash && params.type !== "recovery") || Boolean(params.error || params.error_code);
-  return <ResetPassword tokenHash={invalid ? undefined : tokenHash} invalid={invalid} changeMode={changeMode} returnTo={accountReturnTo(params.returnTo)} />;
+  return <ResetPassword tokenHash={invalid ? undefined : tokenHash} invalid={invalid} changeMode={changeMode} returnTo={emailCallbackReturnTo(params, "reset")} />;
 }
