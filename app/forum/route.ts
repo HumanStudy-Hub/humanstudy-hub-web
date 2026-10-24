@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
 
 export function GET() {
-  return NextResponse.redirect("https://humanstudy-forum.vercel.app", 307);
+  return NextResponse.redirect("https://forum.humanstudy-hub.com", 307);
 }
