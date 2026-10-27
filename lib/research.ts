@@ -109,6 +109,19 @@ export async function searchResearch(input: ResearchQuery) {
     nextOffset: offset + limit < result.total ? offset + limit : null };
 }
 
+/** Papers we have extracted: a community Human Program or a benchmark study package. */
+export const isExtracted = (p: Pick<ResearchPaper, "currentRevision" | "legacyStudyId">) => Boolean(p.currentRevision || p.legacyStudyId);
+
+/** Library listing split into extracted papers and indexed papers not yet extracted. */
+export async function searchLibrary(input: ResearchQuery, pool: "extracted" | "pending") {
+  const index = await getResearchIndex();
+  const papers = index.papers.filter(p => isExtracted(p) === (pool === "extracted"));
+  const other = index.papers.length - papers.length;
+  const { offset = 0, limit = 30 } = input;
+  const result = searchSnapshot({ ...index, papers }, input);
+  return { ...result, other, offset, limit, nextOffset: offset + limit < result.total ? offset + limit : null };
+}
+
 export async function getResearchPaper(identity: string): Promise<ResearchPaper | null> {
   const result = await searchResearch({ query: identity, limit: 100 });
   const matches = result.items.filter((paper: ResearchPaper) => paper.id === identity || paper.aliases.includes(identity));
