@@ -4,6 +4,9 @@ import { getStudies, type StudyEntry } from "@/lib/studies";
 import { getResearchPaper } from "@/lib/research";
 import ResearchPaperDetail from "@/components/ResearchPaperDetail";
 
+// Paper pages read the live research catalog (no-store), so they cannot be prerendered on demand.
+export const dynamic = "force-dynamic";
+
 export async function generateStaticParams() {
   return (await getStudies()).map((study) => ({ studyId: study.study_id }));
 }
