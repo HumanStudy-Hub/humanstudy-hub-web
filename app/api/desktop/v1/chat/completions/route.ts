@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import { bearer, DESKTOP_MODELS, verifyDesktopKey } from "@/lib/desktop-access";
+import { chatCompletions } from "@/lib/llm-upstream";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const MAX_BODY = 4_000_000;
 
-/** OpenAI-compatible chat completions for HumanStudy Desktop, forwarded to OpenRouter with the
- * server's key. Streaming responses are passed through unchanged. */
+/** OpenAI-compatible chat completions for HumanStudy Desktop, forwarded with the server's keys
+ * (Claude models to Anthropic first, see lib/llm-upstream.ts). Streaming responses are passed
+ * through unchanged. */
 export async function POST(request: Request) {
   const userId = verifyDesktopKey(bearer(request));
   if (!userId) return NextResponse.json({ error: { message: "Invalid or expired desktop key", type: "invalid_api_key" } }, { status: 401 });
@@ -20,14 +22,8 @@ export async function POST(request: Request) {
   if (typeof body.model !== "string" || !DESKTOP_MODELS.includes(body.model)) {
     return NextResponse.json({ error: { message: `Model not available. Use one of: ${DESKTOP_MODELS.join(", ")}`, type: "invalid_request_error" } }, { status: 400 });
   }
-  const upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}`, "HTTP-Referer": "https://humanstudy-hub.com", "X-Title": "HumanStudy Desktop" },
-    // `user` lets OpenRouter attribute usage per account without exposing an email.
-    body: JSON.stringify({ ...body, user: `hsd:${userId}` }),
-    signal: request.signal,
-  });
-  console.log(JSON.stringify({ event: "desktop_llm", user: userId, model: body.model, stream: Boolean(body.stream), status: upstream.status }));
+  const { response: upstream, via, fallback } = await chatCompletions(body, userId, request.signal);
+  console.log(JSON.stringify({ event: "desktop_llm", user: userId, model: body.model, stream: Boolean(body.stream), status: upstream.status, via, ...(fallback ? { fallback } : {}) }));
   return new Response(upstream.body, {
     status: upstream.status,
     headers: { "Content-Type": upstream.headers.get("content-type") || "application/json", "Cache-Control": "no-store" },
