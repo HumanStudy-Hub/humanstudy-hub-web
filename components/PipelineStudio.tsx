@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type InputHTMLAttributes } from "react";
 import Link from "next/link";
 import { upload } from "@vercel/blob/client";
 import JSZip from "jszip";
+import { pipelineRepairStatus } from "@/lib/pipeline-repair-status";
 
 const MAX_PAPER_BYTES = 50 * 1024 * 1024;
 const MAX_MATERIALS_BYTES = 100 * 1024 * 1024;
@@ -1071,6 +1072,8 @@ export default function PipelineStudio() {
     );
   }
 
+  const repairStatus = pipelineRepairStatus(job);
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-[#f7f9fa]">
       <header className="border-b border-gray-200 bg-white px-5 py-4">
@@ -1120,8 +1123,7 @@ export default function PipelineStudio() {
             <p className="text-xs font-semibold uppercase text-cyan-700">Agent study builder</p>
             <h1 className="mt-2 font-serif text-2xl font-bold">{job.message.replace("Claude Code", "Our agent")}</h1>
             <p className="mt-2 text-sm text-gray-500">Progress and review decisions are saved under job {job.id}.</p>
-            {job.repaired && job.repair?.accepted && <p className="mt-2 text-sm text-gray-600">Repaired automatically after the first pass failed validation{typeof job.repair.rounds === "number" ? ` — ${job.repair.rounds} ${job.repair.rounds === 1 ? "round" : "rounds"}` : ""}; nothing marked missing was filled.</p>}
-            {job.repair?.attempted && !job.repair.inProgress && !job.repair.accepted && <p className="mt-2 text-sm text-red-800">Automatic repair did not succeed{job.error ? `: ${job.error}` : "."}</p>}
+            {repairStatus && <p className={`mt-2 text-sm ${repairStatus.failed ? "text-red-800" : "text-gray-600"}`}>{repairStatus.message}</p>}
           </div>
 
           {(job.status === "running" || job.status === "queued") && (
