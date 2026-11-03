@@ -4,6 +4,7 @@ import type { StudioContext } from './auth';
 import type { StudioDocument, StudioMessage, StudioMessageRef, StudioPipeline, StudioWorkspace, SourceSelection } from './types';
 import type { ModelAnchor } from '@/app/build-preview/model-review';
 import { StudioError } from './http';
+import { githubFailureMessage, logGitHubFailure } from '@/lib/github-errors';
 import { saveWorkspaceResearch, type ResearchPlan } from '../research-data/server-capture';
 import { decisionEvents, dispatchEvents, dispatchFailedEvents, finishEvents, packageFileEvents, serverActionId, serverEventId, submitEvents, systemActionEvent } from '../research-data/server-producer';
 import { adaptPipelinePackage, groundStudioModelEvidence } from './pipeline-adapter';
@@ -39,14 +40,17 @@ function choosePaper(ctx:StudioContext,w:StudioWorkspace,sourceId?:string){
  if(!validStoredSource(source,ctx.user.id,w.id))throw new StudioError(403,'invalid_source');
  return source;
 }
-function failureMessage(error:unknown){
+// StudioErrors carry their own researcher-facing text. Anything else is logged with
+// its GitHub status, endpoint and request id, and shown as one plain sentence.
+function failureMessage(error:unknown,context:string){
  if(error instanceof StudioError)return ({
   resources_too_large:'Attached resources exceed the 20 MB combined build limit.',
   resource_unavailable:'An attached resource could not be read. Re-upload it and retry.',
   resource_upload_failed:'The resource bundle could not be saved. Retry when storage is available.',
   invalid_source:'An attached file has invalid metadata. Re-upload it.',
  } as Record<string,string>)[error.code];
- return undefined;
+ logGitHubFailure(context,error);
+ return githubFailureMessage(error);
 }
 // Research producers (T08). Causality: the browser's primary action (or a server action when the
 // browser sent none) -> turn -> dispatch tool call -> result. researchActionId persists the link.
@@ -103,7 +107,7 @@ export async function startPipeline(ctx:StudioContext,w:StudioWorkspace,input:St
  }catch(error){
   // A dispatch followed by a CAS conflict can still be recovered by polling.
   if(error instanceof StudioError&&error.code==='revision_conflict')throw error;
-  const message=failureMessage(error)||'Could not start the original agent. Check GitHub workflow access, then send again.';
+  const message=failureMessage(error,`Studio start ${jobId}`)||'Could not start the study-building agent. Please send your message again.';
   current=await save(ctx,current,{...current.document,[lane]:{...state,status:'failed',message,updatedAt:new Date().toISOString()}},
    (_revision,p)=>[{producer:'pipeline.dispatch_failed',key:`tool:${jobId}:dispatch-failed`,events:dispatchFailedEvents(p,{jobId,conversationId:input.conversationId,actionId:researchActionId,requestId:input.requestId,startedAt:now,error:message,input:dispatchInput})}]);
  }
@@ -139,7 +143,7 @@ export async function startPackageSync(ctx:StudioContext,w:StudioWorkspace,propo
    (_revision,p)=>[{producer:'pipeline.dispatch',key:`tool:${jobId}:dispatch`,events:[...systemAction,...dispatchEvents(p,{jobId,conversationId,actionId:researchActionId,causedBy:researchActionId,mode:'sync',input:{...dispatchInput as object,proposal_id:proposalId}})]}]);
  }catch(error){
   if(error instanceof StudioError&&error.code==='revision_conflict')throw error;
-  const message=failureMessage(error)||'Package sync could not start. Retry from the package status.';
+  const message=failureMessage(error,`Studio package sync ${jobId}`)||'Package sync could not start. Retry from the package status.';
   current=await save(ctx,current,{...current.document,pipeline:{...state,status:'failed',message,updatedAt:new Date().toISOString()}},
    (_revision,p)=>[{producer:'pipeline.dispatch_failed',key:`tool:${jobId}:dispatch-failed`,events:[...systemAction,...dispatchFailedEvents(p,{jobId,conversationId,actionId:researchActionId,error:message,input:dispatchInput})]}]);
  }
@@ -293,6 +297,9 @@ export async function retryPipeline(ctx:StudioContext,w:StudioWorkspace,lane:'pi
    return save(ctx,w,{...w.document,[lane]:{...state,status:'failed',message:'No remote job was created. Send again to restart.',updatedAt:new Date().toISOString()}},
     (_r,p)=>[{producer:'pipeline.missing_job',key:`tool:${state.jobId}:missing`,events:finishEvents(p,{jobId:state.jobId,conversationId:state.conversationId,actionId:state.researchActionId??null,attempt:'missing',status:'interrupted',output:{status:'not_found'},startedAt:state.updatedAt,...(state.kind==='sync'?{}:{turn:{requestId:state.requestId,startedAt:turnStart(w.document,state)}}),error:'No remote job was created.'})}]);
   }
+  if(error instanceof StudioError)throw error;
+  const failure=logGitHubFailure(`Studio retry ${state.jobId}`,error);
+  if(failure.kind!=='other')throw new StudioError(failure.kind==='access'?503:502,`github_${failure.kind}`);
   throw error;
  }
 }
