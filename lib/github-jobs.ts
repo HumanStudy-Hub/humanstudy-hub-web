@@ -32,6 +32,8 @@ export type PipelineJob = {
   status: JobStatus;
   message: string;
   error?: string;
+  repaired?: boolean;
+  repair?: { attempted?: boolean; accepted?: boolean; inProgress?: boolean; outcome?: string; rounds?: number };
   packageReady?: boolean;
   source?: "build" | "import";
   progress?: PipelineProgress;
