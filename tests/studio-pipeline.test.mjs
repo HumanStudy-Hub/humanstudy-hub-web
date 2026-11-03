@@ -16,7 +16,7 @@ function load(file, dependencies = {}) {
   const source = fs.readFileSync(path.join(root, file), "utf8");
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const loadedModule = { exports: {} };
-  new Function("require", "module", "exports", compiled)(id => dependencies[id] ?? ((id === "./human-program" || id === "@/lib/studio/human-program") ? load("lib/studio/human-program.ts") : id === "./human-program.schema.json" ? JSON.parse(fs.readFileSync(path.join(root,"lib/studio/human-program.schema.json"),"utf8")) : requireLocal(id)), loadedModule, loadedModule.exports);
+  new Function("require", "module", "exports", compiled)(id => dependencies[id] ?? (id === "@/lib/github-errors" ? load("lib/github-errors.ts") : (id === "./human-program" || id === "@/lib/studio/human-program") ? load("lib/studio/human-program.ts") : id === "./human-program.schema.json" ? JSON.parse(fs.readFileSync(path.join(root,"lib/studio/human-program.schema.json"),"utf8")) : requireLocal(id)), loadedModule, loadedModule.exports);
   return loadedModule.exports;
 }
 class StudioError extends Error { constructor(status, code) { super(code); this.status = status; this.code = code; } }
@@ -332,6 +332,44 @@ test("dispatch failure is saved as retryable failure without applying a model", 
   assert.equal(h.workspace.document.pipeline.status, "failed");
   assert.equal(h.workspace.document.model.title, "Draft");
   assert.equal(h.calls.filter(call => call[0] === "dispatch").length, 1);
+  assert.equal(h.workspace.document.pipeline.message, "Could not start the study-building agent. Please send your message again.");
+});
+
+function githubError(status, url) {
+  return Object.assign(new Error("Bad credentials token github_pat_SECRET"), { status, request: { method: "POST", url: `https://api.github.com${url}`, headers: { authorization: "token github_pat_SECRET" } }, response: { headers: { "x-github-request-id": "REQ:1" } } });
+}
+
+test("GitHub access and outage failures reach the researcher as plain sentences, with details only in the log", async () => {
+  const logged = [], original = console.error;
+  console.error = (...args) => logged.push(JSON.stringify(args));
+  try {
+    for (const [status, expected] of [[401, /GitHub service access needs attention/], [500, /^GitHub didn't respond\. Please try again in a minute\.$/]]) {
+      const h = harness(); h.dispatchError = githubError(status, "/repos/o/r/actions/workflows/w.yml/dispatches");
+      const response = await h.chat.POST(request("chat", input()), routeContext);
+      assert.equal(response.status, 202);
+      const state = h.workspace.document.pipeline;
+      assert.equal(state.status, "failed");
+      assert.match(state.message, expected);
+      assert.ok(!JSON.stringify(h.workspace.document).includes("github_pat_SECRET"));
+      assert.ok(!JSON.stringify(h.workspace.document).includes("api.github.com"));
+    }
+  } finally { console.error = original; }
+  const log = logged.join("\n");
+  assert.ok(log.includes("REQ:1") && log.includes("/repos/o/r/actions/workflows/w.yml/dispatches") && log.includes("401"));
+  assert.ok(!log.includes("github_pat_SECRET"));
+});
+
+test("a manual retry that GitHub rejects returns a GitHub code, not an internal error", async () => {
+  const initial = document();
+  initial.pipeline = { jobId, requestId: ids.request, conversationId: ids.conversation, sourceId: ids.source, status: "failed", message: "Failed", updatedAt: now };
+  const h = harness(initial);
+  h.github.readOwnedStudioJob = async () => { throw githubError(401, "/repos/o/jobs/contents/jobs/x/job.json"); };
+  const original = console.error; console.error = () => {};
+  try {
+    const response = await h.sync.POST(request("pipeline", { revision: 1, action: "retry" }), routeContext);
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { error: "github_access" });
+  } finally { console.error = original; }
 });
 
 test("completed sync verifies ownership, creates one proposal, and preserves edited model", async () => {

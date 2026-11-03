@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Octokit } from "@octokit/rest";
 import { blobUpload, safePathname, signedBlobUrl } from "@/lib/blob-paper";
+import { dispatchWithConfirmedRetry, runMayBelongTo, tokenExpiryWarning } from "@/lib/github-errors";
 
 export type JobStatus = "queued" | "running" | "review" | "complete" | "failed";
 export type PipelineProgress = {
@@ -45,9 +46,22 @@ export type PipelineJob = {
 const jobsRepo = process.env.GITHUB_JOBS_REPO || "HumanStudy-Hub/humanstudy-hub-jobs";
 const pipelineRepo = process.env.GITHUB_PIPELINE_REPO || "HumanStudy-Hub/HumanStudy-Bench";
 
+// Logged at most once an hour per token, so an expiring token is visible in the
+// Vercel logs well before the first 401 reaches a researcher.
+const expiryWarnedAt = new Map<string, number>();
+function watchTokenExpiry(api: Octokit, label: string) {
+  api.hook.after("request", (response) => {
+    const warning = tokenExpiryWarning(label, response.headers["github-authentication-token-expiration"]);
+    if (!warning || Date.now() - (expiryWarnedAt.get(label) || 0) < 3_600_000) return;
+    expiryWarnedAt.set(label, Date.now());
+    console.warn(warning);
+  });
+  return api;
+}
+
 function octokit() {
   if (!process.env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN is not configured.");
-  return new Octokit({ auth: process.env.GITHUB_TOKEN });
+  return watchTokenExpiry(new Octokit({ auth: process.env.GITHUB_TOKEN }), "GITHUB_TOKEN");
 }
 
 // The deployment token (GITHUB_TOKEN) may not be allowed to read the private
@@ -56,7 +70,7 @@ function octokit() {
 function jobsOctokit() {
   const token = process.env.GITHUB_JOBS_TOKEN || process.env.GITHUB_TOKEN;
   if (!token) throw new Error("GITHUB_JOBS_TOKEN (or GITHUB_TOKEN) is not configured.");
-  return new Octokit({ auth: token });
+  return watchTokenExpiry(new Octokit({ auth: token }), process.env.GITHUB_JOBS_TOKEN ? "GITHUB_JOBS_TOKEN" : "GITHUB_TOKEN");
 }
 
 function splitRepo(repo: string) {
@@ -617,8 +631,23 @@ export async function createStudioPipelineJob(input:{id:string;identity:StudioJo
   await api.git.createRef({...target,ref:`refs/heads/jobs/${job.id}`,sha:commit.data.sha});
   return job;
 }
+// A 5xx from the dispatch is retried once, only after GitHub shows no run queued
+// since this dispatch (see dispatchWithConfirmedRetry). The runs list cannot say
+// which job a run is for, so any run of this workflow created since the first
+// attempt counts as possibly ours (newest 30 runs, filtered by created_at here).
+// job.json is not consulted: the runner only marks it running after a minute of
+// setup, far outside the confirmation window.
 export async function dispatchStudioPipelineJob(job:StudioPipelineJob) {
-  await octokit().actions.createWorkflowDispatch({...splitRepo(pipelineRepo),workflow_id:workflowFile,ref:job.pipelineRef,inputs:{job_id:job.id,jobs_repo:jobsRepo}});
+  const api=octokit(), target=splitRepo(pipelineRepo);
+  const after=Date.now()-10_000; // tolerates clock skew between Vercel and GitHub
+  return dispatchWithConfirmedRetry({
+    context:`workflow dispatch for ${job.id}`,
+    dispatch:async()=>{await api.actions.createWorkflowDispatch({...target,workflow_id:workflowFile,ref:job.pipelineRef,inputs:{job_id:job.id,jobs_repo:jobsRepo}});},
+    alreadyQueued:async()=>{
+      const runs=await api.actions.listWorkflowRuns({...target,workflow_id:workflowFile,event:'workflow_dispatch',per_page:30});
+      return runs.data.workflow_runs.some(run=>runMayBelongTo(job.id,run,after));
+    },
+  });
 }
 
 export async function retryStudioPipelineJob(id:string,identity:Pick<StudioJobIdentity,'ownerId'|'workspaceId'>,paperUrl:string,openMaterialsUrl?:string) {

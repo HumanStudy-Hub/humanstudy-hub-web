@@ -14,7 +14,7 @@ process.env.SUPABASE_PUBLISHABLE_KEY = "publishable-test-key";
 function load(file, deps = {}) {
   const js = ts.transpileModule(fs.readFileSync(path.join(root, file), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
   const m = { exports: {} };
-  new Function("require", "module", "exports", js)(id => deps[id] ?? ((id === "./human-program" || id === "@/lib/studio/human-program") ? load("lib/studio/human-program.ts") : id === "./human-program.schema.json" ? JSON.parse(fs.readFileSync(path.join(root, "lib/studio/human-program.schema.json"), "utf8")) : requireLocal(id)), m, m.exports);
+  new Function("require", "module", "exports", js)(id => deps[id] ?? (id === "@/lib/github-errors" ? load("lib/github-errors.ts") : (id === "./human-program" || id === "@/lib/studio/human-program") ? load("lib/studio/human-program.ts") : id === "./human-program.schema.json" ? JSON.parse(fs.readFileSync(path.join(root, "lib/studio/human-program.schema.json"), "utf8")) : requireLocal(id)), m, m.exports);
   return m.exports;
 }
 const sha = b => createHash("sha256").update(b).digest("hex");

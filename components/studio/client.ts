@@ -25,6 +25,10 @@ const messages:Record<string,string>={
  resource_unavailable:'An attached resource could not be read from private storage. Re-upload it, then try again.',
  resource_upload_failed:'The resource bundle could not be saved for the build. Please retry.',
  invalid_source:'This source has invalid metadata or is unavailable. Re-upload it before building.',
+ github_access:"The website can't start builds right now because its GitHub service access needs attention from the site team. Please try again later.",
+ github_rate_limited:'GitHub is limiting requests right now. Please try again in a few minutes.',
+ // A failed restart leaves the remote job queued, and a restart is accepted again after five minutes.
+ github_unavailable:"GitHub didn't respond. Please try again in a few minutes.",
  pipeline_not_found:'Could not retrieve this study build. Check GitHub access or send the request again after a failed launch.',
  package_preview_too_large:'This package is too large for the visual preview. Export the original package instead.',
  setup_required:'The workspace service is not configured yet.',
