@@ -113,3 +113,13 @@ test('legacy import retains source references and page regions without undefined
  assert.equal(e.quote,'Original');assert.deepEqual(JSON.parse(e.locator.region),m.entities[0].evidence.rects);
  assert.equal(p.extensions.scopeUnresolved,true);
 });
+test('programs written by the desktop build skill validate: evidence note and source venue/doi/version',()=>{
+ // desktop #65 added evidence.note ("rendered page checked") and the desktop contract already carries source.venue/doi/version;
+ // the web copy of the contract rejected both with "unknown field".
+ const p=sample('study_012');
+ p.source={...p.source,venue:'Games and Economic Behavior',doi:'10.1006/game.1995.1027',version:'published'};
+ p.evidence=[{id:'ev-note',path:'paper.pdf',locator:{page:3},quote:'r = 0.42',verification:'verified',note:'rendered page checked'}];
+ assert.equal(program.validateHumanProgram(p).evidence[0].note,'rendered page checked');
+ assert.equal(program.validateHumanProgram(p).source.doi,'10.1006/game.1995.1027');
+ assert.deepEqual(validation.validateStudyModel(p).program.evidence,p.evidence);
+});
