@@ -7,9 +7,9 @@ const ts = require('typescript');
 function load(file, dependencies = {}) {
   const source = fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const module = { exports: {} };
-  new Function('require', 'module', 'exports', compiled)(name => dependencies[name] || require(name), module, module.exports);
-  return module.exports;
+  const loadedModule = { exports: {} };
+  new Function('require', 'module', 'exports', compiled)(name => dependencies[name] || require(name), loadedModule, loadedModule.exports);
+  return loadedModule.exports;
 }
 function environment(values, fn) {
   const previous = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));

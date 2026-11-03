@@ -33,6 +33,8 @@ type Job = {
   status: JobStatus;
   message: string;
   error?: string;
+  repaired?: boolean;
+  repair?: { attempted?: boolean; accepted?: boolean; inProgress?: boolean; outcome?: string; rounds?: number };
   packageReady?: boolean;
   progress?: PipelineProgress;
   source?: "build" | "import";
@@ -1118,6 +1120,8 @@ export default function PipelineStudio() {
             <p className="text-xs font-semibold uppercase text-cyan-700">Agent study builder</p>
             <h1 className="mt-2 font-serif text-2xl font-bold">{job.message.replace("Claude Code", "Our agent")}</h1>
             <p className="mt-2 text-sm text-gray-500">Progress and review decisions are saved under job {job.id}.</p>
+            {job.repaired && job.repair?.accepted && <p className="mt-2 text-sm text-gray-600">Repaired automatically after the first pass failed validation{typeof job.repair.rounds === "number" ? ` — ${job.repair.rounds} ${job.repair.rounds === 1 ? "round" : "rounds"}` : ""}; nothing marked missing was filled.</p>}
+            {job.repair?.attempted && !job.repair.inProgress && !job.repair.accepted && <p className="mt-2 text-sm text-red-800">Automatic repair did not succeed{job.error ? `: ${job.error}` : "."}</p>}
           </div>
 
           {(job.status === "running" || job.status === "queued") && (
