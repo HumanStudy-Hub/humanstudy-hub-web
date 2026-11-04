@@ -48,7 +48,7 @@ const routeContext = { params: Promise.resolve({ id: ids.workspace }) };
 function harness(initial = document()) {
   let workspace = { id: ids.workspace, title: "Study", revision: 1, document: initial, created_at: now, updated_at: now };
   let configured = true, signing = `/object/sign/studio-sources/${source().path}?token=secret`, materialsSigning = null, dispatchError = null;
-  let casConflict = false, reads = 0, lists = 0;
+  let casConflict = false, reads = 0, lists = 0, studioReply = null;
   const calls = [];
   const job = { id: jobId, status: "queued", message: "Waiting", updatedAt: now, progress: 0, packageReady: false };
   let turn = { requestId: ids.request, reply: "The paper does not report a sample size." };
@@ -59,6 +59,7 @@ function harness(initial = document()) {
     async readOwnedStudioJob(id, identity) { reads++; calls.push(["read", id, identity]); return { ...job, id, packageReady:job.status==='review'?true:job.packageReady }; },
     async readOwnedStudioTurn(id, identity) { calls.push(["turn", id, identity]); return turn; },
     async listPackageFiles(id, identity) { lists++; calls.push(["list", id, identity]); return [{ path: "paper/study.json", content: Buffer.from(JSON.stringify({ title: "Pipeline study", participant_flow: "Read then answer" })) }, { path: "paper/studio-reply.md", content: Buffer.from("Generated package is ready.") }]; },
+    async readStudioReply(id, identity) { calls.push(["reply", id, identity]); return studioReply; },
     async approveStage(id, decision, identity) { calls.push(["approve", id, decision, identity]); return job; },
     async retryStudioPipelineJob(id, identity, paperUrl, materialsUrl) { calls.push(["retry", id, identity, paperUrl, materialsUrl]); return { ...job, id, status: "queued", message: "Waiting for retry", updatedAt: new Date().toISOString() }; },
   };
@@ -97,7 +98,7 @@ function harness(initial = document()) {
   const sync = load("app/api/studio/workspaces/[id]/pipeline/route.ts", deps);
   const proposals = load("app/api/studio/workspaces/[id]/proposals/route.ts", deps);
   const workspaceRoute = load("app/api/studio/workspaces/[id]/route.ts", deps);
-  return { chat, sync, proposals, workspaceRoute, pipeline, github, job, calls, get workspace() { return workspace; }, set workspace(value) { workspace = value; }, get turn() {return turn;},set turn(value){turn=value;}, get reads() { return reads; }, get lists() { return lists; }, set configured(value) { configured = value; }, set signing(value) { signing = value; }, set materialsSigning(value) { materialsSigning = value; }, set dispatchError(value) { dispatchError = value; }, set casConflict(value) { casConflict = value; } };
+  return { chat, sync, proposals, workspaceRoute, pipeline, github, job, calls, get workspace() { return workspace; }, set workspace(value) { workspace = value; }, get turn() {return turn;},set turn(value){turn=value;}, get reads() { return reads; }, get lists() { return lists; }, set configured(value) { configured = value; }, set signing(value) { signing = value; }, set materialsSigning(value) { materialsSigning = value; }, set dispatchError(value) { dispatchError = value; }, set casConflict(value) { casConflict = value; }, set studioReply(value) { studioReply = value; } };
 }
 
 // Most tests exercise the agent machinery itself; the web policy that limits it is tested below.
@@ -599,4 +600,87 @@ test('initial extraction uses the original agent and opens a pending first-build
  const proposal=h.workspace.document.conversations[0].messages.at(-1).proposal;
  const applied=await h.proposals.POST(request('proposals',{revision:h.workspace.revision,proposalId:proposal.id,decision:'apply'}),routeContext);
  assert.equal(applied.status,200);assert.equal(h.workspace.document.model.title,'Pipeline study');assert.equal(flow.workspaceBuildStage(h.workspace.document),'editor');
+});
+
+const stoppedNote = "The study build ended without a finished package. Ready to run: nothing yet. Needs you: the 24 headlines from the supplement.";
+const replyText = "Ready to run: nothing yet.\nNeeds you: the 24 headlines from the supplement.\nRun size: 1,000 participants.";
+function stopBuild(h, { message = stoppedNote, note = { text: stoppedNote, runId: "1001" }, requestId = ids.request } = {}) {
+  Object.assign(h.job, { status: "failed", message, researcherMessage: note, studio: { requestId }, updatedAt: new Date().toISOString() });
+}
+
+test("a build that stopped to ask for materials puts the agent's reply in the conversation once", async () => {
+  const h = harness();
+  await h.chat.POST(request("chat", input()), routeContext);
+  stopBuild(h); h.studioReply = replyText;
+  const synced = await h.sync.POST(request("pipeline", { revision: h.workspace.revision }), routeContext);
+  assert.equal(synced.status, 200);
+  const { pipeline, conversations } = h.workspace.document;
+  assert.equal(pipeline.status, "failed");
+  assert.equal(pipeline.message, stoppedNote);
+  const messages = conversations[0].messages;
+  assert.equal(messages.length, 2);
+  assert.equal(messages[1].role, "agent");
+  assert.equal(messages[1].text, replyText);
+  assert.equal(pipeline.resultMessageId, messages[1].id);
+  assert.deepEqual(h.calls.find(call => call[0] === "reply").slice(1), [jobId, { ownerId: ids.owner, workspaceId: ids.workspace }]);
+  await h.sync.POST(request("pipeline", { revision: h.workspace.revision }), routeContext);
+  assert.equal(h.workspace.document.conversations[0].messages.length, 2);
+  assert.equal(h.calls.filter(call => call[0] === "reply").length, 1);
+});
+
+test("a reply left by an earlier run, another request, or a generic failure is never shown", async () => {
+  for (const variant of [
+    { message: "The study build failed or was cancelled" }, // this run failed before the agent replied
+    { note: null },
+    { note: { text: stoppedNote } }, // no run id
+    { requestId: ids.next }, // job written for another request
+  ]) {
+    const h = harness();
+    await h.chat.POST(request("chat", input()), routeContext);
+    stopBuild(h, variant); h.studioReply = replyText;
+    await h.sync.POST(request("pipeline", { revision: h.workspace.revision }), routeContext);
+    assert.equal(h.workspace.document.pipeline.status, "failed");
+    assert.equal(h.workspace.document.conversations[0].messages.length, 1, JSON.stringify(variant));
+    assert.equal(h.workspace.document.pipeline.resultMessageId, undefined);
+    assert.equal(h.calls.filter(call => call[0] === "reply").length, 0);
+  }
+});
+
+test("a retry drops the earlier run's reply, and a later failure without one does not revive it", async () => {
+  const h = harness();
+  await h.chat.POST(request("chat", input()), routeContext);
+  stopBuild(h); h.studioReply = replyText;
+  await h.sync.POST(request("pipeline", { revision: h.workspace.revision }), routeContext);
+  assert.ok(h.workspace.document.pipeline.resultMessageId);
+  const retried = await h.sync.POST(request("pipeline", { revision: h.workspace.revision, action: "retry" }), routeContext);
+  assert.equal(retried.status, 200);
+  assert.equal(h.workspace.document.pipeline.status, "queued");
+  assert.equal(h.workspace.document.pipeline.resultMessageId, undefined);
+  stopBuild(h, { message: "The study build failed or was cancelled" });
+  await h.sync.POST(request("pipeline", { revision: h.workspace.revision }), routeContext);
+  assert.equal(h.workspace.document.pipeline.status, "failed");
+  assert.equal(h.workspace.document.pipeline.resultMessageId, undefined);
+  assert.equal(h.workspace.document.conversations[0].messages.length, 2);
+});
+
+test("an unreadable reply leaves the failure message in place", async () => {
+  const h = harness();
+  await h.chat.POST(request("chat", input()), routeContext);
+  stopBuild(h); h.github.readStudioReply = async () => { throw new Error("GitHub unavailable"); };
+  const synced = await h.sync.POST(request("pipeline", { revision: h.workspace.revision }), routeContext);
+  assert.equal(synced.status, 200);
+  assert.equal(h.workspace.document.pipeline.status, "failed");
+  assert.equal(h.workspace.document.pipeline.message, stoppedNote);
+  assert.equal(h.workspace.document.conversations[0].messages.length, 1);
+});
+
+test("the runner's message is compared the way the runner wrote it", () => {
+  const { stoppedReplyIsCurrent } = harness().pipeline;
+  const long = "Needs you: " + "\u{1F4C4}".repeat(1200);
+  const written = Array.from(long).slice(0, 1000).join("");
+  const job = { status: "failed", message: written, researcherMessage: { text: `  ${long}\n`, runId: "7" }, studio: { requestId: "r" } };
+  assert.equal(stoppedReplyIsCurrent(job, "r"), true);
+  assert.equal(stoppedReplyIsCurrent({ ...job, status: "running" }, "r"), false);
+  assert.equal(stoppedReplyIsCurrent(job, "other"), false);
+  assert.equal(stoppedReplyIsCurrent({ ...job, message: long.slice(0, 1000) }, "r"), false);
 });

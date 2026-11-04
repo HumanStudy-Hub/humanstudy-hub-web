@@ -35,6 +35,9 @@ export type PipelineJob = {
   error?: string;
   repaired?: boolean;
   repair?: { attempted?: boolean; accepted?: boolean; inProgress?: boolean; outcome?: string; rounds?: number };
+  // Written by the runner when the agent stopped with a reply instead of a package
+  // (e.g. a materials request). runId is the Actions run that wrote it.
+  researcherMessage?: { text?: unknown; runId?: unknown } | null;
   packageReady?: boolean;
   source?: "build" | "import";
   progress?: PipelineProgress;
@@ -597,6 +600,23 @@ export async function readOwnedStudioTurn(id:string, identity:Pick<StudioJobIden
   const bytes=await getFile(branch,jobPath(id,'studio-turn.json'));
   if(bytes.length>1_000_000)throw new Error('Discussion turn exceeds the size limit.');
   return JSON.parse(bytes.toString('utf8')) as unknown;
+}
+// The agent's researcher reply (package/<paper>/studio-reply.md) on a Studio job
+// branch, or null when there is none. Reads one file, not the whole package, so a
+// failed build costs one tree listing and one blob. Whether the reply belongs to
+// the run that failed is decided by the caller (see stoppedReplyIsCurrent).
+export async function readStudioReply(id:string, identity:Pick<StudioJobIdentity,'ownerId'|'workspaceId'>):Promise<string|null> {
+  await readOwnedStudioJob(id,identity);
+  const api=jobsOctokit(), target=splitRepo(jobsRepo), root=jobPath(id,'package');
+  let tree;
+  try{tree=await api.git.getTree({...target,tree_sha:`jobs/${safe(id)}`,recursive:'1'});}catch{return null;}
+  // The runner's package root is the package's only folder.
+  const folders=new Set(tree.data.tree.filter(item=>item.type==='tree'&&item.path?.startsWith(`${root}/`)&&!item.path.slice(root.length+1).includes('/')).map(item=>item.path));
+  const reply=tree.data.tree.find(item=>item.type==='blob'&&folders.size===1&&item.path===`${[...folders][0]}/studio-reply.md`);
+  if(!reply?.sha||(reply.size||0)>200_000)return null;
+  const blob=await api.git.getBlob({...target,file_sha:reply.sha});
+  const text=Buffer.from(blob.data.content,'base64').toString('utf8').trim();
+  return text?text.slice(0,12000):null;
 }
 export async function createStudioPipelineJob(input:{id:string;identity:StudioJobIdentity;paperName:string;paperUrl:string;openMaterialsUrl?:string;openMaterialsPathname?:string;openMaterialsSourceIds?:string[];request:unknown;previousJobId?:string}) {
   if (!studioPipelineConfigured()) throw new Error('Studio pipeline GitHub token and branch are required.');
