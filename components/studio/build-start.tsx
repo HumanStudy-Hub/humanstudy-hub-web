@@ -16,12 +16,14 @@ const labels = {
 
 export default function BuildStart({ id, document, stage, resources, primaryPaper, onPaper, onBuild, onRetry, onCheck, onNavigate, busy, message, error, job }: {
   id: string; document: StudioDocument; stage: 'intake' | 'processing'; resources: ReactNode;
-  primaryPaper?: StudioSource; onPaper: (id: string) => void; onBuild: (instructions: string) => void;
+  primaryPaper?: StudioSource; onPaper: (id: string) => void; onBuild: (instructions: string) => Promise<boolean> | void;
   onRetry: () => void; onCheck: () => void; onNavigate: (href:string) => void; busy: boolean; message?: string; error?: string;
   job?: { status: string; message: string; progress?: PipelineProgress } | null;
 }) {
   const [instructions, setInstructions] = useState('');
   const [stalledJob,setStalledJob] = useState<string>();
+  // The text is cleared only once the build request was accepted, so a rejected start keeps it.
+  async function send() { if (await onBuild(instructions) !== false) setInstructions(''); }
   const jobId=document.pipeline?.jobId, updatedAt=document.pipeline?.updatedAt;
   useEffect(()=>{if(!jobId||!updatedAt)return;const timer=setTimeout(()=>setStalledJob(jobId),Math.max(0,Date.parse(updatedAt)+300000-Date.now()));return()=>clearTimeout(timer);},[jobId,updatedAt]);
   const progress = job?.progress;
@@ -43,7 +45,7 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
         <div data-event="build.resources">{resources}</div>
         {papers.length > 1 && <label>Primary paper<select value={primaryPaper?.id || ''} onChange={event => onPaper(event.target.value)}>{papers.map(paper => <option key={paper.id} value={paper.id}>{paper.name}</option>)}</select></label>}
         <label>Anything the agent should know?<textarea maxLength={12000} value={instructions} onChange={event => setInstructions(event.target.value)} placeholder="Optional research question or instructions" /></label>
-        <button type="button" className={s.primary} data-event="build.start" disabled={busy || !primaryPaper} onClick={() => { onBuild(instructions); setInstructions(''); }}>{busy ? 'Preparing…' : 'Build study'}</button>
+        <button type="button" className={s.primary} data-event="build.start" disabled={busy || !primaryPaper} onClick={() => void send()}>{busy ? 'Preparing…' : 'Build study'}</button>
       </section> : <div className={s.processing}>
         <ol aria-label="Build workflow"><li className={!checking && !failed ? s.current : ''}>Read sources</li><li className={!checking && !failed ? s.current : ''}>Build Human Program</li><li className={checking && !failed ? s.current : ''}>Check package</li><li>Review together</li></ol>
         <section>
@@ -61,7 +63,7 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
             <div data-event="build.resources">{resources}</div>
             {papers.length > 1 && <label>Primary paper<select value={primaryPaper?.id || ''} onChange={event => onPaper(event.target.value)}>{papers.map(paper => <option key={paper.id} value={paper.id}>{paper.name}</option>)}</select></label>}
             <label>Anything the agent should know?<textarea maxLength={12000} value={instructions} onChange={event => setInstructions(event.target.value)} placeholder="Optional answer or instructions" /></label>
-            <button type="button" className={s.primary} data-event="build.start" disabled={busy || !primaryPaper} onClick={() => { onBuild(instructions); setInstructions(''); }}>{busy ? 'Preparing…' : 'Build study'}</button>
+            <button type="button" className={s.primary} data-event="build.start" disabled={busy || !primaryPaper} onClick={() => void send()}>{busy ? 'Preparing…' : 'Build study'}</button>
           </div> : (failed || stalled) && <button type="button" className={s.primary} disabled={busy} data-event="build.retry" onClick={onRetry}>Restart build</button>}
           {error && !failed && <button type="button" disabled={busy} data-event="build.check" onClick={onCheck}>Try loading the result</button>}
           {!failed && <p className={s.hint}>Human Program will open when the result is ready. You can leave and return to this study.</p>}

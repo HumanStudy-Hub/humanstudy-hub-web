@@ -48,7 +48,8 @@ test('a build the agent stopped to ask for materials offers uploads and a new bu
   const twoPapers = { ...d, sources: [{ ...d.sources[0], mimeType: 'application/pdf' }, { id: 'supp', name: 'supplement.pdf', mimeType: 'application/pdf' }], pipeline: { jobId: 'job', status: 'failed', message: 'x', resultMessageId: 'reply' } };
   const both = renderToStaticMarkup(React.createElement(View, { ...common, document: twoPapers }));
   assert.match(both, /Primary paper/); assert.match(both, /supplement\.pdf/);
-  assert.match(asked, /aria-live="polite"[^]*data-studio-agent-reply[^]*<\/div><div[^>]*><div data-event="build.resources"/, 'uploads sit outside the live region');
+  const live = asked.slice(asked.indexOf('aria-live'), asked.indexOf('</div></div>', asked.indexOf('data-studio-agent-reply')));
+  assert.match(live, /data-studio-agent-reply/); assert.doesNotMatch(live, /build\.resources|textarea/, 'uploads sit outside the live region');
   // A reply id left on a build that is running again is not shown.
   const running = renderToStaticMarkup(React.createElement(View, { ...common, document: { ...d, pipeline: { jobId: 'job', status: 'running', message: 'Working', resultMessageId: 'reply' } } }));
   assert.doesNotMatch(running, /data-studio-agent-reply|Upload materials/);
