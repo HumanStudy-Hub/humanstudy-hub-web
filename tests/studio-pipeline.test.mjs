@@ -672,6 +672,7 @@ test("an unreadable reply leaves the failure message in place", async () => {
   assert.equal(h.workspace.document.pipeline.status, "failed");
   assert.equal(h.workspace.document.pipeline.message, stoppedNote);
   assert.equal(h.workspace.document.conversations[0].messages.length, 1);
+  assert.equal(h.workspace.document.pipeline.resultMessageId, undefined);
 });
 
 test("the runner's message is compared the way the runner wrote it", () => {

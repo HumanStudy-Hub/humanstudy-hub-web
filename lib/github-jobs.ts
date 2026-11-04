@@ -610,6 +610,7 @@ export async function readStudioReply(id:string, identity:Pick<StudioJobIdentity
   const api=jobsOctokit(), target=splitRepo(jobsRepo), root=jobPath(id,'package');
   let tree;
   try{tree=await api.git.getTree({...target,tree_sha:`jobs/${safe(id)}`,recursive:'1'});}catch{return null;}
+  if(tree.data.truncated)return null;
   // The runner's package root is the package's only folder.
   const folders=new Set(tree.data.tree.filter(item=>item.type==='tree'&&item.path?.startsWith(`${root}/`)&&!item.path.slice(root.length+1).includes('/')).map(item=>item.path));
   const reply=tree.data.tree.find(item=>item.type==='blob'&&folders.size===1&&item.path===`${[...folders][0]}/studio-reply.md`);
@@ -677,6 +678,8 @@ export async function retryStudioPipelineJob(id:string,identity:Pick<StudioJobId
   // Same branch and concurrency group: retry cannot fork a second live build.
   if(job.openMaterialsPathname&&!openMaterialsUrl)throw new Error('The uploaded resources need a fresh signed URL.');
   job.paperUrl=paperUrl;job.openMaterialsUrl=openMaterialsUrl;job.status='queued';job.packageReady=false;job.error=undefined;
+  // A GitHub re-run keeps its run id, so an earlier run's stopped reply must not survive into this one.
+  job.researcherMessage=undefined;
   job.message='Waiting for the study-building agent';job.updatedAt=new Date().toISOString();
   await saveJob(job,`studio: retry ${id}`);
   await dispatchStudioPipelineJob(job);

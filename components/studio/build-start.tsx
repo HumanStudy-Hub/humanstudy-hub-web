@@ -48,7 +48,7 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
         <ol aria-label="Build workflow"><li className={!checking && !failed ? s.current : ''}>Read sources</li><li className={!checking && !failed ? s.current : ''}>Build Human Program</li><li className={checking && !failed ? s.current : ''}>Check package</li><li>Review together</li></ol>
         <section aria-live="polite" aria-busy={!failed}>
           <h2>{failed ? 'Build interrupted' : progress ? labels[progress.phase] : status === 'queued' ? 'Waiting for the study agent' : 'Preparing your study'}</h2>
-          <p>{message || job?.message || document.pipeline?.message}</p>
+          <p>{message || (reply ? 'The agent needs something from you before it can finish the study.' : job?.message || document.pipeline?.message)}</p>
           {reply && <div className={s.reply} data-studio-agent-reply>{reply}</div>}
           {!failed && <div className={s.activity} aria-hidden="true" />}
           {progress && <p>{progress.completedRequired} / {progress.totalRequired} required files</p>}
