@@ -43,13 +43,15 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
         <div data-event="build.resources">{resources}</div>
         {papers.length > 1 && <label>Primary paper<select value={primaryPaper?.id || ''} onChange={event => onPaper(event.target.value)}>{papers.map(paper => <option key={paper.id} value={paper.id}>{paper.name}</option>)}</select></label>}
         <label>Anything the agent should know?<textarea maxLength={12000} value={instructions} onChange={event => setInstructions(event.target.value)} placeholder="Optional research question or instructions" /></label>
-        <button type="button" className={s.primary} data-event="build.start" disabled={busy || !primaryPaper} onClick={() => onBuild(instructions)}>{busy ? 'Preparing…' : 'Build study'}</button>
+        <button type="button" className={s.primary} data-event="build.start" disabled={busy || !primaryPaper} onClick={() => { onBuild(instructions); setInstructions(''); }}>{busy ? 'Preparing…' : 'Build study'}</button>
       </section> : <div className={s.processing}>
         <ol aria-label="Build workflow"><li className={!checking && !failed ? s.current : ''}>Read sources</li><li className={!checking && !failed ? s.current : ''}>Build Human Program</li><li className={checking && !failed ? s.current : ''}>Check package</li><li>Review together</li></ol>
-        <section aria-live="polite" aria-busy={!failed}>
+        <section>
+          <div aria-live="polite" aria-busy={!failed}>
           <h2>{failed ? 'Build interrupted' : progress ? labels[progress.phase] : status === 'queued' ? 'Waiting for the study agent' : 'Preparing your study'}</h2>
           <p>{message || (reply ? 'The agent needs something from you before it can finish the study.' : job?.message || document.pipeline?.message)}</p>
           {reply && <div className={s.reply} data-studio-agent-reply>{reply}</div>}
+          </div>
           {!failed && <div className={s.activity} aria-hidden="true" />}
           {progress && <p>{progress.completedRequired} / {progress.totalRequired} required files</p>}
           {stalled && <p>The runner has not started. Your uploaded materials are saved.</p>}
@@ -57,8 +59,9 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
               which carries the new materials and the agent's reply. Other failures restart as before. */}
           {failed && reply ? <div className={s.followup}>
             <div data-event="build.resources">{resources}</div>
+            {papers.length > 1 && <label>Primary paper<select value={primaryPaper?.id || ''} onChange={event => onPaper(event.target.value)}>{papers.map(paper => <option key={paper.id} value={paper.id}>{paper.name}</option>)}</select></label>}
             <label>Anything the agent should know?<textarea maxLength={12000} value={instructions} onChange={event => setInstructions(event.target.value)} placeholder="Optional answer or instructions" /></label>
-            <button type="button" className={s.primary} data-event="build.start" disabled={busy || !primaryPaper} onClick={() => onBuild(instructions)}>{busy ? 'Preparing…' : 'Build study'}</button>
+            <button type="button" className={s.primary} data-event="build.start" disabled={busy || !primaryPaper} onClick={() => { onBuild(instructions); setInstructions(''); }}>{busy ? 'Preparing…' : 'Build study'}</button>
           </div> : (failed || stalled) && <button type="button" className={s.primary} disabled={busy} data-event="build.retry" onClick={onRetry}>Restart build</button>}
           {error && !failed && <button type="button" disabled={busy} data-event="build.check" onClick={onCheck}>Try loading the result</button>}
           {!failed && <p className={s.hint}>Human Program will open when the result is ready. You can leave and return to this study.</p>}

@@ -44,6 +44,11 @@ test('a build the agent stopped to ask for materials offers uploads and a new bu
   assert.match(asked, /Upload materials/); assert.match(asked, /data-event="build.start"/); assert.doesNotMatch(asked, /Restart build/);
   const generic = renderToStaticMarkup(React.createElement(View, { ...common, document: { ...d, pipeline: { jobId: 'job', status: 'failed', message: 'The study build failed or was cancelled' } } }));
   assert.match(generic, /Restart build/); assert.doesNotMatch(generic, /Upload materials/); assert.doesNotMatch(generic, /data-studio-agent-reply/);
+  // A supplement uploaded as a PDF must stay visibly secondary: the follow-up shows the primary-paper choice.
+  const twoPapers = { ...d, sources: [{ ...d.sources[0], mimeType: 'application/pdf' }, { id: 'supp', name: 'supplement.pdf', mimeType: 'application/pdf' }], pipeline: { jobId: 'job', status: 'failed', message: 'x', resultMessageId: 'reply' } };
+  const both = renderToStaticMarkup(React.createElement(View, { ...common, document: twoPapers }));
+  assert.match(both, /Primary paper/); assert.match(both, /supplement\.pdf/);
+  assert.match(asked, /aria-live="polite"[^]*data-studio-agent-reply[^]*<\/div><div[^>]*><div data-event="build.resources"/, 'uploads sit outside the live region');
   // A reply id left on a build that is running again is not shown.
   const running = renderToStaticMarkup(React.createElement(View, { ...common, document: { ...d, pipeline: { jobId: 'job', status: 'running', message: 'Working', resultMessageId: 'reply' } } }));
   assert.doesNotMatch(running, /data-studio-agent-reply|Upload materials/);
