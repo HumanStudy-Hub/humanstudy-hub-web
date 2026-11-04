@@ -44,7 +44,7 @@ export default function ResearchPaperDetail({ paper }: { paper: ResearchPaper })
     ? `https://github.com/HumanStudy-Hub/HumanStudy-Bench/tree/main/${paper.assetRoot}` : null;
   return <div className="bg-white min-h-screen border-t border-gray-100">
     <div className="mx-auto max-w-4xl px-6 py-12 lg:px-8">
-      <Link href="/studies" className="text-sm text-cyan-700">← Research library</Link>
+      <Link href="/studies" className="text-sm text-cyan-700">← Study Library</Link>
       <h1 className="mt-8 text-3xl font-bold font-serif text-gray-900">{paper.title}</h1>
       <p className="mt-3 text-sm text-gray-500">{[authors.join(", "), paper.year].filter(Boolean).join(" · ")}</p>
       <p className="mt-6 whitespace-pre-wrap leading-7 text-gray-700">{paper.description}</p>

@@ -20,8 +20,8 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
   return (
     <div className="bg-white min-h-screen border-t border-gray-100">
       <div className="mx-auto max-w-5xl px-6 py-12 lg:px-8">
-        {pending && <Link href={otherPool} className="text-sm text-cyan-800">← Research library</Link>}
-        <h1 className="text-2xl font-bold font-serif text-gray-900">{pending ? "Not yet extracted" : "Research library"}</h1>
+        {pending && <Link href={otherPool} className="text-sm text-cyan-800">← Study Library</Link>}
+        <h1 className="text-2xl font-bold font-serif text-gray-900">{pending ? "Not yet extracted" : "Study Library"}</h1>
         {pending && <p className="mt-2 text-sm text-gray-600">Papers we have indexed but not yet turned into a Human Program. They have no materials or artifacts yet.</p>}
         <form action="/studies" className="my-6 flex gap-2" role="search">
           {pending && <input type="hidden" name="pool" value="pending" />}
@@ -30,7 +30,10 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
         </form>
         {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
         {result && <>
-          <p className="mb-4 text-xs text-gray-500">{result.total} {result.total === 1 ? "paper" : "papers"}</p>
+          <p className="mb-4 text-xs text-gray-500">
+            {result.total} {result.total === 1 ? "paper" : "papers"}
+            {!pending && result.other > 0 && <> · <Link href={otherPool} className="text-cyan-800">{result.other} more indexed, not yet extracted →</Link></>}
+          </p>
           <div className="grid gap-3 lg:grid-cols-2">
             {result.items.map((paper: ResearchPaper) => <Link key={paper.id} href={`/studies/${paper.id}`} className="rounded-xl border border-gray-200 p-4 hover:border-cyan-300 transition-colors">
               <p className="text-sm font-semibold text-gray-900">{paper.title}</p>
