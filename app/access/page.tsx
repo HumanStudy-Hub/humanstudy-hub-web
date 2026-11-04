@@ -87,7 +87,7 @@ function AccessForm() {
       <p className="mt-6 text-xs leading-5 text-gray-500">
         Just browsing?{" "}
         <Link href="/studies" className="font-semibold text-cyan-700 hover:underline">
-          Explore the datasets
+          Explore the Study Library
         </Link>{" "}
         or{" "}
         <Link href="/results" className="font-semibold text-cyan-700 hover:underline">

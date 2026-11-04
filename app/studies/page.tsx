@@ -46,9 +46,6 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
             {result.offset > 0 ? <Link href={link({ offset: String(Math.max(0, result.offset - result.limit)) })}>← Previous</Link> : <span />}
             {result.nextOffset !== null && <Link href={link({ offset: String(result.nextOffset) })}>Next →</Link>}
           </nav>
-          {!pending && result.other > 0 && <p className="mt-10 border-t border-gray-100 pt-6 text-sm text-gray-600">
-            <Link href={otherPool} className="text-cyan-800">{result.other} indexed papers not yet extracted →</Link>
-          </p>}
         </>}
       </div>
     </div>
