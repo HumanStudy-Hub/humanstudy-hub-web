@@ -30,6 +30,10 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
   const stalled = status === 'queued' && stalledJob === jobId;
   const papers = document.sources.filter(source => isPaper(source) && source.includeInBuild !== false);
   const checking = progress?.phase === 'validating_package' || progress?.phase === 'ready_for_review';
+  // When the agent stopped to ask for something, its reply is saved into the build's conversation.
+  const reply = document.pipeline?.status === 'failed' && document.pipeline.resultMessageId
+    ? document.conversations.flatMap(c => c.messages).find(m => m.id === document.pipeline?.resultMessageId && m.role === 'agent')?.text
+    : undefined;
   return <div className={s.start} data-studio-workspace={id}>
     <header><Link href="/" className={s.brand} onClick={event=>{event.preventDefault();onNavigate("/");}}>HumanStudy-Hub</Link><Link href="/build/projects" data-event="build.studies" onClick={event=>{event.preventDefault();onNavigate("/build/projects");}}>Your studies</Link></header>
     <main>
@@ -44,7 +48,8 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
         <ol aria-label="Build workflow"><li className={!checking && !failed ? s.current : ''}>Read sources</li><li className={!checking && !failed ? s.current : ''}>Build Human Program</li><li className={checking && !failed ? s.current : ''}>Check package</li><li>Review together</li></ol>
         <section aria-live="polite" aria-busy={!failed}>
           <h2>{failed ? 'Build interrupted' : progress ? labels[progress.phase] : status === 'queued' ? 'Waiting for the study agent' : 'Preparing your study'}</h2>
-          <p>{message || job?.message || document.pipeline?.message}</p>
+          <p>{message || (reply ? 'The agent needs something from you before it can finish the study.' : job?.message || document.pipeline?.message)}</p>
+          {reply && <div className={s.reply} data-studio-agent-reply>{reply}</div>}
           {!failed && <div className={s.activity} aria-hidden="true" />}
           {progress && <p>{progress.completedRequired} / {progress.totalRequired} required files</p>}
           {stalled && <p>The runner has not started. Your uploaded materials are saved.</p>}

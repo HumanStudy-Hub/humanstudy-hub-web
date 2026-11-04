@@ -1,5 +1,5 @@
 import { webAgentAllowed } from './web-access';
-import { approveStage, createStudioPipelineJob, dispatchStudioPipelineJob, listPackageFiles, readOwnedStudioJob, readOwnedStudioTurn, retryStudioPipelineJob, studioPipelineConfigured, type StudioPipelineJob } from '@/lib/github-jobs';
+import { approveStage, createStudioPipelineJob, dispatchStudioPipelineJob, listPackageFiles, readOwnedStudioJob, readOwnedStudioTurn, readStudioReply, retryStudioPipelineJob, studioPipelineConfigured, type StudioPipelineJob } from '@/lib/github-jobs';
 import type { StudioContext } from './auth';
 import type { StudioDocument, StudioMessage, StudioMessageRef, StudioPipeline, StudioWorkspace, SourceSelection } from './types';
 import type { ModelAnchor } from '@/app/build-preview/model-review';
@@ -14,9 +14,41 @@ import { scopeConversationsForPrompt } from './conversation-tree';
 import { isPaper, validStoredSource } from './resources';
 import { isOwnedResourceArchivePath, prepareStudioResourceArchive, signPrivateSource } from './resource-server';
 
+// A failed Studio build may still carry the agent's researcher reply (for example
+// "Needs you: the supplement with the 24 headlines"). The reply file on the job
+// branch can be left over from an earlier run of the same job (a retry reuses the
+// branch) or copied in with a refined package, so it is shown only when the
+// runner tied it to the run that failed.
+//
+// The runner records researcherMessage {text, runId} when the agent stopped with a
+// reply, and its failure step copies that text into the job message only when
+// runId is the failing run (HumanStudy-Bench run-humanstudy-pipeline.yml). Every
+// run clears researcherMessage when it starts, so a job message equal to the
+// recorded text means this run wrote both the text and the reply beside it.
+// (Kept in this module so every test harness that loads it sees the same check.)
+type StoppedJob = {
+  status?: string;
+  message?: string;
+  researcherMessage?: { text?: unknown; runId?: unknown } | null;
+  studio?: { requestId?: string };
+};
+
+// Python's str.strip()[:1000], counted in code points like the runner.
+const runnerMessage = (text: string) => Array.from(text.trim()).slice(0, 1000).join('');
+
+export function stoppedReplyIsCurrent(job: StoppedJob, requestId: string) {
+  const note = job.researcherMessage;
+  if (job.status !== 'failed' || !note || typeof note !== 'object') return false;
+  if (typeof note.text !== 'string' || !note.text.trim() || typeof note.runId !== 'string' || !note.runId) return false;
+  if (job.studio?.requestId !== requestId) return false;
+  return job.message === runnerMessage(note.text);
+}
+
 const identity = (ctx:StudioContext,w:StudioWorkspace) => ({ownerId:ctx.user.id,workspaceId:w.id});
 const active=(state?:StudioPipeline)=>state&&['preparing','queued','running'].includes(state.status);
 const publicJob=(job:StudioPipelineJob)=>({id:job.id,status:job.status,message:job.message,progress:job.progress,packageReady:job.packageReady});
+// The reply of a failed run belongs to that run only; a retry starts without it.
+const withoutResult=({resultMessageId:_dropped,...state}:StudioPipeline)=>{void _dropped;return state;};
 const jobIdFor=(w:StudioWorkspace,requestId:string)=>`studio-${w.id}-${requestId}`;
 export async function ownedPipeline(ctx:StudioContext,w:StudioWorkspace) {
  if(!w.document.pipeline)throw new StudioError(404,'pipeline_not_found');
@@ -231,7 +263,20 @@ async function syncPackage(ctx:StudioContext,w:StudioWorkspace){
    ]}];
   }
  }else if(job.status==='failed'&&state.status!=='failed'&&state.status!=='complete'){
-  research=(_r,p)=>[{producer:state.kind==='sync'?'pipeline.sync_failed':'pipeline.build_failed',key:`tool:${job.id}:${attemptOf(job)}`,events:finishEvents(p,{jobId:job.id,conversationId:state.conversationId,actionId:state.researchActionId??null,attempt:attemptOf(job),status:'error',output:{status:job.status,message:job.message},startedAt:turnStart(w.document,state)??state.updatedAt,...(state.kind==='sync'?{}:{turn:{requestId:state.requestId,startedAt:turnStart(w.document,state)}}),error:job.message||'The study-building run failed.'})}];
+  // The agent stopped and wrote to the researcher (usually a materials request):
+  // its reply joins the conversation, so the request reaches them, not only the status line.
+  let reply:StudioMessage|undefined;
+  if(stoppedReplyIsCurrent(job,state.requestId)&&document.conversations.some(c=>c.id===state.conversationId)){
+   const text=await readStudioReply(job.id,identity(ctx,w)).catch(()=>null);
+   if(text){
+    reply={id:crypto.randomUUID(),role:'agent',createdAt:new Date().toISOString(),text};
+    document={...document,conversations:document.conversations.map(c=>c.id===state.conversationId?{...c,messages:[...c.messages,reply!],updatedAt:reply!.createdAt}:c)};
+    pipeline.resultMessageId=reply.id;
+   }
+  }
+  // A retried build keeps its pipeline state, so an earlier run's reply id must not survive this failure.
+  if(!reply)delete pipeline.resultMessageId;
+  research=(_r,p)=>[{producer:state.kind==='sync'?'pipeline.sync_failed':'pipeline.build_failed',key:`tool:${job.id}:${attemptOf(job)}`,events:finishEvents(p,{jobId:job.id,conversationId:state.conversationId,actionId:state.researchActionId??null,attempt:attemptOf(job),status:'error',output:{status:job.status,message:job.message},startedAt:turnStart(w.document,state)??state.updatedAt,...(state.kind==='sync'?{}:{turn:{requestId:state.requestId,startedAt:turnStart(w.document,state)}}),...(reply?{reply:{messageId:reply.id,text:reply.text,status:'partial' as const,reason:'build_stopped'}}:{}),error:job.message||'The study-building run failed.'})}];
  }
  document={...document,pipeline};
  const changed=JSON.stringify(w.document.pipeline)!==JSON.stringify(pipeline)||JSON.stringify(w.document.acceptedPackage)!==JSON.stringify(document.acceptedPackage);
@@ -285,7 +330,7 @@ export async function retryPipeline(ctx:StudioContext,w:StudioWorkspace,lane:'pi
   if(materialsPath&&!isOwnedResourceArchivePath(materialsPath,ctx,w.id))throw new StudioError(403,'invalid_source');
   const materialsUrl=materialsPath?await signPrivateSource(ctx,materialsPath):undefined;
   const retried=await retryStudioPipelineJob(job.id,identity(ctx,w),paperUrl,materialsUrl);
-  return save(ctx,w,{...w.document,[lane]:{...state,status:'queued',message:retried.message,updatedAt:retried.updatedAt}},
+  return save(ctx,w,{...w.document,[lane]:{...withoutResult(state),status:'queued',message:retried.message,updatedAt:retried.updatedAt}},
    (_r,p)=>{
     // T10: the retry is its own operation inside the turn it restarts.
     const key=`tool:${job.id}:retry:${retried.updatedAt}`,retryAction=actionId||serverEventId(p.ownerId,`action:${key}`);
