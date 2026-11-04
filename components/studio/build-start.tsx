@@ -53,7 +53,13 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
           {!failed && <div className={s.activity} aria-hidden="true" />}
           {progress && <p>{progress.completedRequired} / {progress.totalRequired} required files</p>}
           {stalled && <p>The runner has not started. Your uploaded materials are saved.</p>}
-          {(failed || stalled) && <button type="button" className={s.primary} disabled={busy} data-event="build.retry" onClick={onRetry}>Restart build</button>}
+          {/* The agent asked for something: the researcher adds it here and builds again as a new request,
+              which carries the new materials and the agent's reply. Other failures restart as before. */}
+          {failed && reply ? <div className={s.followup}>
+            <div data-event="build.resources">{resources}</div>
+            <label>Anything the agent should know?<textarea maxLength={12000} value={instructions} onChange={event => setInstructions(event.target.value)} placeholder="Optional answer or instructions" /></label>
+            <button type="button" className={s.primary} data-event="build.start" disabled={busy || !primaryPaper} onClick={() => onBuild(instructions)}>{busy ? 'Preparing…' : 'Build study'}</button>
+          </div> : (failed || stalled) && <button type="button" className={s.primary} disabled={busy} data-event="build.retry" onClick={onRetry}>Restart build</button>}
           {error && !failed && <button type="button" disabled={busy} data-event="build.check" onClick={onCheck}>Try loading the result</button>}
           {!failed && <p className={s.hint}>Human Program will open when the result is ready. You can leave and return to this study.</p>}
           <details><summary>Materials ({document.sources.length})</summary><ul>{document.sources.map(source => <li key={source.id}>{source.name}{source.includeInBuild === false ? ' · excluded' : ''}</li>)}</ul></details>

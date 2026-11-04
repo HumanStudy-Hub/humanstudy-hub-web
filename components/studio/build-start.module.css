@@ -7,9 +7,9 @@
 .heading h1 {font-family:var(--font-serif);font-size:var(--text-3xl,1.875rem);font-weight:600;margin:8px 0 32px;}
 .intake {max-width:700px;background:white;border:1px solid #dfe6e9;padding:28px;display:flex;flex-direction:column;gap:22px;}
 .start h2 {font-size:var(--text-lg,1.125rem);font-weight:600;margin:0;}
-.intake label {display:flex;flex-direction:column;gap:9px;}
-.intake textarea,.intake select {font:inherit;color:inherit;border:1px solid #dfe6e9;border-radius:5px;padding:10px;background:white;}
-.intake textarea {min-height:90px;resize:vertical;}
+.intake label,.followup label {display:flex;flex-direction:column;gap:9px;}
+.intake textarea,.intake select,.followup textarea {font:inherit;color:inherit;border:1px solid #dfe6e9;border-radius:5px;padding:10px;background:white;}
+.intake textarea,.followup textarea {min-height:90px;resize:vertical;}
 .start button {cursor:pointer;padding:10px 16px;border:1px solid #dfe6e9;border-radius:5px;align-self:flex-start;font:inherit;}
 .start button.primary {border-color:#247c91;background:#247c91;color:white;}
 .start button:disabled {opacity:.5;cursor:default;}
@@ -21,6 +21,7 @@
 .processing section {border:1px solid #dfe6e9;background:white;padding:32px;}
 .processing p {color:#718591;line-height:1.7;margin:16px 0;}
 .processing .hint {font-size:.8125rem;}
+.followup {display:flex;flex-direction:column;gap:18px;margin-top:20px;}
 .processing .reply {white-space:pre-wrap;overflow-wrap:anywhere;color:#263d46;line-height:1.7;margin:16px 0;padding:14px 16px;border-left:2px solid #247c91;background:#f6fafb;max-height:420px;overflow:auto;}
 .processing details {margin-top:26px;color:#718591;}
 .processing summary {cursor:pointer;}
