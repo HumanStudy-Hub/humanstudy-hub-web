@@ -69,9 +69,11 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
         <label>Password<input data-private type="password" required minLength={8} maxLength={128} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={event => setPassword(event.target.value)} disabled={busy}/></label>
         <button className={s.button} disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}</button>
       </form>
-      <Link className={s.back} href={accountPath(returnTo, '/auth/reset')}>Forgot password?</Link>
-      <button className={s.back} disabled={busy} onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}>{mode === 'signin' ? 'Create account' : 'Already have an account? Sign in'}</button>
-      {pendingEmail && <button className={s.back} disabled={busy || cooldown > 0} onClick={() => void resend()}>{cooldown ? `Resend in ${cooldown}s` : 'Resend confirmation email'}</button>}
+      <nav className={s.links} aria-label="Other sign-in options">
+        <Link className={s.back} href={accountPath(returnTo, '/auth/reset')}>Forgot password?</Link>
+        <button className={s.back} disabled={busy} onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}>{mode === 'signin' ? 'Create account' : 'Already have an account? Sign in'}</button>
+        {pendingEmail && <button className={s.back} disabled={busy || cooldown > 0} onClick={() => void resend()}>{cooldown ? `Resend in ${cooldown}s` : 'Resend confirmation email'}</button>}
+      </nav>
     </>}
     {error && <p role="alert" className={s.error}>{error}</p>}{notice && <p role="status" className={s.message}>{notice}</p>}
   </section></main>;
