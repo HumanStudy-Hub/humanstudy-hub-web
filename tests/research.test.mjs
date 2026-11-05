@@ -55,3 +55,38 @@ test('public search never uses the service-role key',async()=>{
     for(const k of ['SUPABASE_URL','SUPABASE_SERVICE_ROLE_KEY','SUPABASE_PUBLISHABLE_KEY','NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY','SUPABASE_ANON_KEY']){if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k]}
   }
 });
+
+
+test('library detail resolves a newly listed paper before the database mirror catches up', async () => {
+  const {getResearchPaper, searchLibrary} = mod.exports;
+  const previous = globalThis.fetch;
+  const saved = {url:process.env.SUPABASE_URL,key:process.env.SUPABASE_PUBLISHABLE_KEY};
+  process.env.SUPABASE_URL='https://stale.supabase.co';
+  process.env.SUPABASE_PUBLISHABLE_KEY='public-test';
+  const paper={...index.papers[0],id:'paper_8a4321ea6ba1853fb61c0309',title:'GENIUS',
+    aliases:['doi:10.2378/peu2026.art12d'],legacyStudyId:'study_016'};
+  const snapshot={...index,papers:[paper]};
+  let databaseCalls=0;
+  try {
+    globalThis.fetch=async url=>{
+      if(String(url).includes('/rest/v1/')) {
+        databaseCalls++;
+        return new Response(JSON.stringify({items:[],total:0,snapshot:'b'.repeat(64)}));
+      }
+      return new Response(JSON.stringify(snapshot));
+    };
+    const listing=await searchLibrary({query:'GENIUS'},'extracted');
+    assert.equal(listing.items[0].id,paper.id);
+    assert.equal((await getResearchPaper(paper.id)).title,'GENIUS');
+    assert.equal((await getResearchPaper(paper.aliases[0])).id,paper.id);
+    assert.equal(await getResearchPaper('paper_'+'0'.repeat(24)),null);
+    assert.equal(databaseCalls,0,'listing and detail must use the same source');
+    globalThis.fetch=async()=>new Response(JSON.stringify({...snapshot,papers:[paper,
+      {...paper,id:'paper_'+'f'.repeat(24)}]}));
+    assert.equal(await getResearchPaper(paper.aliases[0]),null,'ambiguous aliases cannot select a different paper');
+  } finally {
+    globalThis.fetch=previous;
+    if(saved.url===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=saved.url;
+    if(saved.key===undefined)delete process.env.SUPABASE_PUBLISHABLE_KEY;else process.env.SUPABASE_PUBLISHABLE_KEY=saved.key;
+  }
+});

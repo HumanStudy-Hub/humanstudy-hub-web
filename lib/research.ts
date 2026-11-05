@@ -123,7 +123,9 @@ export async function searchLibrary(input: ResearchQuery, pool: "extracted" | "p
 }
 
 export async function getResearchPaper(identity: string): Promise<ResearchPaper | null> {
-  const result = await searchResearch({ query: identity, limit: 100 });
-  const matches = result.items.filter((paper: ResearchPaper) => paper.id === identity || paper.aliases.includes(identity));
+  // The library lists the live snapshot. Resolve its links from that same
+  // catalog, rather than a database mirror that may not have synced a new paper.
+  const index = await getResearchIndex();
+  const matches = index.papers.filter((paper) => paper.id === identity || paper.aliases.includes(identity));
   return matches.length === 1 ? matches[0] : null;
 }
