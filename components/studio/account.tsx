@@ -1,10 +1,12 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import type { StudioUser } from '@/lib/studio/types';
 import { accountPath } from '@/lib/studio/auth-policy';
 import { studioApi } from './client';
-import s from './reset-password.module.css';
+import ArrowRight from '@/components/ArrowRight';
+import s from './account.module.css';
 
 export default function Account({ returnTo, logout }: { returnTo?: string; logout: boolean }) {
   const [user, setUser] = useState<StudioUser | null>(null);
@@ -53,28 +55,109 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not resend email.'); }
     finally { setBusy(false); }
   }
-  return <main className={s.page}><section className={s.card}>
-    <Link href="/" className={s.brand}>HumanStudy Hub</Link>
-    {loading ? <p role="status">Loading your account…</p> : user ? <>
-      <h1>{logout ? 'Sign out?' : 'Your account'}</h1>
-      <p>{user.email}</p><p>One account for HumanStudy Hub, the desktop app, and the forum.</p>
-      {!logout && <nav className={s.actions} aria-label="Account links"><Link className={s.button} href={accountPath(returnTo, '/auth/reset?mode=change')}>Change password</Link><Link className={s.back} href="https://forum.humanstudy-hub.com/">Forum</Link><Link className={s.back} href="/build/projects">Your projects</Link></nav>}
-      <button className={s.button} disabled={busy} onClick={() => void signout()}>{busy ? 'Signing out…' : 'Sign out'}</button>
-      {logout && <Link className={s.back} href={returnTo || '/'}>Cancel</Link>}
-    </> : <>
-      <h1>{mode === 'signin' ? 'Sign in' : 'Create your account'}</h1>
-      <p>Use your HumanStudy Hub or desktop account.</p>
-      <form onSubmit={authenticate}>
-        <label>Email<input data-private type="email" required autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} disabled={busy}/></label>
-        <label>Password<input data-private type="password" required minLength={8} maxLength={128} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={event => setPassword(event.target.value)} disabled={busy}/></label>
-        <button className={s.button} disabled={busy}>{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'}</button>
-      </form>
-      <nav className={s.links} aria-label="Other sign-in options">
-        <Link className={s.back} href={accountPath(returnTo, '/auth/reset')}>Forgot password?</Link>
-        <button className={s.back} disabled={busy} onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}>{mode === 'signin' ? 'Create account' : 'Already have an account? Sign in'}</button>
-        {pendingEmail && <button className={s.back} disabled={busy || cooldown > 0} onClick={() => void resend()}>{cooldown ? `Resend in ${cooldown}s` : 'Resend confirmation email'}</button>}
-      </nav>
-    </>}
-    {error && <p role="alert" className={s.error}>{error}</p>}{notice && <p role="status" className={s.message}>{notice}</p>}
-  </section></main>;
+  return (
+    <div className={s.page}>
+      <section className={s.story} aria-labelledby="account-title">
+        <h1 id="account-title">A place for<br />your research.</h1>
+        <p>Keep sources, studies and your next question together.</p>
+        <Image
+          src="/images/folio-account.jpg"
+          alt="A sage paper folder keeps source papers, data and charts together beside a notebook and pencil."
+          width={1774}
+          height={887}
+          sizes="(max-width: 700px) 100vw, 650px"
+          className={s.illustration}
+        />
+      </section>
+
+      <section className={s.card} aria-label="Account access">
+        {loading ? (
+          <p role="status">Loading your account…</p>
+        ) : user ? (
+          <>
+            <h2>{logout ? 'Sign out?' : 'Your account'}</h2>
+            <p>{user.email}</p>
+            <p>One account for HumanStudy Hub, the desktop app, and the forum.</p>
+            {!logout && (
+              <nav className={s.accountLinks} aria-label="Account links">
+                <Link className={s.back} href={accountPath(returnTo, '/auth/reset?mode=change')}>Change password</Link>
+                <Link className={s.back} href="https://forum.humanstudy-hub.com/">Forum</Link>
+                <Link className={s.back} href="/build/projects">Your projects</Link>
+              </nav>
+            )}
+            <button className={s.button} disabled={busy} onClick={() => void signout()}>
+              {busy ? 'Signing out…' : 'Sign out'} <ArrowRight />
+            </button>
+            {logout && <Link className={s.back} href={returnTo || '/'}>Cancel</Link>}
+          </>
+        ) : (
+          <>
+            <nav className={s.tabs} aria-label="Account action">
+              <button
+                type="button"
+                aria-pressed={mode === 'signin'}
+                disabled={busy}
+                onClick={() => { setMode('signin'); setError(''); }}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                aria-pressed={mode === 'signup'}
+                disabled={busy}
+                onClick={() => { setMode('signup'); setError(''); }}
+              >
+                Create account
+              </button>
+            </nav>
+            <h2>{mode === 'signin' ? 'Welcome back.' : 'Create your account'}</h2>
+            <p>Use your HumanStudy Hub or desktop account.</p>
+            <form onSubmit={authenticate} aria-label={mode === 'signin' ? 'Sign in' : 'Create account'} aria-busy={busy}>
+              <label>
+                Email
+                <input
+                  data-private
+                  name="email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={event => setEmail(event.target.value)}
+                  disabled={busy}
+                />
+              </label>
+              <label>
+                Password
+                <input
+                  data-private
+                  name="password"
+                  type="password"
+                  required
+                  minLength={8}
+                  maxLength={128}
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                  value={password}
+                  onChange={event => setPassword(event.target.value)}
+                  disabled={busy}
+                />
+              </label>
+              <button className={s.button} disabled={busy}>
+                {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight />
+              </button>
+            </form>
+            <nav className={s.links} aria-label="Other sign-in options">
+              <Link className={s.back} href={accountPath(returnTo, '/auth/reset')}>Forgot password?</Link>
+              {pendingEmail && (
+                <button className={s.back} disabled={busy || cooldown > 0} onClick={() => void resend()}>
+                  {cooldown ? `Resend in ${cooldown}s` : 'Resend confirmation email'}
+                </button>
+              )}
+            </nav>
+          </>
+        )}
+        {error && <p role="alert" className={s.error}>{error}</p>}
+        {notice && <p role="status" className={s.message}>{notice}</p>}
+      </section>
+    </div>
+  );
 }

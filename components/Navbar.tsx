@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { KeyboardEvent, MouseEventHandler } from "react";
 import { isStudioEditorRoute } from "@/lib/studio/editor-route";
+import SiteLogo from "@/components/SiteLogo";
+import styles from "./site-chrome.module.css";
 
 const links = [
   { name: "Forum", href: "/forum" },
@@ -11,32 +14,78 @@ const links = [
   { name: "Benchmark", href: "/results" },
   { name: "Partnerships", href: "/collaboration" },
   { name: "Account", href: "/account" },
-];
+] as const;
+
+function NavigationLinks({
+  pathname,
+  onSelect,
+}: {
+  pathname: string;
+  onSelect?: MouseEventHandler<HTMLAnchorElement>;
+}) {
+  return links.map((link) => {
+    const active = pathname === link.href || pathname.startsWith(`${link.href}/`);
+
+    return (
+      <li key={link.href}>
+        <Link
+          href={link.href}
+          className={styles.navigationLink}
+          aria-current={active ? "page" : undefined}
+          onClick={onSelect}
+        >
+          {link.name}
+        </Link>
+      </li>
+    );
+  });
+}
+
+const closeMobileMenu: MouseEventHandler<HTMLAnchorElement> = (event) => {
+  const menu = event.currentTarget.closest("details");
+  if (menu) menu.open = false;
+};
+
+function dismissMobileMenu(event: KeyboardEvent<HTMLDetailsElement>) {
+  if (event.key !== "Escape") return;
+  event.currentTarget.open = false;
+  event.currentTarget.querySelector("summary")?.focus();
+}
 
 export default function Navbar() {
   const pathname = usePathname();
   if (isStudioEditorRoute(pathname)) return null;
 
   return (
-    <nav aria-label="Main navigation" data-site-navigation className="sticky top-0 z-50 border-b border-gray-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-5 px-5 sm:px-8">
-        <Link href="/" className="shrink-0 font-serif text-lg font-bold text-gray-950">
-          HumanStudy-Hub
+    <nav aria-label="Main navigation" data-site-navigation className={styles.navbar}>
+      <div className={styles.navbarInner}>
+        <Link href="/" className={styles.brand} aria-label="HumanStudy-Hub home">
+          <SiteLogo />
+          <span>HumanStudy-Hub</span>
         </Link>
-        <div className="flex min-w-0 items-center gap-1 overflow-x-auto py-2">
-          {links.map((link) => {
-            const external = link.href.startsWith("http");
-            const active = !external && (pathname === link.href || pathname.startsWith(`${link.href}/`));
-            const className = `whitespace-nowrap px-3 py-2 text-xs font-semibold transition-colors ${
-              active ? "bg-cyan-50 text-cyan-800" : link.href === "/forum" ? "text-cyan-800 hover:bg-cyan-50" : "text-gray-500 hover:text-gray-950"
-            }`;
-            return external ? (
-              <a key={link.name} href={link.href} target="_blank" rel="noopener noreferrer" className={className}>{link.name}</a>
-            ) : (
-              <Link key={link.name} href={link.href} className={className}>{link.name}</Link>
-            );
-          })}
-        </div>
+        <ul className={styles.desktopLinks}>
+          <NavigationLinks pathname={pathname} />
+        </ul>
+        <details className={styles.mobileMenu} onKeyDown={dismissMobileMenu}>
+          <summary className={styles.menuToggle}>
+            Menu
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </summary>
+          <ul className={styles.mobileLinks}>
+            <NavigationLinks pathname={pathname} onSelect={closeMobileMenu} />
+          </ul>
+        </details>
       </div>
     </nav>
   );

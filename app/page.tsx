@@ -1,44 +1,47 @@
 import Image from "next/image";
 import Link from "next/link";
+import ArrowRight from "@/components/ArrowRight";
+import styles from "./page.module.css";
+
+const actions = [
+  { href: "/download", label: "Get the desktop app" },
+  { href: "/forum", label: "Join the forum" },
+  { href: "/collaboration", label: "Work with us" },
+  { href: "/studies", label: "Explore studies" },
+] as const;
 
 export default function Home() {
   return (
-    <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden bg-[#f8fbfb]">
-      <Image
-        src="/logo.png"
-        alt="Human studies represented as reusable, connected experimental systems"
-        fill
-        priority
-        className="object-cover object-center opacity-72"
-      />
-      {/* <div className="absolute inset-0 bg-white/35" /> */}
-      <main className="relative mx-auto flex min-h-[calc(100vh-4rem)] max-w-7xl items-end px-6 pb-14 pt-20 sm:px-10 sm:pb-20">
-        <div className="max-w-3xl [text-shadow:0_1px_12px_rgba(255,255,255,0.9)]">
-          <p className="text-xs font-bold uppercase text-cyan-800">Open infrastructure for human-study research</p>
-          <h1 className="mt-3 font-serif text-4xl font-bold leading-tight text-gray-950 sm:text-6xl">HumanStudy-Hub</h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-gray-700 sm:text-lg">
-            Turn published human studies into reusable datasets and runnable experiments for AI agents.
-          </p>
-          <div className="mt-7 flex flex-wrap gap-3">
-            <Link href="/forum" className="bg-cyan-800 px-4 py-2.5 text-sm font-semibold text-white hover:bg-cyan-700">Join the forum</Link>
-            <Link href="/studies" className="border border-gray-400 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:border-cyan-700 hover:text-cyan-800">Explore studies</Link>
-            <Link href="/download" className="border border-gray-400 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:border-cyan-700 hover:text-cyan-800">Get the desktop app</Link>
-          </div>
+    <div className={styles.home}>
+      <section className={styles.opening} aria-labelledby="home-title">
+        <h1 id="home-title" className={styles.title}>
+          <span>Human studies.</span>
+          <em>Built for AI agents.</em>
+        </h1>
+        <p className={styles.introduction}>
+          Turn published human studies into reusable datasets and runnable experiments for AI agents.
+        </p>
+        <nav className={styles.actions} aria-label="Explore HumanStudy Hub">
+          {actions.map((action) => (
+            <Link href={action.href} className={styles.textLink} key={action.href}>
+              {action.label} <ArrowRight />
+            </Link>
+          ))}
+        </nav>
+      </section>
 
-          <dl className="mt-6 grid max-w-3xl gap-x-6 gap-y-3 border-t border-gray-300/70 pt-5 sm:grid-cols-3">
-            {[
-              ["Forum", "Discuss human studies, share questions, and connect with other researchers."],
-              ["Explore studies", "Browse the human studies already turned into reusable data you can download."],
-              ["Desktop app", "Rebuild a published study from its paper and check every item against the PDF."],
-            ].map(([term, detail]) => (
-              <div key={term}>
-                <dt className="text-xs font-bold uppercase text-cyan-800">{term}</dt>
-                <dd className="mt-1 text-xs leading-5 text-gray-700">{detail}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </main>
+      <figure className={styles.cover}>
+        <Image
+          src="/images/folio-bridge.jpg"
+          alt="A paper bridge connects researchers with study materials, charts and participant figures."
+          width={1774}
+          height={887}
+          sizes="(max-width: 1280px) 100vw, 1280px"
+          priority
+          className={styles.coverImage}
+        />
+      </figure>
+
     </div>
   );
 }
