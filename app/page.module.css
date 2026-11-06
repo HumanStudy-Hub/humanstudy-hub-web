@@ -1,0 +1,107 @@
+.home {
+  width: min(100%, 1280px);
+  margin-inline: auto;
+  padding: 0 clamp(20px, 3.5vw, 48px) 56px;
+}
+
+.opening {
+  padding-block: 64px 44px;
+  text-align: center;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--site-font-serif);
+  font-size: clamp(40px, 6.2vw, 80px);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+}
+
+.title span,
+.title em {
+  display: block;
+}
+
+.title em {
+  color: var(--site-accent);
+}
+
+.introduction {
+  margin: 28px auto 24px;
+  color: var(--site-muted);
+  font-family: var(--site-font-serif);
+  font-size: clamp(16px, 1.65vw, 21px);
+  line-height: 1.6;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 16px 32px;
+}
+
+.textLink {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid currentColor;
+  color: var(--site-accent);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.textLink:hover {
+  color: var(--foreground);
+}
+
+.textLink:focus-visible {
+  outline: 2px solid var(--site-accent);
+  outline-offset: 6px;
+}
+
+.textLink svg {
+  flex-shrink: 0;
+}
+
+.cover {
+  margin: 0;
+}
+
+.coverImage {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (min-width: 768px) {
+  .introduction {
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .home {
+    padding-bottom: 32px;
+  }
+
+  .opening {
+    padding-block: 44px 32px;
+  }
+
+  .title {
+    font-size: clamp(36px, 10vw, 56px);
+    line-height: 1.1;
+  }
+
+  .introduction {
+    margin-block: 24px 20px;
+    font-size: 19px;
+  }
+
+  .actions {
+    gap: 12px 24px;
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "source": "https://cdn.plot.ly/world_110m.json",
+  "dataProvider": "Natural Earth",
+  "terms": "https://www.naturalearthdata.com/about/terms-of-use/",
+  "license": "Public domain",
+  "sha256": "d75915eaa31c870df6b972c9e5bb86910197825f33dcfef740f3b2f68cffe843"
+}

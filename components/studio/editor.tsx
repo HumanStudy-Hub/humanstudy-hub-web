@@ -107,8 +107,8 @@ export default function StudioEditor({id}:{id:string}){
   return '';
  }
  function downloadUnsaved(){const url=URL.createObjectURL(new Blob([JSON.stringify(current.current,null,2)],{type:'application/json'}));const a=window.document.createElement('a');a.href=url;a.download='unsaved-study-draft.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
- if(!workspace||!document)return <div className={s.home}><main><Link href="/build/projects">← Your studies</Link><p>{error||'Loading study…'}</p></main></div>;
- if(document.project?.copyState&&document.project.copyState!=='ready')return <div className={s.home}><main><Link href="/build/projects">← Projects</Link><p>{document.project.copyState==='failed'?'The project was saved, but its files need another copy attempt. Retry from Projects.':'Copying project files. Return to Projects to check progress or retry.'}</p></main></div>;
+ if(!workspace||!document)return <div className={s.home}><div data-workspace-content><Link href="/build/projects">← Your studies</Link><p>{error||'Loading study…'}</p></div></div>;
+ if(document.project?.copyState&&document.project.copyState!=='ready')return <div className={s.home}><div data-workspace-content><Link href="/build/projects">← Projects</Link><p>{document.project.copyState==='failed'?'The project was saved, but its files need another copy attempt. Retry from Projects.':'Copying project files. Return to Projects to check progress or retry.'}</p></div></div>;
  // After a reload, the paper the last build used stays primary.
  const paper=[primaryPaperId,document.pipeline?.sourceId].map(paperId=>document.sources.find(source=>source.id===paperId&&isPaper(source)&&source.includeInBuild!==false)).find(Boolean)||document.sources.find(source=>isPaper(source)&&source.includeInBuild!==false);
  async function startBuild(instructions=''){

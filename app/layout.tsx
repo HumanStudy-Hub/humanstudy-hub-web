@@ -22,11 +22,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="scroll-smooth">
-      <body
-        className="font-sans antialiased min-h-screen flex flex-col bg-white text-black"
-      >
+      <body className="font-sans antialiased min-h-screen flex flex-col">
+        <a href="#main-content" className="skip-link">
+          Skip to content
+        </a>
         <Navbar />
-        <main className="flex-grow">{children}</main>
+        <main id="main-content" tabIndex={-1} className="flex-grow">
+          {children}
+        </main>
         <Footer />
         <SiteMetrics />
       </body>

@@ -1,0 +1,50 @@
+name: Frontend regression checks
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      # runner.temp is not available in job-level env, so set the output path here.
+      - run: echo "FRONTEND_TEST_OUTPUT=$RUNNER_TEMP/frontend-validation" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run test:studio
+      - run: npm run build
+      - name: Install isolated browser tools
+        run: npm install --prefix "$RUNNER_TEMP/frontend-browser" --ignore-scripts --no-package-lock --no-audit --no-fund playwright@1.62.1
+      - name: Install Chromium
+        run: node "$RUNNER_TEMP/frontend-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Check the real production frontend
+        run: node scripts/check-frontend.mjs "$RUNNER_TEMP/frontend-browser/node_modules/playwright"
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-validation
+          path: ${{ env.FRONTEND_TEST_OUTPUT }}
+          if-no-files-found: ignore
+          retention-days: 7

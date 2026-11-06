@@ -38,7 +38,7 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
     : undefined;
   return <div className={s.start} data-studio-workspace={id}>
     <header><Link href="/" className={s.brand} onClick={event=>{event.preventDefault();onNavigate("/");}}>HumanStudy-Hub</Link><Link href="/build/projects" data-event="build.studies" onClick={event=>{event.preventDefault();onNavigate("/build/projects");}}>Your studies</Link></header>
-    <main>
+    <div data-workspace-content>
       <div className={s.heading}><span>Build study</span><h1>{document.title}</h1></div>
       {stage === 'intake' ? <section className={s.intake}>
         <h2>Add your paper and materials</h2>
@@ -71,6 +71,6 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
         </section>
       </div>}
       {error && <p className={s.error} role="alert">{error}</p>}
-    </main>
+    </div>
   </div>;
 }

@@ -45,9 +45,9 @@ function ResearchAgreementGate({ children }: { children: ReactNode }) {
   }
   // A failed re-check leaves an accepted workspace mounted; the API routes still enforce consent.
   if (ready) return <ResearchCollectionContext.Provider value={enabled}>{children}</ResearchCollectionContext.Provider>;
-  return <div className={s.hub}><header className={s.hubHeader}><Link href="/">HumanStudy-Hub</Link></header><main className={s.authLayout}><section className={s.authCard} aria-labelledby="research-agreement-title">
+  return <div className={s.hub}><header className={s.hubHeader}><Link href="/">HumanStudy-Hub</Link></header><div className={`${s.authLayout} ${s.agreementLayout}`}><section className={s.authCard} aria-labelledby="research-agreement-title">
     <h1 id="research-agreement-title">Research data agreement</h1>
     {needed ? <>{RESEARCH_AGREEMENT.map(p => <p key={p}>{p}</p>)}<button className={s.primary} disabled={busy} onClick={() => void agree()}>{busy ? 'Saving…' : 'I agree'}</button><Link href="/">Not now</Link></> : !error && <p role="status">Checking your agreement…</p>}
     {error && <><p role="alert" className={s.error}>{error}</p><button onClick={() => void check()}>Retry</button></>}
-  </section></main></div>;
+  </section></div></div>;
 }

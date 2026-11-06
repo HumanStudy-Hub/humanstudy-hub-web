@@ -6,8 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
 
 const DATA_URL = "/data/effects/gemini_flash_v4_effect_data.json";
-const COLOR_SIG = "#2BA8AF";
-const COLOR_NONSIG = "#C5EEF0";
+const COLOR_SIG = "#28574b";
+const COLOR_NONSIG = "#b9cdb0";
 const AXIS_HUMAN = "Human Effect Size";
 const AXIS_AGENT = "Agent Effect Size";
 
@@ -222,8 +222,8 @@ export default function EffectSizePlot() {
       fixedrange: true, 
       tickfont: { size: 10 },
       automargin: true,
-      gridcolor: '#f3f4f6',
-      zerolinecolor: '#9ca3af'
+      gridcolor: '#dce5d3',
+      zerolinecolor: '#5e6e60'
     },
     yaxis: { 
       title: { text: AXIS_AGENT, font: { size: 12 } }, 
@@ -233,8 +233,8 @@ export default function EffectSizePlot() {
       fixedrange: true, 
       tickfont: { size: 10 },
       automargin: true,
-      gridcolor: '#f3f4f6',
-      zerolinecolor: '#9ca3af'
+      gridcolor: '#dce5d3',
+      zerolinecolor: '#5e6e60'
     },
     showlegend: true,
     legend: { x: 1, y: 1, xanchor: "right", font: { size: 11 } },
@@ -243,8 +243,9 @@ export default function EffectSizePlot() {
     hovermode: "closest" as const,
     dragmode: false,
     autosize: true,
-    plot_bgcolor: 'white',
-    paper_bgcolor: 'white'
+    plot_bgcolor: '#f3f5ef',
+    paper_bgcolor: '#f3f5ef',
+    font: { family: 'IBM Plex Sans, system-ui, sans-serif', color: '#273d34' }
   };
 
   const regressionTrace: Plotly.Data | null =
@@ -266,8 +267,8 @@ export default function EffectSizePlot() {
 
   if (loading) {
     return (
-      <div className="w-full flex justify-center items-center min-h-[350px] bg-gray-50 rounded-xl">
-        <p className="text-gray-500">Loading effect size data…</p>
+      <div className="w-full flex justify-center items-center min-h-[350px] bg-[var(--site-surface)] rounded-xl">
+        <p className="text-[var(--site-muted)]">Loading effect size data…</p>
       </div>
     );
   }
@@ -282,7 +283,7 @@ export default function EffectSizePlot() {
 
   return (
     <div id="effects" className="w-full h-full flex flex-col">
-      <div className="bg-white overflow-hidden flex-grow">
+      <div className="bg-[var(--background)] overflow-hidden flex-grow">
         <Plot
           data={allTraces}
           layout={layout}

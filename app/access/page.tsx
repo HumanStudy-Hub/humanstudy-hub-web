@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
+import styles from "@/components/folio-page.module.css";
+import PageLoading from "@/components/PageLoading";
 
 function AccessForm() {
   const router = useRouter();
@@ -46,19 +48,18 @@ function AccessForm() {
   }
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-md flex-col justify-center px-6 py-16">
-      <p className="text-xs font-bold uppercase text-cyan-800">Access required</p>
-      <h1 className="mt-3 font-serif text-3xl font-bold text-gray-950">
+    <div className={`${styles.page} ${styles.narrow}`}>
+      <h1>
         Enter your promo code
       </h1>
-      <p className="mt-3 text-sm leading-6 text-gray-600">
+      <p className={styles.lede}>
         Building studies is available to subscribed
         researchers. Enter your promo code to continue. Browsing the study library and
         benchmark stays open.
       </p>
 
-      <form onSubmit={submit} className="mt-8">
-        <label htmlFor="code" className="block text-sm font-semibold text-gray-900">
+      <form onSubmit={submit} className={styles.formSheet}>
+        <label htmlFor="code" className="block text-sm font-semibold text-[var(--foreground)]">
           Promo code
         </label>
         <input
@@ -68,7 +69,7 @@ function AccessForm() {
           placeholder="Your promo code"
           autoComplete="off"
           disabled={busy}
-          className="mt-2 h-12 w-full border border-gray-300 px-4 text-base outline-none focus:border-cyan-700 disabled:bg-gray-100"
+          className="mt-2 h-12 w-full border border-[var(--site-line)] px-4 text-base outline-none focus:border-[var(--site-accent)] disabled:bg-[var(--site-surface)]"
         />
         {error && (
           <p className="mt-3 border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-800">
@@ -78,19 +79,19 @@ function AccessForm() {
         <button
           type="submit"
           disabled={busy || !code.trim()}
-          className="mt-5 h-12 w-full bg-cyan-700 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300"
+          className="mt-5 h-12 w-full bg-[var(--site-accent)] text-sm font-semibold text-white hover:bg-[var(--site-accent)] disabled:cursor-not-allowed disabled:bg-[var(--site-selected)]"
         >
           {busy ? "Checking…" : "Continue"}
         </button>
       </form>
 
-      <p className="mt-6 text-xs leading-5 text-gray-500">
+      <p className="mt-6 text-xs leading-5 text-[var(--site-muted)]">
         Just browsing?{" "}
-        <Link href="/studies" className="font-semibold text-cyan-700 hover:underline">
+        <Link href="/studies" className="font-semibold text-[var(--site-accent)] hover:underline">
           Explore the Study Library
         </Link>{" "}
         or{" "}
-        <Link href="/results" className="font-semibold text-cyan-700 hover:underline">
+        <Link href="/results" className="font-semibold text-[var(--site-accent)] hover:underline">
           view benchmark
         </Link>
         .
@@ -101,7 +102,7 @@ function AccessForm() {
 
 export default function AccessPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<PageLoading />}>
       <AccessForm />
     </Suspense>
   );

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { accountPath } from "@/lib/studio/auth-policy";
 import { StudioApiError, studioApi } from "./client";
-import s from "./reset-password.module.css";
+import s from "./auth-page.module.css";
 
 type Mode = "request" | "verify" | "password" | "done";
 type Recovery = { ready: true; email: string };
@@ -115,7 +115,7 @@ export default function ResetPassword({ tokenHash, invalid, changeMode = false, 
     } finally { setBusy(false); }
   }
 
-  return <main className={s.page}>
+  return <div className={s.page}>
     <section className={s.card}>
       <p className={s.brand}>HumanStudy-Hub</p>
       {mode === "done" ? <>
@@ -160,5 +160,5 @@ export default function ResetPassword({ tokenHash, invalid, changeMode = false, 
       {message && <p className={s.message} role="status">{message}</p>}
       {mode !== "done" && <Link className={s.back} href={returnTo ? accountPath(returnTo) : "/build/projects"}>Back to sign in</Link>}
     </section>
-  </main>;
+  </div>;
 }

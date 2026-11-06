@@ -6,6 +6,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
+import styles from "@/components/folio-page.module.css";
 
 const DOCS_DIR = path.join(process.cwd(), "..", "docs");
 
@@ -97,169 +98,36 @@ export default async function DocPage({
     currentIdx < allDocs.length - 1 ? allDocs[currentIdx + 1] : null;
 
   return (
-    <div className="bg-white min-h-screen">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="flex">
-          {/* Sidebar — GitHub Docs style */}
-          <aside className="hidden lg:block w-64 shrink-0 border-r border-gray-200 pr-6 py-8">
-            <div className="sticky top-8">
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">
-                Contributor Tutorial
-              </p>
-              <nav className="space-y-0">
-                {allDocs.map(([s, m]) => {
-                  const isActive = s === slug;
-                  return (
-                    <Link
-                      key={s}
-                      href={`/docs/${s}`}
-                      className={`block py-1.5 pl-4 -ml-px text-sm border-l-2 transition-colors ${
-                        isActive
-                          ? "border-cyan-600 text-gray-900 font-semibold"
-                          : "border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300"
-                      }`}
-                    >
-                      {m.title}
-                    </Link>
-                  );
-                })}
-              </nav>
-            </div>
-          </aside>
-
-          {/* Main content */}
-          <main className="min-w-0 flex-1 py-8 lg:pl-10">
-            <div className="max-w-3xl">
-              {/* Breadcrumb + title + description (inside content column) */}
-              <div className="mb-8 border-b border-gray-200 pb-8">
-                <p className="text-sm text-gray-500 mb-3 font-medium">
-                  <Link
-                    href="/contribute#documentation"
-                    className="hover:text-cyan-600 hover:underline transition-colors"
-                  >
-                    Contribute
-                  </Link>
-                  {" / "}
-                  <span className="text-gray-900">Docs</span>
-                </p>
-                <h1 className="text-4xl font-bold font-serif text-gray-900 mt-1 mb-4 leading-tight tracking-tight">
-                  {meta.title}
-                </h1>
-                <p className="text-xl text-gray-600 font-light">
-                  {meta.description}
-                </p>
-              </div>
-
-              {/* Mobile nav — horizontal scroll */}
-              <div className="lg:hidden mb-6 -mx-4 overflow-x-auto">
-                <div className="flex gap-2 px-4 pb-2 min-w-max">
-                  {allDocs.map(([s, m]) => (
-                    <Link
-                      key={s}
-                      href={`/docs/${s}`}
-                      className={`shrink-0 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                        s === slug
-                          ? "border-cyan-600 bg-cyan-50 text-cyan-700"
-                          : "border-gray-200 text-gray-600 hover:border-gray-300 hover:text-gray-900"
-                      }`}
-                    >
-                      {m.title}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-
-              {/* Markdown content — GitHub Docs typography */}
-              <article
-                className="
-                  prose prose-gray max-w-none font-serif
-                  prose-p:text-[#1F2328] prose-p:leading-[1.7]
-                  prose-h2:font-serif prose-h2:text-[1.5rem] prose-h2:font-bold prose-h2:pb-2 prose-h2:border-b prose-h2:border-gray-200 prose-h2:mt-[24px] prose-h2:mb-[16px] prose-h2:text-[#1F2328]
-                  prose-h3:font-serif prose-h3:text-[1.25rem] prose-h3:font-bold prose-h3:mt-[24px] prose-h3:mb-[16px] prose-h3:text-[#1F2328]
-                  prose-li:text-[#1F2328] prose-li:leading-[1.7]
-                  prose-strong:text-[#1F2328] prose-strong:font-bold
-                  prose-a:text-[#0969da] prose-a:no-underline hover:prose-a:underline
-                  prose-code:before:content-none prose-code:after:content-none
-                  prose-code:bg-[#eff1f3] prose-code:px-[0.4em] prose-code:py-[0.2em] prose-code:rounded-md prose-code:text-[85%] prose-code:text-[#1F2328] prose-code:font-mono
-                  prose-pre:bg-[#f6f8fa] prose-pre:rounded-md prose-pre:text-[85%] prose-pre:border prose-pre:border-[#d0d7de] prose-pre:text-[#1F2328] prose-pre:p-4 prose-pre:font-mono
-                  prose-thead:bg-[#f6f8fa] prose-th:text-left prose-th:font-semibold prose-th:text-[#1F2328] prose-th:text-sm prose-th:border prose-th:border-[#d0d7de] prose-th:px-4 prose-th:py-2 prose-th:font-sans
-                  prose-td:border prose-td:border-[#d0d7de] prose-td:px-4 prose-td:py-2 prose-td:text-[#1F2328] prose-td:font-sans
-                  prose-table:text-sm prose-table:border-collapse
-                  prose-hr:border-[#d0d7de] prose-hr:my-6 prose-hr:h-[0.25em] prose-hr:bg-[#d0d7de]
-                  prose-blockquote:border-l-[0.25em] prose-blockquote:border-[#d0d7de] prose-blockquote:pl-4 prose-blockquote:text-[#656d76] prose-blockquote:not-italic prose-blockquote:bg-transparent prose-blockquote:py-0
-                  prose-img:rounded-md
-                "
-              >
-                <Markdown
-                  remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeHighlight, rehypeRaw]}
-                >
-                  {content}
-                </Markdown>
-              </article>
-
-              {/* Prev/Next — flat GitHub Docs style */}
-              <div className="mt-12 pt-8 border-t border-gray-200 grid grid-cols-2 gap-4">
-                {prev ? (
-                  <Link
-                    href={`/docs/${prev[0]}`}
-                    className="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 hover:border-[#0969da] hover:text-[#0969da] transition-colors"
-                  >
-                    <svg
-                      className="w-4 h-4 shrink-0 text-gray-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      strokeWidth={2}
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M15.75 19.5L8.25 12l7.5-7.5"
-                      />
-                    </svg>
-                    <div className="min-w-0">
-                      <p className="text-xs text-gray-500">Previous</p>
-                      <p className="text-sm font-semibold truncate mt-0.5">
-                        {prev[1].title}
-                      </p>
-                    </div>
-                  </Link>
-                ) : (
-                  <div />
-                )}
-                {next ? (
-                  <Link
-                    href={`/docs/${next[0]}`}
-                    className="flex items-center justify-end gap-3 rounded-lg border border-gray-200 px-4 py-3 hover:border-[#0969da] hover:text-[#0969da] transition-colors text-right"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-xs text-gray-500">Next</p>
-                      <p className="text-sm font-semibold truncate mt-0.5">
-                        {next[1].title}
-                      </p>
-                    </div>
-                    <svg
-                      className="w-4 h-4 shrink-0 text-gray-400"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      strokeWidth={2}
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M8.25 4.5l7.5 7.5-7.5 7.5"
-                      />
-                    </svg>
-                  </Link>
-                ) : (
-                  <div />
-                )}
-              </div>
-            </div>
-          </main>
-        </div>
+    <div className={`${styles.page} ${styles.docs}`}>
+      <aside className={styles.sidebar}>
+        <p>Contributor Tutorial</p>
+        <nav aria-label="Contributor guides">
+          {allDocs.map(([docSlug, doc]) => (
+            <Link
+              key={docSlug}
+              href={`/docs/${docSlug}`}
+              aria-current={docSlug === slug ? "page" : undefined}
+            >
+              {doc.title}
+            </Link>
+          ))}
+        </nav>
+      </aside>
+      <div className="min-w-0">
+        <Link href="/contribute#documentation" className={styles.back}>← Contribute</Link>
+        <header className={styles.heading}>
+          <h1>{meta.title}</h1>
+          <p className={styles.lede}>{meta.description}</p>
+        </header>
+        <article className={`prose ${styles.markdown}`}>
+          <Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight, rehypeRaw]}>
+            {content}
+          </Markdown>
+        </article>
+        <nav aria-label="Guide pages" className={styles.pagination}>
+          {prev ? <Link href={`/docs/${prev[0]}`}>← {prev[1].title}</Link> : <span />}
+          {next && <Link href={`/docs/${next[0]}`}>{next[1].title} →</Link>}
+        </nav>
       </div>
     </div>
   );
