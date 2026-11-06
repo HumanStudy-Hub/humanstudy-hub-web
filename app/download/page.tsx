@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import styles from "@/components/folio-page.module.css";
 import { DESKTOP_RELEASES_URL, formatSize, getDesktopRelease, type DesktopAsset, type DesktopRelease } from "@/lib/desktop-release";
 
 // Release links are read from GitHub at request time and cached for five minutes.
@@ -39,15 +40,15 @@ function DownloadLink({ asset, fallback, label, primary }: { asset: DesktopAsset
     <a
       href={asset?.url ?? fallback}
       {...(asset ? {} : { target: "_blank", rel: "noopener noreferrer" })}
-      className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700 ${
+      className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-accent)] ${
         primary
-          ? "bg-cyan-800 text-white hover:bg-cyan-700"
-          : "border border-gray-400 bg-white text-gray-800 hover:border-cyan-700 hover:text-cyan-800"
+          ? "bg-[var(--site-accent)] text-white hover:bg-[var(--site-accent)]"
+          : "border border-[var(--site-line)] bg-[var(--background)] text-[var(--foreground)] hover:border-[var(--site-accent)] hover:text-[var(--site-accent)]"
       }`}
     >
       <AppleMark />
       {label}
-      {size && <span className={`font-normal ${primary ? "text-cyan-100" : "text-gray-500"}`}>{size}</span>}
+      {size && <span className={`font-normal ${primary ? "text-[var(--site-accent)]" : "text-[var(--site-muted)]"}`}>{size}</span>}
     </a>
   );
 }
@@ -74,26 +75,26 @@ function Downloads({ release }: { release: DesktopRelease }) {
           <button
             type="button"
             disabled
-            className="cursor-not-allowed border border-dashed border-gray-300 bg-white px-4 py-2.5 text-sm font-semibold text-gray-400"
+            className="cursor-not-allowed border border-dashed border-[var(--site-line)] bg-[var(--background)] px-4 py-2.5 text-sm font-semibold text-[var(--site-muted)]"
           >
             Windows: coming soon
           </button>
         )}
       </div>
-      <p className="mt-3 text-sm text-gray-600">
+      <p className="mt-3 text-sm text-[var(--site-muted)]">
         {hasBuild && release.version ? (
           <>
             Version {release.version.replace(/^v/, "")}
             {release.prerelease ? " (beta)" : ""}
             {date ? `, released ${date}. ` : ". "}
-            <a href={release.pageUrl} target="_blank" rel="noopener noreferrer" className="underline decoration-gray-300 underline-offset-2 hover:text-gray-950">
+            <a href={release.pageUrl} target="_blank" rel="noopener noreferrer" className="underline decoration-[var(--site-line)] underline-offset-2 hover:text-[var(--foreground)]">
               Release notes
             </a>
           </>
         ) : (
           <>
             Release coming soon. Builds will appear on the{" "}
-            <a href={DESKTOP_RELEASES_URL} target="_blank" rel="noopener noreferrer" className="underline decoration-gray-300 underline-offset-2 hover:text-gray-950">
+            <a href={DESKTOP_RELEASES_URL} target="_blank" rel="noopener noreferrer" className="underline decoration-[var(--site-line)] underline-offset-2 hover:text-[var(--foreground)]">
               releases page
             </a>
             .
@@ -107,7 +108,7 @@ function Downloads({ release }: { release: DesktopRelease }) {
 
 function Shot({ src, alt, width, height, priority }: { src: string; alt: string; width: number; height: number; priority?: boolean }) {
   return (
-    <div className="overflow-hidden rounded-md border border-gray-300 bg-white shadow-[0_1px_0_rgba(15,23,42,0.04)]">
+    <div className="overflow-hidden rounded-md border border-[var(--site-line)] bg-[var(--background)] shadow-[0_1px_0_rgba(15,23,42,0.04)]">
       <Image src={src} alt={alt} width={width} height={height} priority={priority} sizes="(min-width: 1024px) 64rem, 100vw" className="block h-auto w-full" />
     </div>
   );
@@ -200,7 +201,7 @@ const faq: [string, React.ReactNode][] = [
     "I started a study in the web builder. Where did it go?",
     <>
       Projects made in the browser are still in{" "}
-      <Link href={SIGN_UP} className="underline decoration-gray-300 underline-offset-2 hover:text-gray-950">your web workspace</Link>.
+      <Link href={SIGN_UP} className="underline decoration-[var(--site-line)] underline-offset-2 hover:text-[var(--foreground)]">your web workspace</Link>.
     </>,
   ],
 ];
@@ -209,11 +210,11 @@ export default async function DownloadPage() {
   const release = await getDesktopRelease();
 
   return (
-    <div className="bg-white text-gray-950">
-      <section className="mx-auto max-w-7xl px-4 pt-14 sm:px-8 sm:pt-20">
+    <div className={styles.page}>
+      <section>
         <div className="max-w-4xl">
-          <h1 className="font-serif text-4xl font-bold leading-tight sm:text-6xl">Find out whether a paper can be reproduced</h1>
-          <p className="mt-5 max-w-2xl text-lg leading-8 text-gray-700">
+          <h1>Read the paper.<br />Build the study.</h1>
+          <p className={styles.lede}>
             HumanStudy Hub for Mac rebuilds the study from its paper and lists what the paper does not state. Every item
             points back to the page of the original PDF it came from.{release.windows ? " A Windows preview is also available." : ""}
           </p>
@@ -230,7 +231,7 @@ export default async function DownloadPage() {
             height={848}
             priority
           />
-          <figcaption className="mt-3 text-sm text-gray-600">
+          <figcaption className="mt-3 text-sm text-[var(--site-muted)]">
             <span className="sm:hidden">
               Left to right: the study agent, the study document with page references, and the original paper with the
               cited sentence boxed.
@@ -244,10 +245,10 @@ export default async function DownloadPage() {
         </figure>
       </section>
 
-      <div className="mx-auto mt-20 max-w-7xl space-y-20 px-4 sm:mt-28 sm:space-y-28 sm:px-8">
+      <div className="mt-16 space-y-16">
         <section>
           <h2 className="font-serif text-2xl font-bold leading-snug sm:text-3xl">Who it is for</h2>
-          <dl className="mt-6 divide-y divide-gray-200 border-y border-gray-200 text-base">
+          <dl className="mt-6 divide-y divide-[var(--site-line)] border-y border-[var(--site-line)] text-base">
             {[
               ["Students and early PhDs reading an experimental paper", "Read the twelve-section study document and compare each item with the PDF."],
               ["Researchers planning a replication or adaptation", "Start from verbatim materials, the procedure and the missing-information list, and ask the agent for a preregistration draft."],
@@ -255,8 +256,8 @@ export default async function DownloadPage() {
               ["Teachers of research methods", "Show the design and results as interactive charts, and run simulated participants on simple survey or vignette studies, clearly labelled as simulation."],
             ].map(([who, use]) => (
               <div key={who} className="grid gap-1 py-4 lg:grid-cols-12 lg:gap-8">
-                <dt className="font-semibold text-gray-950 lg:col-span-4">{who}</dt>
-                <dd className="leading-7 text-gray-700 lg:col-span-8">{use}</dd>
+                <dt className="font-semibold text-[var(--foreground)] lg:col-span-4">{who}</dt>
+                <dd className="leading-7 text-[var(--foreground)] lg:col-span-8">{use}</dd>
               </div>
             ))}
           </dl>
@@ -266,7 +267,7 @@ export default async function DownloadPage() {
           <section key={feature.title} className="grid items-start gap-8 lg:grid-cols-12 lg:gap-12">
             <div className={`lg:col-span-4 lg:pt-6 ${i % 2 ? "lg:order-2" : ""}`}>
               <h2 className="font-serif text-2xl font-bold leading-snug sm:text-3xl">{feature.title}</h2>
-              <div className="mt-4 space-y-4 text-base leading-7 text-gray-700">{feature.body}</div>
+              <div className="mt-4 space-y-4 text-base leading-7 text-[var(--foreground)]">{feature.body}</div>
             </div>
             <div className={`lg:col-span-8 ${i % 2 ? "lg:order-1" : ""}`}>
               <Shot {...feature.shot} />
@@ -277,7 +278,7 @@ export default async function DownloadPage() {
         <section>
           <div className="max-w-2xl">
             <h2 className="font-serif text-2xl font-bold leading-snug sm:text-3xl">Charts of the design and the reported results</h2>
-            <p className="mt-4 text-base leading-7 text-gray-700">
+            <p className="mt-4 text-base leading-7 text-[var(--foreground)]">
               From the study document the app draws the sample flow, the procedure and the conditions, and charts the
               statistics the paper reports. Every value links back to its page. Spreads and counts the paper does not
               report are drawn as not reported rather than estimated.
@@ -286,18 +287,18 @@ export default async function DownloadPage() {
           <div className="mt-8 grid items-start gap-6 md:grid-cols-2">
             <figure>
               <Shot src="/desktop/study-overview.webp" alt="Study overview for Study 1: sample sizes, a two-step procedure and four conditions, one step marked for checking" width={1200} height={1173} />
-              <figcaption className="mt-2 text-sm text-gray-600">Study overview: sample, procedure and conditions.</figcaption>
+              <figcaption className="mt-2 text-sm text-[var(--site-muted)]">Study overview: sample, procedure and conditions.</figcaption>
             </figure>
             <figure>
               <Shot src="/desktop/results-chart.webp" alt="Reported results: headline statistics and a bar chart of consensus estimates by the rater's own choice" width={1200} height={944} />
-              <figcaption className="mt-2 text-sm text-gray-600">Reported results, charted from Table 1 of the paper.</figcaption>
+              <figcaption className="mt-2 text-sm text-[var(--site-muted)]">Reported results, charted from Table 1 of the paper.</figcaption>
             </figure>
           </div>
         </section>
 
-        <section className="grid gap-8 border-l-4 border-cyan-800 bg-cyan-50/60 px-6 py-8 sm:px-10 lg:grid-cols-12">
+        <section className="grid gap-8 border-l-4 border-[var(--site-accent)] bg-[var(--site-surface)]/60 px-6 py-8 sm:px-10 lg:grid-cols-12">
           <h2 className="font-serif text-2xl font-bold leading-snug sm:text-3xl lg:col-span-4">Simulated participants, labelled as simulation</h2>
-          <div className="space-y-4 text-base leading-7 text-gray-700 lg:col-span-8">
+          <div className="space-y-4 text-base leading-7 text-[var(--foreground)] lg:col-span-8">
             <p>
               Once the procedure is in place you can run it with LLM-simulated participants, each going through the
               materials in the order the paper describes. Use it to find instructions that read ambiguously or
@@ -315,27 +316,27 @@ export default async function DownloadPage() {
         </section>
       </div>
 
-      <section className="mx-auto mt-20 max-w-7xl px-4 sm:mt-28 sm:px-8">
-        <div className="grid gap-12 border-t border-gray-200 pt-14 lg:grid-cols-2">
+      <section className="mt-16">
+        <div className="grid gap-12 border-t border-[var(--site-line)] pt-14 lg:grid-cols-2">
           <div>
             <h2 className="font-serif text-2xl font-bold sm:text-3xl">Getting access</h2>
-            <p className="mt-4 text-base leading-7 text-gray-700">
+            <p className="mt-4 text-base leading-7 text-[var(--foreground)]">
               The app is in beta by invitation. You need a HumanStudy-Hub account and an invitation code.
             </p>
             <ol className="mt-6 space-y-5">
               {[
                 <>
-                  <Link href={SIGN_UP} className="font-semibold text-cyan-800 underline decoration-cyan-800/30 underline-offset-2 hover:text-cyan-700">Create a HumanStudy-Hub account</Link>{" "}
+                  <Link href={SIGN_UP} className="font-semibold text-[var(--site-accent)] underline decoration-[var(--site-accent)]/30 underline-offset-2 hover:text-[var(--site-accent)]">Create a HumanStudy-Hub account</Link>{" "}
                   and confirm your email address.
                 </>,
                 <>
                   Ask the team for an invitation code. Contact details are on the{" "}
-                  <Link href={CONTACT} className="font-semibold text-cyan-800 underline decoration-cyan-800/30 underline-offset-2 hover:text-cyan-700">Partnerships page</Link>.
+                  <Link href={CONTACT} className="font-semibold text-[var(--site-accent)] underline decoration-[var(--site-accent)]/30 underline-offset-2 hover:text-[var(--site-accent)]">Partnerships page</Link>.
                 </>,
                 <>Install the app, sign in with your account, enter the code and accept the research-data agreement.</>,
               ].map((step, i) => (
-                <li key={i} className="grid grid-cols-[2rem_1fr] gap-2 text-base leading-7 text-gray-700">
-                  <span className="font-serif text-xl font-bold text-cyan-800">{i + 1}</span>
+                <li key={i} className="grid grid-cols-[2rem_1fr] gap-2 text-base leading-7 text-[var(--foreground)]">
+                  <span className="font-serif text-xl font-bold text-[var(--site-accent)]">{i + 1}</span>
                   <span>{step}</span>
                 </li>
               ))}
@@ -343,7 +344,7 @@ export default async function DownloadPage() {
           </div>
           <div>
             <h2 className="font-serif text-2xl font-bold sm:text-3xl">Requirements</h2>
-            <dl className="mt-6 divide-y divide-gray-200 border-y border-gray-200 text-base">
+            <dl className="mt-6 divide-y divide-[var(--site-line)] border-y border-[var(--site-line)] text-base">
               {[
                 ["System", "macOS 12 Monterey or later, on Apple Silicon or Intel. Windows 10/11 (64-bit) as a preview."],
                 ["First launch", "Downloads the study assistant, about 170 MB, once."],
@@ -351,8 +352,8 @@ export default async function DownloadPage() {
                 ["Sign-in", "HumanStudy-Hub account, invitation code and research-data agreement."],
               ].map(([term, detail]) => (
                 <div key={term} className="grid gap-1 py-3 sm:grid-cols-[9rem_1fr] sm:gap-4">
-                  <dt className="font-semibold text-gray-950">{term}</dt>
-                  <dd className="leading-7 text-gray-700">{detail}</dd>
+                  <dt className="font-semibold text-[var(--foreground)]">{term}</dt>
+                  <dd className="leading-7 text-[var(--foreground)]">{detail}</dd>
                 </div>
               ))}
             </dl>
@@ -360,16 +361,16 @@ export default async function DownloadPage() {
         </div>
       </section>
 
-      <section className="mx-auto mt-20 max-w-3xl px-4 pb-24 sm:mt-28 sm:px-8">
+      <section className="mt-16 max-w-3xl">
         <h2 className="font-serif text-2xl font-bold sm:text-3xl">Questions</h2>
-        <div className="mt-6 divide-y divide-gray-200 border-y border-gray-200">
+        <div className="mt-6 divide-y divide-[var(--site-line)] border-y border-[var(--site-line)]">
           {faq.map(([question, answer]) => (
             <details key={question} className="group py-4">
-              <summary className="flex cursor-pointer list-none items-start justify-between gap-4 font-semibold text-gray-950 marker:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700">
+              <summary className="flex cursor-pointer list-none items-start justify-between gap-4 font-semibold text-[var(--foreground)] marker:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-accent)]">
                 {question}
-                <span aria-hidden="true" className="mt-0.5 text-cyan-800 transition-transform group-open:rotate-45">+</span>
+                <span aria-hidden="true" className="mt-0.5 text-[var(--site-accent)] transition-transform group-open:rotate-45">+</span>
               </summary>
-              <div className="mt-3 text-base leading-7 text-gray-700">{answer}</div>
+              <div className="mt-3 text-base leading-7 text-[var(--foreground)]">{answer}</div>
             </details>
           ))}
         </div>

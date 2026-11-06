@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -40,6 +41,7 @@ function load(file, dependencies = {}) {
     }
     if (id.startsWith('@/') || id.startsWith('.')) {
       const base = id.startsWith('@/') ? id.slice(2) : path.join(path.dirname(file), id);
+      if (base.endsWith('.json')) return require(path.join(root, base));
       const target = ['.ts', '.tsx'].map(extension => base + extension)
         .find(candidate => fs.existsSync(path.join(root, candidate)));
       assert.ok(target, 'Resolve component dependency: ' + id);
@@ -188,4 +190,135 @@ test('empty studies and catalog outages retain accessible recovery states', asyn
   assert.match(unavailable, /role="alert"/);
   assert.match(unavailable, /The research library could not be loaded/);
   assert.match(unavailable, /role="search"/);
+});
+
+const desktop = load('lib/desktop-release.ts');
+let release = desktop.NO_RELEASE;
+const Download = load('app/download/page.tsx', {
+  '@/lib/desktop-release': { ...desktop, getDesktopRelease: async () => release },
+}).default;
+
+test('the redesigned download page retains actual platform assets and release notes', async () => {
+  release = {
+    version: 'v1.2.3', publishedAt: '2026-10-01T12:00:00Z', prerelease: true,
+    pageUrl: 'https://github.com/HumanStudy-Hub/humanstudy-desktop/releases/tag/v1.2.3',
+    macArm64: { name: 'app-mac-arm64.dmg', url: 'https://example.test/app-mac-arm64.dmg', size: 1000 },
+    macX64: { name: 'app-mac-x64.dmg', url: 'https://example.test/app-mac-x64.dmg', size: 2000 },
+    windows: { name: 'App-Setup-1.2.3.exe', url: 'https://example.test/App-Setup-1.2.3.exe', size: 3000 },
+  };
+  const html = renderToStaticMarkup(await Download());
+  for (const asset of [release.macArm64, release.macX64, release.windows]) {
+    assert.equal(html.split(`href="${asset.url}"`).length - 1, 2);
+  }
+  assert.match(html, /Version 1\.2\.3 \(beta\)/);
+  assert.ok(html.includes(`href="${release.pageUrl}"`));
+  assert.equal((html.match(/<h1\b/g) || []).length, 1);
+  assert.doesNotMatch(html, /<main\b/);
+  assert.match(html, /src="\/desktop\/study-and-paper\.webp"/);
+});
+
+test('unavailable desktop releases retain the release-page fallback', async () => {
+  release = desktop.NO_RELEASE;
+  const html = renderToStaticMarkup(await Download());
+  assert.ok(html.includes(`href="${desktop.DESKTOP_RELEASES_URL}"`));
+  assert.match(html, /Windows: coming soon/);
+  assert.doesNotMatch(html, /href="(?:null|undefined)"/);
+});
+
+const PaperDetail = load('components/ResearchPaperDetail.tsx').default;
+
+test('paper details preserve research links, capability caveats and safe resource URLs', () => {
+  const html = renderToStaticMarkup(React.createElement(PaperDetail, { paper: {
+    ...paper,
+    description: 'Original research description.',
+    assetRoot: 'studies/study_005',
+    studyCapabilities: { run: { status: 'partial', reason: 'Some materials are missing.' } },
+    resources: [
+      { id: 'safe', kind: 'original-data-link', url: 'https://example.test/data', access: 'unverified' },
+      { id: 'unsafe', kind: 'metadata', url: 'javascript:alert(1)', access: 'unverified' },
+    ],
+  } }));
+  assert.match(html, /Published study/);
+  assert.match(html, /Original author · 2024/);
+  assert.match(html, /Some materials are missing/);
+  assert.match(html, /Availability not checked/);
+  assert.match(html, /href="https:\/\/example\.test\/data"/);
+  assert.match(html, /href="https:\/\/github\.com\/HumanStudy-Hub\/HumanStudy-Bench\/tree\/main\/studies\/study_005"/);
+  assert.doesNotMatch(html, /href="javascript:/);
+  assert.doesNotMatch(html, /<main\b/);
+});
+
+let documentContent;
+const Docs = load('app/docs/[slug]/page.tsx', {
+  fs: { promises: { readFile: async () => {
+    if (documentContent === undefined) throw new Error('Missing document');
+    return documentContent;
+  } } },
+  'next/navigation': { notFound: () => { throw new Error('Not found'); } },
+}).default;
+
+test('the guide template preserves Markdown, source callouts and document navigation', async () => {
+  documentContent = '# Source heading\n\nOriginal instructions.\n\n[Next guide](extract_from_paper.md#materials)\n\n!!! warning "Check the source"\n    Keep this qualification.\n';
+  const html = renderToStaticMarkup(await Docs({ params: Promise.resolve({ slug: 'what_to_submit' }) }));
+  assert.equal((html.match(/<h1\b/g) || []).length, 1);
+  assert.match(html, /What Should I Submit\?/);
+  assert.match(html, /Original instructions/);
+  assert.match(html, /href="\/docs\/extract_from_paper#materials"/);
+  assert.match(html, /Check the source/);
+  assert.match(html, /Keep this qualification/);
+  assert.match(html, /aria-label="Contributor guides"/);
+  assert.match(html, /aria-current="page"/);
+  assert.match(html, /aria-label="Guide pages"/);
+  assert.doesNotMatch(html, /<main\b|Source heading/);
+});
+
+test('missing guide content and unknown document slugs retain the not-found response', async () => {
+  documentContent = undefined;
+  await assert.rejects(Docs({ params: Promise.resolve({ slug: 'what_to_submit' }) }), /Not found/);
+  await assert.rejects(Docs({ params: Promise.resolve({ slug: 'unknown-guide' }) }), /Not found/);
+});
+
+test('shared loading, error and not-found views retain clear recovery actions', () => {
+  const Loading = load('components/PageLoading.tsx').default;
+  const ErrorPage = load('app/error.tsx').default;
+  const NotFound = load('app/not-found.tsx').default;
+  assert.match(render(Loading), /role="status"/);
+  assert.match(renderToStaticMarkup(React.createElement(ErrorPage, { reset: () => {} })), /Try again/);
+  const html = render(NotFound);
+  assert.match(html, /href="\/studies"/);
+  assert.match(html, /href="\/"/);
+  assert.doesNotMatch(html, /<main\b/);
+});
+
+test('the collaboration page renders its map and contact details before JavaScript loads', () => {
+  const bytes = fs.readFileSync(path.join(root, 'public/data/maps/world_110m.json'));
+  const topology = JSON.parse(bytes);
+  const source = JSON.parse(fs.readFileSync(path.join(root, 'public/data/maps/source.json'), 'utf8'));
+  assert.equal(topology.type, 'Topology');
+  assert.ok(topology.objects.countries);
+  assert.ok(topology.objects.land);
+  assert.equal(createHash('sha256').update(bytes).digest('hex'), source.sha256);
+  const Collaboration = load('app/collaboration/page.tsx').default;
+  const html = render(Collaboration);
+  const header = html.match(/<header\b[^>]*>(.*?)<\/header>/s)?.[1];
+  assert.ok(header);
+  assert.match(header, /AI tools for social science/);
+  assert.match(header, /href="mailto:xul049@ucsd.edu"/);
+  assert.equal((html.match(/mailto:/g) || []).length, 1);
+  assert.doesNotMatch(html, /Work with HumanStudy-Hub/);
+  assert.match(html, /<svg\b[^>]*role="img"/);
+  assert.match(html, /World map of HumanStudy-Hub partnerships/);
+  assert.equal((html.match(/<circle\b/g) || []).length, 7);
+  assert.match(html, /University of California San Diego/);
+  assert.match(html, /University of Lausanne/);
+  assert.match(html, /<details\b/);
+  assert.doesNotMatch(html, /(?:NaN|Infinity|undefined)/);
+  for (const [, pathData] of html.matchAll(/\bd="([^"]+)"/g)) {
+    for (const [ring] of pathData.matchAll(/M[^MZ]+Z/g)) {
+      const longitudes = [...ring.matchAll(/[ML](-?[\d.]+),/g)].map(match => Number(match[1]));
+      for (let index = 1; index < longitudes.length; index++) {
+        assert.ok(Math.abs(longitudes[index] - longitudes[index - 1]) <= 500, 'Country borders do not cross the entire map at the date line');
+      }
+    }
+  }
 });

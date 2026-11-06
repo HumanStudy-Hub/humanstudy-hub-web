@@ -21,7 +21,7 @@ function harness(props, fragment = "") {
   const component = load("components/studio/confirm-email.tsx", {
     react: { useState: initial => { const index = state.length; state.push(initial); return [initial, value => { state[index] = value; }]; }, useEffect: callback => effects.push(callback) },
     "next/link": { default: "a" },
-    "./confirm-email.module.css": { default: {} },
+    "./auth-page.module.css": { default: {} },
     "./client": { studioApi: async (...args) => requests.push(args) },
   }).default;
   const tree = component(props);

@@ -1,10 +1,10 @@
 .home {
   min-height: 100dvh;
-  background: #fbfcfc;
-  color: #263d46;
+  background: var(--surface, var(--background));
+  color: var(--text, var(--foreground));
   font-family: var(--font-sans);
-  --accent: #247c91;
-  --line: #dfe6e9;
+  --accent: var(--site-accent);
+  --line: var(--site-line);
 }
 .home header {
   height: 64px;
@@ -13,7 +13,7 @@
   gap: 24px;
   border-bottom: 1px solid var(--line);
   padding: 0 28px;
-  background: white;
+  background: var(--surface, var(--background));
 }
 .brand {
   font-family: var(--font-serif);
@@ -23,14 +23,14 @@
   gap: 9px;
 }
 .home header>span {
-  color: #78909b;
+  color: var(--muted, var(--site-muted));
   font-size: var(--text-sm, 0.875rem);
 }
 .home header>button {
   margin-left: auto;
   font-size: var(--text-sm, 0.875rem);
 }
-.home main {
+.home [data-workspace-content] {
   max-width: 920px;
   margin: 70px auto;
   padding: 0 25px;
@@ -45,7 +45,7 @@
 .home p {
   font-size: var(--text-sm, 0.875rem);
   line-height: 1.8;
-  color: #718591;
+  color: var(--muted, var(--site-muted));
 }
 .home button {
   cursor: pointer;
@@ -61,7 +61,7 @@
 .auth>span {
   font-size: var(--text-sm, 0.875rem);
   letter-spacing: 1.5px;
-  color: #8199a4;
+  color: var(--muted, var(--site-muted));
 }
 .auth form {
   display: flex;
@@ -77,21 +77,21 @@
 }
 .home input {
   padding: 11px;
-  border: 1px solid #d5e0e5;
+  border: 1px solid var(--line, var(--site-line));
   border-radius: 6px;
   font-size: var(--text-sm, 0.875rem);
-  background: #fff;
-  color: #263d46;
+  background: var(--surface, var(--background));
+  color: var(--text, var(--foreground));
 }
 .auth form>button,.projects form>button {
   padding: 11px 15px;
   border-radius: 5px;
-  background: #247c91;
+  background: var(--accent, var(--site-accent));
   color: white;
   font-size: var(--text-sm, 0.875rem);
 }
 .textButton {
-  color: #247c91;
+  color: var(--accent, var(--site-accent));
   font-size: var(--text-sm, 0.875rem);
   margin-top: 22px;
 }
@@ -105,7 +105,7 @@
 }
 .notice {
   padding: 12px;
-  background: #eaf5f8;
+  background: var(--surface-soft, var(--site-surface));
   border-radius: 5px;
   margin: 20px auto;
   max-width: 600px;
@@ -119,17 +119,17 @@
   font-size: var(--text-sm, 0.875rem);
   margin: 20px 0;
   padding: 15px;
-  background: #edf3f5;
+  background: var(--surface-soft, var(--site-surface));
 }
 .setup a {
   font-size: var(--text-sm, 0.875rem);
-  color: #247c91;
+  color: var(--accent, var(--site-accent));
   display: inline-block;
   margin-top: 20px;
 }
 .projects>span {
   font-size: var(--text-sm, 0.875rem);
-  color: #8297a2;
+  color: var(--muted, var(--site-muted));
 }
 .projects form {
   display: flex;
@@ -143,7 +143,7 @@
   position: relative;
   display: block;
   border: 1px solid var(--line);
-  background: white;
+  background: var(--surface, var(--background));
   border-radius: 7px;
   padding: 20px;
   margin-bottom: 12px;
@@ -156,14 +156,14 @@
 .projects small {
   display: block;
   margin-top: 8px;
-  color: #8195a0;
+  color: var(--muted, var(--site-muted));
   font-size: var(--text-xs, 0.75rem);
 }
 .projects a>span {
   position: absolute;
   right: 20px;
   top: 23px;
-  color: #247c91;
+  color: var(--accent, var(--site-accent));
 }
 .editor {
   position: relative;
@@ -185,7 +185,7 @@
 }
 .noticeBar button {
   margin-left: 12px;
-  color: #247c91;
+  color: var(--accent, var(--site-accent));
   text-decoration: underline;
   cursor: pointer;
 }
@@ -194,46 +194,46 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-bottom: 1px solid var(--line,#dfe6e9);
+  border-bottom: 1px solid var(--line, var(--site-line));
   font-size: var(--text-sm, 0.875rem);
-  background: var(--surface,#fff);
+  background: var(--surface, var(--background));
 }
 .sourceControls select {
   flex: 1;
   min-width: 0;
   max-width: 75%;
   font-size: var(--text-sm, 0.875rem);
-  border: 1px solid var(--line,#dfe6e9);
+  border: 1px solid var(--line, var(--site-line));
   padding: 4px;
   border-radius: 4px;
 }
 .sourceControls label {
   cursor: pointer;
-  color: var(--accent,#247c91);
+  color: var(--accent, var(--site-accent));
   white-space: nowrap;
 }
 .sourceControls input {
   display: none;
 }
 .sourceControls small {
-  color: var(--muted,#7e9099);
+  color: var(--muted, var(--site-muted));
 }
 .legacy {
   margin-left: auto;
   font-size: var(--text-sm, 0.875rem);
-  color: #718591;
+  color: var(--muted, var(--site-muted));
 }
 .home header>.legacy+button {
   margin-left: 0;
 }
 .setup>button {
-  border: 1px solid #d5e0e5;
-  color: #247c91;
+  border: 1px solid var(--line, var(--site-line));
+  color: var(--accent, var(--site-accent));
   border-radius: 5px;
   padding: 9px 13px;
   margin-top: 16px;
 }
-.home main {
+.home [data-workspace-content] {
   max-width: 1120px;
   margin: 0 auto;
   padding: 64px 28px;
@@ -277,7 +277,7 @@
   display: block;
   margin-top: 12px;
   font-size: var(--text-xs, 0.75rem);
-  color: #718591;
+  color: var(--muted, var(--site-muted));
 }
 .studyMap {
   display: grid;
@@ -287,17 +287,17 @@
   padding: 26px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #f2f7f8;
+  background: var(--surface, var(--background));
 }
 .studyMap div>span {
   display: block;
   font-size: var(--text-sm, 0.875rem);
   letter-spacing: .1em;
-  color: #718591;
+  color: var(--muted, var(--site-muted));
   margin-bottom: 14px;
 }
 .mapSource {
-  background: white;
+  background: var(--surface, var(--background));
   padding: 18px 12px;
   border: 1px solid var(--line);
   border-radius: 5px;
@@ -309,15 +309,15 @@
 .mapSource i {
   display: block;
   height: 3px;
-  background: #e2e9eb;
+  background: var(--surface-soft, var(--site-surface));
   margin-top: 12px;
 }
 .mapSource mark {
   display: block;
   margin-top: 14px;
   padding: 5px 3px;
-  background: #d8edf0;
-  color: #226a7a;
+  background: var(--surface-soft, var(--site-surface));
+  color: var(--accent, var(--site-accent));
   font-size: var(--text-sm, 0.875rem);
 }
 .mapArrow {
@@ -327,8 +327,8 @@
 .mapModel strong {
   display: block;
   padding: 8px;
-  border: 1px solid #bdd5db;
-  background: white;
+  border: 1px solid var(--line, var(--site-line));
+  background: var(--surface, var(--background));
   border-radius: 5px;
   font-size: var(--text-sm, 0.875rem);
   text-align: center;
@@ -339,11 +339,11 @@
   font-style: normal;
   text-align: center;
   font-size: var(--text-sm, 0.875rem);
-  color: #8ea9b0;
+  color: var(--muted, var(--site-muted));
 }
 .mapAgent {
   grid-column: 1/-1;
-  border-top: 1px solid #d5e3e6;
+  border-top: 1px solid var(--line, var(--site-line));
   margin-top: 10px;
   padding-top: 16px;
 }
@@ -393,13 +393,13 @@
   margin-top: 40px;
   padding-top: 20px;
   font-size: var(--text-xs, 0.75rem);
-  color: #718591;
+  color: var(--muted, var(--site-muted));
 }
 .demoButton:hover {
-  background: #1c6578;
+  background: var(--accent, var(--site-accent));
 }
 .studyMap:hover {
-  border-color: #9fbfc7;
+  border-color: var(--line, var(--site-line));
 }
 .home a:focus-visible,.home button:focus-visible {
   outline: 2px solid var(--accent);
@@ -410,7 +410,7 @@
     grid-template-columns: 1fr;
     gap: 28px;
   }
-  .home main {
+  .home [data-workspace-content] {
     padding: 36px 20px;
   }
   .studyMap {
@@ -422,7 +422,7 @@
 }
 /* Shared site typography: serif headings, sans-serif interface text. */
 .home h1,.home h2 {
-  font-weight: 700;
+  font-weight: 400;
 }
 .intro h1 {
   line-height: 1.2;
@@ -431,12 +431,12 @@
   font-family: var(--font-sans);
 }
 .home {
-  color: #111827;
-  --accent: #155e75;
-  --line: #e5e7eb;
+  color: var(--text, var(--foreground));
+  --accent: var(--site-accent);
+  --line: var(--site-line);
 }
 .home p {
-  color: #4b5563;
+  color: var(--muted, var(--site-muted));
 }
 .home input, .auth form>button, .projects form>button {
   min-height: 40px;
@@ -453,6 +453,6 @@
   align-items: center;
 }
 
-.agentRecovery { padding:8px 16px; font-size:var(--text-xs,.75rem); color:var(--muted,#82949d); }
+.agentRecovery { padding:8px 16px; font-size:var(--text-xs,.75rem); color:var(--muted, var(--site-muted)); }
 .agentRecovery p { margin-bottom:6px; line-height:1.6; }
-.agentRecovery button { color:var(--accent,#217f94); margin-right:12px; }
+.agentRecovery button { color:var(--accent, var(--site-accent)); margin-right:12px; }

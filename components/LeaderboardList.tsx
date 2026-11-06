@@ -117,15 +117,15 @@ export default function LeaderboardList({ rawData }: { rawData: RawLeaderboardEn
   };
 
   return (
-    <div className="bg-white">
+    <div className="bg-[var(--background)]">
       {/* Filters */}
       <div className="flex justify-end mb-4 gap-2">
         <div className="flex items-center">
-            <span className="mr-2 text-sm text-gray-600 font-medium">Filter by Variant:</span>
+            <span className="mr-2 text-sm text-[var(--site-muted)] font-medium">Filter by Variant:</span>
             <select 
                 value={selectedVariant}
                 onChange={(e) => setSelectedVariant(e.target.value)}
-                className="block w-40 rounded-md border-0 py-1.5 pl-3 pr-10 text-gray-900 ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-blue-600 sm:text-sm sm:leading-6"
+                className="block w-40 rounded-md border-0 py-1.5 pl-3 pr-10 text-[var(--foreground)] ring-1 ring-inset ring-[var(--site-line)] focus:ring-2 focus:ring-[var(--site-accent)] sm:text-sm sm:leading-6"
             >
                 {variants.map(v => <option key={v} value={v}>{v}</option>)}
             </select>
@@ -133,42 +133,42 @@ export default function LeaderboardList({ rawData }: { rawData: RawLeaderboardEn
       </div>
 
       <div className="overflow-x-auto shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
-        <table className="min-w-full divide-y divide-gray-300">
-          <thead className="bg-gray-50">
+        <table className="min-w-full divide-y divide-[var(--site-line)]">
+          <thead className="bg-[var(--site-surface)]">
             <tr>
-              <th scope="col" className="py-3.5 pl-4 pr-3 text-center text-sm font-semibold text-gray-900 sm:pl-6 w-12">Rank</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Model</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Variant</th>
-              <th scope="col" className="px-3 py-3.5 text-center text-sm font-semibold text-gray-900">PAS (Alignment)</th>
-              <th scope="col" className="px-3 py-3.5 text-center text-sm font-semibold text-gray-900">ECS</th>
-              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 hidden md:table-cell">Study Scores</th>
-              <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">Cost</th>
-              <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-gray-900">Tokens</th>
+              <th scope="col" className="py-3.5 pl-4 pr-3 text-center text-sm font-semibold text-[var(--foreground)] sm:pl-6 w-12">Rank</th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-[var(--foreground)]">Model</th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-[var(--foreground)]">Variant</th>
+              <th scope="col" className="px-3 py-3.5 text-center text-sm font-semibold text-[var(--foreground)]">PAS (Alignment)</th>
+              <th scope="col" className="px-3 py-3.5 text-center text-sm font-semibold text-[var(--foreground)]">ECS</th>
+              <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-[var(--foreground)] hidden md:table-cell">Study Scores</th>
+              <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-[var(--foreground)]">Cost</th>
+              <th scope="col" className="px-3 py-3.5 text-right text-sm font-semibold text-[var(--foreground)]">Tokens</th>
               <th scope="col" className="relative py-3.5 pl-3 pr-4 sm:pr-6"><span className="sr-only">Details</span></th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 bg-white">
+          <tbody className="divide-y divide-[var(--site-line)] bg-[var(--background)]">
             {filteredData.map((row, index) => (
               <React.Fragment key={row.id}>
-              <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => toggleExpand(row.id)}>
-                <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm text-center font-medium text-gray-900 sm:pl-6">
+              <tr className="hover:bg-[var(--site-surface)] cursor-pointer" onClick={() => toggleExpand(row.id)}>
+                <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm text-center font-medium text-[var(--foreground)] sm:pl-6">
                   {index + 1}
                 </td>
-                <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
+                <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-[var(--foreground)]">
                   {modelShortName(row.model)}
                 </td>
-                 <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 font-mono text-xs">
+                 <td className="whitespace-nowrap px-3 py-4 text-sm text-[var(--site-muted)] font-mono text-xs">
                   {row.variant}
                 </td>
                 <td className="whitespace-nowrap px-3 py-4 text-sm text-center">
-                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-sm font-medium ring-1 ring-inset ring-gray-500/10 ${
+                    <span className={`inline-flex items-center rounded-md px-2 py-1 text-sm font-medium ring-1 ring-inset ring-[var(--site-line)]/10 ${
                         row.overall_alignment > 75 ? 'text-green-700 bg-green-50' : 
                         row.overall_alignment > 50 ? 'text-yellow-700 bg-yellow-50' : 'text-red-700 bg-red-50'
                     }`}>
                         {formatScore(row.overall_alignment)}
                     </span>
                 </td>
-                <td className="whitespace-nowrap px-3 py-4 text-sm text-center font-mono text-gray-600">
+                <td className="whitespace-nowrap px-3 py-4 text-sm text-center font-mono text-[var(--site-muted)]">
                     {row.overall_ecs}
                 </td>
                 <td className="whitespace-nowrap px-3 py-4 text-sm hidden md:table-cell">
@@ -182,27 +182,27 @@ export default function LeaderboardList({ rawData }: { rawData: RawLeaderboardEn
                             return (
                                 <div 
                                     key={studyId} 
-                                    className={`w-3 h-6 rounded-sm ${hasData ? getScoreColor(score) : 'bg-gray-100'}`}
+                                    className={`w-3 h-6 rounded-sm ${hasData ? getScoreColor(score) : 'bg-[var(--site-surface)]'}`}
                                     title={`${studyId}: ${hasData ? score.toFixed(1) + '%' : 'N/A'}`}
                                 ></div>
                             )
                         })}
                     </div>
                 </td>
-                <td className="whitespace-nowrap px-3 py-4 text-sm text-right text-gray-500 tabular-nums">
+                <td className="whitespace-nowrap px-3 py-4 text-sm text-right text-[var(--site-muted)] tabular-nums">
                   {formatCost(row.total_cost)}
                 </td>
-                <td className="whitespace-nowrap px-3 py-4 text-sm text-right text-gray-500 tabular-nums">
+                <td className="whitespace-nowrap px-3 py-4 text-sm text-right text-[var(--site-muted)] tabular-nums">
                   {formatInteger(row.total_tokens)}
                 </td>
                  <td className="whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                  <span className="text-blue-600 hover:text-blue-900">
+                  <span className="text-[var(--site-accent)] hover:text-[var(--site-accent)]">
                     {expandedRow === row.id ? 'Hide' : 'Show'}
                   </span>
                 </td>
               </tr>
               {expandedRow === row.id && (
-                  <tr className="bg-gray-50">
+                  <tr className="bg-[var(--site-surface)]">
                       <td colSpan={8} className="p-4 sm:px-6">
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {row.raw_data.sort((a,b) => a.study_id.localeCompare(b.study_id)).map(studyData => {
@@ -214,7 +214,7 @@ export default function LeaderboardList({ rawData }: { rawData: RawLeaderboardEn
                                 return (
                                 <div 
                                     key={studyData.study_id} 
-                                    className="bg-white p-3 rounded shadow-sm border border-gray-200 group relative"
+                                    className="bg-[var(--background)] p-3 rounded shadow-sm border border-[var(--site-line)] group relative"
                                 >
                                     <div className="absolute inset-0 z-10 opacity-0 group-hover:opacity-100 bg-black/80 text-white p-3 text-xs rounded transition-opacity pointer-events-none flex flex-col justify-center">
                                         <div className="font-bold mb-1">{studyData.study_id}</div>
@@ -227,31 +227,31 @@ export default function LeaderboardList({ rawData }: { rawData: RawLeaderboardEn
                                     </div>
                                     <h4 className="border-b pb-2 mb-2">
                                         <div className="flex justify-between items-baseline">
-                                            <span className="font-bold text-xs uppercase text-gray-500">{studyData.study_id}</span>
+                                            <span className="font-bold text-xs uppercase text-[var(--site-muted)]">{studyData.study_id}</span>
                                         </div>
-                                        <div className="text-sm font-medium text-gray-900 leading-tight pt-1" title={studyData.title}>
+                                        <div className="text-sm font-medium text-[var(--foreground)] leading-tight pt-1" title={studyData.title}>
                                             {studyData.title || 'Untitled Study'}
                                         </div>
                                     </h4>
                                     
                                     <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                                        <div className="text-gray-500">ECS</div>
-                                        <div className="text-right font-mono text-gray-900">
+                                        <div className="text-[var(--site-muted)]">ECS</div>
+                                        <div className="text-right font-mono text-[var(--foreground)]">
                                             {typeof studyData.ecs === 'number' ? studyData.ecs.toPrecision(4) : studyData.ecs || 'N/A'}
                                         </div>
                                         
-                                        <div className="text-gray-500">PAS</div>
-                                        <div className={`text-right font-mono ${studyData.average_bas > 0.8 ? "text-green-600" : "text-gray-900"}`}>
+                                        <div className="text-[var(--site-muted)]">PAS</div>
+                                        <div className={`text-right font-mono ${studyData.average_bas > 0.8 ? "text-green-600" : "text-[var(--foreground)]"}`}>
                                             {studyData.average_bas.toPrecision(4)}
                                         </div>
 
-                                        <div className="text-gray-500">Cost</div>
-                                        <div className="text-right font-mono text-gray-500">
+                                        <div className="text-[var(--site-muted)]">Cost</div>
+                                        <div className="text-right font-mono text-[var(--site-muted)]">
                                             ${studyData.total_cost.toPrecision(4)}
                                         </div>
 
-                                        <div className="text-gray-500">Tokens</div>
-                                        <div className="text-right font-mono text-gray-500">
+                                        <div className="text-[var(--site-muted)]">Tokens</div>
+                                        <div className="text-right font-mono text-[var(--site-muted)]">
                                             {formatInteger(studyData.total_output_tokens)}
                                         </div>
                                     </div>

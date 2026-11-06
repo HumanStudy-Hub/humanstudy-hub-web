@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { accountPath } from "@/lib/studio/auth-policy";
 import { studioApi } from "./client";
-import s from "./confirm-email.module.css";
+import s from "./auth-page.module.css";
 
 export default function ConfirmEmail({ tokenHash, invalid, returnTo }: { tokenHash?: string; invalid: boolean; returnTo?: string }) {
   const [error, setError] = useState(invalid ? "This link is invalid or has expired. Request another confirmation email from the sign-in page." : "");

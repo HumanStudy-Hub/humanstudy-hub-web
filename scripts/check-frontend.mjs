@@ -7,11 +7,13 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+import { checkRemainingFrontend } from './check-remaining-frontend.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.argv[2] || 'playwright');
 const output = process.env.FRONTEND_TEST_OUTPUT || fs.mkdtempSync(path.join(os.tmpdir(), 'humanstudy-frontend-'));
+const accessSecret = 'frontend-preview-only-cookie-secret';
 fs.mkdirSync(output, { recursive: true });
 
 assert.ok(fs.existsSync(path.join(root, '.next/BUILD_ID')), 'Run npm run build before checking the frontend.');
@@ -36,7 +38,7 @@ const fixtureServer = createServer((request, response) => {
   }
   response.writeHead(200, { 'Content-Type': 'application/json' }).end(body);
 });
-const report = { passed: false, views: [], checks: [], runtimeErrors: [], blockedWrites: [], mockedAuthActions: [], checkedAt: new Date().toISOString() };
+const report = { passed: false, views: [], checks: [], runtimeErrors: [], runtimeErrorDetails: [], blockedWrites: [], mockedAuthActions: [], checkedAt: new Date().toISOString() };
 const navigation = [
   ['Forum', '/forum'], ['Study Library', '/studies'], ['Desktop app', '/download'],
   ['Benchmark', '/results'], ['Partnerships', '/collaboration'], ['Account', '/account'],
@@ -55,6 +57,8 @@ try {
     NEXT_TELEMETRY_DISABLED: '1',
     RESEARCH_INDEX_URL: fixtureOrigin + '/research-index.json',
     STUDIES_INDEX_URL: fixtureOrigin + '/studies-index.json',
+    ACCESS_COOKIE_SECRET: accessSecret,
+    PROMO_CODE: 'frontend-preview-only',
   };
   for (const key of ['PATH', 'HOME', 'TMPDIR', 'SystemRoot']) {
     if (process.env[key]) env[key] = process.env[key];
@@ -94,10 +98,15 @@ try {
     return route.abort();
   });
   const page = await context.newPage();
-  page.on('pageerror', error => report.runtimeErrors.push(error.message));
+  page.on('pageerror', error => {
+    report.runtimeErrors.push(error.message);
+    report.runtimeErrorDetails.push({ page: page.url(), message: error.message, stack: error.stack });
+    console.log('Browser error at ' + page.url() + ': ' + error.message);
+  });
   page.on('console', message => {
     if (message.type() === 'error' && /hydration|hydrating|Minified React error/i.test(message.text())) {
       report.runtimeErrors.push(message.text());
+      report.runtimeErrorDetails.push({ page: page.url(), message: message.text() });
     }
   });
   const visit = async route => {
@@ -113,12 +122,14 @@ try {
   await page.route(origin + '/api/studio/auth', async route => {
     const request = route.request();
     if (request.method() === 'GET') {
-      return route.fulfill({ json: { user: signedIn ? previewUser : null } });
+      return route.fulfill({ json: { user: signedIn ? previewUser : null, configured: true } });
     }
     assert.equal(request.method(), 'POST');
     const body = request.postDataJSON();
     authRequests.push(body);
     report.mockedAuthActions.push(body.action);
+    if (body.action === 'forgot-password') return route.fulfill({ json: { sent: true } });
+    if (body.action === 'confirm') return route.fulfill({ json: { user: previewUser } });
     if (body.action === 'signup') {
       return route.fulfill({ json: { requiresEmailConfirmation: true } });
     }
@@ -308,6 +319,8 @@ try {
   await page.waitForURL(origin + '/');
   report.checks.push('Mocked account validation, sign-in failure and success, returnTo, signup confirmation, resend cooldown and sign-out');
 
+  await checkRemainingFrontend({ page, origin, root, output, report, accessSecret, setSignedIn: value => { signedIn = value; }, paperPath: extractedLinks[0] });
+
   await page.setViewportSize({ width: 1440, height: 1000 });
   for (const route of ['/download', '/account', '/access', '/auth/confirm', '/auth/reset', '/results', '/studies/study_001', '/studies/study_005']) {
     await visit(route);
@@ -338,6 +351,10 @@ try {
   console.log('Passed homepage, account and study layouts; search, pagination, mocked auth, keyboard navigation and access checks.');
 } catch (error) {
   report.failure = error.stack;
+  try {
+    const page = browser?.contexts()[0]?.pages()[0];
+    if (page) await page.screenshot({ path: path.join(output, 'failure.png'), fullPage: true });
+  } catch { /* Preserve the original failure when the page has already closed. */ }
   throw error;
 } finally {
   fs.writeFileSync(path.join(output, 'report.json'), JSON.stringify(report, null, 2) + '\n');

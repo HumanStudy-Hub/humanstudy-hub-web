@@ -38,7 +38,7 @@
   min-height: 480px;
   width: 100%;
   border: 0;
-  background: #fff;
+  background: var(--surface, var(--background));
 }
 .code {
   margin: 12px 18px;
@@ -46,7 +46,7 @@
   max-height: 60vh;
   overflow: auto;
   border-radius: 6px;
-  background: var(--surface-soft, #f6f8f9);
+  background: var(--surface-soft, var(--surface, var(--background)));
   font-size: 11px;
   line-height: 1.5;
   white-space: pre-wrap;

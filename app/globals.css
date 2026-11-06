@@ -25,6 +25,8 @@
   --site-muted: #5e6e60;
   --site-line: #cdd7c6;
   --site-surface: #e7ece0;
+  --site-surface-deep: #dce5d3;
+  --site-selected: #e1e9da;
   --site-font-serif: "Newsreader", Georgia, Cambria, "Times New Roman", Times, serif;
   --site-font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }

@@ -1,7 +1,4 @@
-"use client";
-
-import { useEffect, useRef } from "react";
-import type { Config, Data, Layout } from "plotly.js";
+import world from "@/public/data/maps/world_110m.json";
 
 const collaborators = [
   { name: "University of California San Diego", city: "San Diego, United States", lat: 32.8801, lon: -117.234 },
@@ -13,94 +10,109 @@ const collaborators = [
   { name: "Massachusetts Institute of Technology", city: "Cambridge, United States", lat: 42.3601, lon: -71.0942 },
 ];
 
-const hub = collaborators[0];
-const partnershipLongitudes = collaborators.slice(1).flatMap((item) => [hub.lon, item.lon, null]);
-const partnershipLatitudes = collaborators.slice(1).flatMap((item) => [hub.lat, item.lat, null]);
+const width = 1000;
+const height = 430;
 
-const data: Data[] = [
-  {
-    type: "scattergeo",
-    mode: "lines",
-    lon: partnershipLongitudes,
-    lat: partnershipLatitudes,
-    line: { width: 1, color: "rgba(8, 145, 178, 0.35)" },
-    hoverinfo: "skip",
-  },
-  {
-    type: "scattergeo",
-    mode: "markers",
-    lon: collaborators.map((item) => item.lon),
-    lat: collaborators.map((item) => item.lat),
-    text: collaborators.map((item) => `<b>${item.name}</b><br>${item.city}`),
-    hoverinfo: "text",
-    marker: {
-      size: collaborators.map((_, index) => index === 0 ? 15 : 11),
-      color: collaborators.map((_, index) => index === 0 ? "#0e7490" : "#06b6d4"),
-      line: { color: "#ffffff", width: 2 },
-      opacity: 0.95,
-    },
-  },
-];
+function project(longitude: number, latitude: number) {
+  return [(longitude + 180) / 360 * width, (82 - latitude) / 140 * height] as const;
+}
 
-const layout: Partial<Layout> = {
-  autosize: true,
-  margin: { l: 0, r: 0, t: 0, b: 0 },
-  paper_bgcolor: "#f7f9fa",
-  plot_bgcolor: "#f7f9fa",
-  showlegend: false,
-  hoverlabel: {
-    bgcolor: "#ffffff",
-    bordercolor: "#d1d5db",
-    font: { color: "#111827", size: 12, family: "Inter, system-ui, sans-serif" },
-  },
-  geo: {
-    projection: { type: "natural earth" },
-    bgcolor: "#f7f9fa",
-    showframe: false,
-    showcoastlines: true,
-    coastlinecolor: "#9ca3af",
-    coastlinewidth: 0.7,
-    showland: true,
-    landcolor: "#e5e7eb",
-    showocean: true,
-    oceancolor: "#f7f9fa",
-    showcountries: true,
-    countrycolor: "#ffffff",
-    countrywidth: 0.5,
-    lataxis: { range: [-58, 82] },
-  },
-};
+// Decode the local TopoJSON once on the server, before the page reaches the browser.
+const projectedArcs = world.arcs.map(arc => {
+  let longitude = 0;
+  let latitude = 0;
+  return arc.map(([deltaLongitude, deltaLatitude]) => {
+    longitude += deltaLongitude;
+    latitude += deltaLatitude;
+    return project(
+      longitude * world.transform.scale[0] + world.transform.translate[0],
+      latitude * world.transform.scale[1] + world.transform.translate[1],
+    );
+  });
+});
 
-const config: Partial<Config> = {
-  responsive: true,
-  displayModeBar: false,
-};
+function ringPath(arcs: number[]) {
+  const points = arcs.flatMap(index => {
+    const arc = projectedArcs[index < 0 ? ~index : index];
+    return index < 0 ? [...arc].reverse() : arc;
+  });
+  if (points.length === 0) return "";
+
+  // Unwrap rings at the date line and repeat edge fragments instead of crossing the map.
+  let previousX = points[0][0];
+  const unwrapped = points.map(([x, y]) => {
+    const wrappedX = x + Math.round((previousX - x) / width) * width;
+    previousX = wrappedX;
+    return [wrappedX, y] as const;
+  });
+  const offsets = [0];
+  if (unwrapped.some(([x]) => x < 0)) offsets.push(width);
+  if (unwrapped.some(([x]) => x > width)) offsets.push(-width);
+  return offsets.map(offset => unwrapped.map(([x, y], index) => (
+    `${index === 0 ? "M" : "L"}${(x + offset).toFixed(1)},${y.toFixed(1)}`
+  )).join("") + "Z").join("");
+}
+
+const countries = world.objects.countries.geometries
+  .filter(country => country.id !== "ATA")
+  .map((country, index) => {
+    const polygons = country.type === "Polygon"
+      ? [country.arcs as number[][]]
+      : country.arcs as number[][][];
+    return { id: country.id ?? `region-${index}`, path: polygons.flatMap(polygon => polygon.map(ringPath)).join("") };
+  });
+
+const partners = collaborators.map(partner => {
+  const [x, y] = project(partner.lon, partner.lat);
+  return { ...partner, x, y };
+});
+const hub = partners[0];
 
 export default function CollaborationMap() {
-  const mapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let disposed = false;
-    let plotly: typeof import("plotly.js") | null = null;
-    const mapElement = mapRef.current;
-
-    async function renderMap() {
-      const plotlyModule = await import("plotly.js-dist-min");
-      plotly = plotlyModule.default;
-      if (!mapElement || disposed) return;
-      await plotly.newPlot(mapElement, data, layout, config);
-    }
-
-    void renderMap();
-    return () => {
-      disposed = true;
-      if (plotly && mapElement) plotly.purge(mapElement);
-    };
-  }, []);
-
   return (
-    <div className="h-[430px] w-full sm:h-[560px]">
-      <div ref={mapRef} className="h-full w-full" aria-label="World map of HumanStudy-Hub partnerships" />
+    <div className="mt-6 w-full">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-labelledby="collaboration-map-title"
+        aria-describedby="collaboration-map-description"
+        className="block h-auto w-full overflow-hidden"
+      >
+        <title id="collaboration-map-title">World map of HumanStudy-Hub partnerships</title>
+        <desc id="collaboration-map-description">Research partners in the United States, Switzerland, Hong Kong and Japan. The full list is available below the map.</desc>
+        <g fill="var(--site-surface-deep)" stroke="var(--background)" strokeWidth="0.7" fillRule="evenodd">
+          {countries.map(country => <path key={country.id} d={country.path} />)}
+        </g>
+        <g fill="none" stroke="var(--site-accent)" strokeOpacity="0.3">
+          {partners.slice(1).map(partner => (
+            <line key={partner.name} x1={hub.x} y1={hub.y} x2={partner.x} y2={partner.y} />
+          ))}
+        </g>
+        {partners.map((partner, index) => (
+          <circle
+            key={partner.name}
+            cx={partner.x}
+            cy={partner.y}
+            r={index === 0 ? 7.5 : 5.5}
+            fill={index === 0 ? "var(--site-accent)" : "#72956a"}
+            stroke="var(--background)"
+            strokeWidth="2"
+          >
+            <title>{`${partner.name} — ${partner.city}`}</title>
+          </circle>
+        ))}
+      </svg>
+      <details className="mt-5 border-t border-[var(--site-line)] pt-4">
+        <summary className="w-fit cursor-pointer py-2 text-sm text-[var(--site-accent)]">View research partners</summary>
+        <ul className="mt-4 grid gap-4 sm:grid-cols-2">
+          {partners.map(partner => (
+            <li key={partner.name}>
+              <p>{partner.name}</p>
+              <p className="mt-1 text-sm text-[var(--site-muted)]">{partner.city}</p>
+            </li>
+          ))}
+        </ul>
+      </details>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { upload } from "@vercel/blob/client";
 import JSZip from "jszip";
 import { pipelineRepairStatus } from "@/lib/pipeline-repair-status";
+import styles from "./folio-page.module.css";
 
 const MAX_PAPER_BYTES = 50 * 1024 * 1024;
 const MAX_MATERIALS_BYTES = 100 * 1024 * 1024;
@@ -53,7 +54,7 @@ function label(key: string) {
 function isPlaceholder(raw: string) {
   // "missing" is the evidence label the agent writes when it could not determine
   // a value from the paper, so it is just as much an open question as an empty
-  // field or an explicit [填写] marker. All of these turn the field amber.
+  // field or an explicit placeholder marker. All of these turn the field amber.
   return /^\s*(\[填写\]|\[missing\]|missing|tbd|unknown|not available|n\/a)?\s*$/i.test(raw);
 }
 
@@ -133,7 +134,7 @@ function filePendingCount(path: string, content: string): number {
 function LeafField({ value, onChange }: { value: JsonValue; onChange: (value: JsonValue) => void }) {
   const raw = value === null ? "" : String(value);
   const placeholder = isPlaceholder(raw);
-  const border = placeholder ? "border-amber-400 bg-amber-50/40" : "border-gray-300 bg-white";
+  const border = placeholder ? "border-amber-400 bg-amber-50/40" : "border-[var(--site-line)] bg-[var(--background)]";
   const commit = (next: string) => onChange(typeof value === "number" ? (next === "" ? 0 : Number(next)) : typeof value === "boolean" ? next === "true" : next);
   // Long prose in a single-line input is unreadable and unrepairable, and study
   // material is full of it.
@@ -145,13 +146,13 @@ function LeafField({ value, onChange }: { value: JsonValue; onChange: (value: Js
           value={raw}
           onChange={(event) => commit(event.target.value)}
           rows={Math.min(10, Math.max(3, raw.split("\n").length + Math.floor(raw.length / 90)))}
-          className={`w-full resize-y border px-3 py-2 text-sm leading-6 text-gray-800 outline-none focus:border-cyan-700 ${border}`}
+          className={`w-full resize-y border px-3 py-2 text-sm leading-6 text-[var(--foreground)] outline-none focus:border-[var(--site-accent)] ${border}`}
         />
       ) : (
         <input
           value={raw}
           onChange={(event) => commit(event.target.value)}
-          className={`w-full border px-3 py-2 text-sm text-gray-800 outline-none focus:border-cyan-700 ${border}`}
+          className={`w-full border px-3 py-2 text-sm text-[var(--foreground)] outline-none focus:border-[var(--site-accent)] ${border}`}
         />
       )}
       {placeholder && <p className="mt-1 text-[11px] font-semibold text-amber-700">Needs researcher input</p>}
@@ -190,27 +191,27 @@ function JsonNode({ value, onChange, path = "", depth = 1 }: { value: JsonValue;
                     if (event.key === "Enter" && draftKey.trim() && draftKey !== key) { onChange(renameKey(record, key, draftKey.trim())); setRenaming(""); }
                     if (event.key === "Escape") setRenaming("");
                   }}
-                  className="h-7 border border-cyan-700 px-2 font-mono text-xs outline-none"
+                  className="h-7 border border-[var(--site-accent)] px-2 font-mono text-xs outline-none"
                 />
-                <button type="button" onClick={() => { if (draftKey.trim() && draftKey !== key) onChange(renameKey(record, key, draftKey.trim())); setRenaming(""); }} className="text-[11px] font-semibold text-cyan-700">Save</button>
-                <button type="button" onClick={() => setRenaming("")} className="text-[11px] text-gray-500">Cancel</button>
+                <button type="button" onClick={() => { if (draftKey.trim() && draftKey !== key) onChange(renameKey(record, key, draftKey.trim())); setRenaming(""); }} className="text-[11px] font-semibold text-[var(--site-accent)]">Save</button>
+                <button type="button" onClick={() => setRenaming("")} className="text-[11px] text-[var(--site-muted)]">Cancel</button>
               </span>
             ) : (
-              <p className="flex min-w-0 items-center gap-2 text-xs font-semibold text-gray-700">
+              <p className="flex min-w-0 items-center gap-2 text-xs font-semibold text-[var(--foreground)]">
                 <span className="break-words">{label(key)}</span>
                 {missing > 0 && <span className="shrink-0 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{missing}</span>}
               </p>
             )}
             {!isRenaming && (
               <span className="flex shrink-0 gap-2 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                <button type="button" onClick={() => { setRenaming(key); setDraftKey(key); }} className="text-[11px] text-gray-400 hover:text-cyan-700">Rename</button>
+                <button type="button" onClick={() => { setRenaming(key); setDraftKey(key); }} className="text-[11px] text-[var(--site-muted)] hover:text-[var(--site-accent)]">Rename</button>
                 {/* The agent sometimes extracts a field the paper never had. */}
-                <button type="button" onClick={() => onChange(Object.fromEntries(entries.filter(([other]) => other !== key)))} className="text-[11px] text-gray-400 hover:text-red-700">Remove</button>
+                <button type="button" onClick={() => onChange(Object.fromEntries(entries.filter(([other]) => other !== key)))} className="text-[11px] text-[var(--site-muted)] hover:text-red-700">Remove</button>
               </span>
             )}
           </div>
-          {help && <p className="mb-1.5 text-[11px] leading-4 text-gray-500">{help}</p>}
-          <div className={depth < 3 ? "border-l-2 border-gray-100 pl-3" : ""}>
+          {help && <p className="mb-1.5 text-[11px] leading-4 text-[var(--site-muted)]">{help}</p>}
+          <div className={depth < 3 ? "border-l-2 border-[var(--site-line)] pl-3" : ""}>
             <JsonNode value={child} path={`${path}.${key}`} depth={depth + 1} onChange={(next) => onChange({ ...record, [key]: next })} />
           </div>
         </div>
@@ -220,8 +221,8 @@ function JsonNode({ value, onChange, path = "", depth = 1 }: { value: JsonValue;
       <div className="min-w-0 space-y-3">
         {visible.map(field)}
         {technical.length > 0 && (
-          <details className="border-t border-gray-200 pt-2">
-            <summary className="cursor-pointer text-xs font-semibold text-gray-500">Technical extraction details</summary>
+          <details className="border-t border-[var(--site-line)] pt-2">
+            <summary className="cursor-pointer text-xs font-semibold text-[var(--site-muted)]">Technical extraction details</summary>
             <div className="mt-3 space-y-3">{technical.map(field)}</div>
           </details>
         )}
@@ -239,15 +240,15 @@ function JsonNode({ value, onChange, path = "", depth = 1 }: { value: JsonValue;
           {value.map((child, index) => {
             const missing = needsInputCount(child);
             return (
-              <details key={`${path}.${index}`} className="border border-gray-200 bg-white">
-                <summary className="group flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-gray-50">
+              <details key={`${path}.${index}`} className="border border-[var(--site-line)] bg-[var(--background)]">
+                <summary className="group flex cursor-pointer items-center justify-between gap-2 px-3 py-2 text-xs text-[var(--site-muted)] hover:bg-[var(--site-surface)]">
                   <span className="truncate">Item {index + 1}</span>
                   <span className="flex shrink-0 items-center gap-2">
                     {missing > 0 && <span className="bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">{missing} to fill</span>}
-                    <button type="button" onClick={(event) => { event.preventDefault(); onChange(value.filter((_, at) => at !== index)); }} className="text-[11px] text-gray-400 opacity-0 transition-opacity hover:text-red-700 group-hover:opacity-100">Remove</button>
+                    <button type="button" onClick={(event) => { event.preventDefault(); onChange(value.filter((_, at) => at !== index)); }} className="text-[11px] text-[var(--site-muted)] opacity-0 transition-opacity hover:text-red-700 group-hover:opacity-100">Remove</button>
                   </span>
                 </summary>
-                <div className="border-t border-gray-100 p-3">
+                <div className="border-t border-[var(--site-line)] p-3">
                   <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onChange={(next) => update(index, next)} />
                 </div>
               </details>
@@ -260,9 +261,9 @@ function JsonNode({ value, onChange, path = "", depth = 1 }: { value: JsonValue;
       <div className="min-w-0 space-y-2">
         {value.map((child, index) => (
           <div key={`${path}.${index}`} className="group min-w-0">
-            <p className="mb-1 flex items-center justify-between text-[11px] text-gray-500">
+            <p className="mb-1 flex items-center justify-between text-[11px] text-[var(--site-muted)]">
               <span>Item {index + 1}</span>
-              <button type="button" onClick={() => onChange(value.filter((_, at) => at !== index))} className="text-[11px] text-gray-400 opacity-0 transition-opacity hover:text-red-700 group-hover:opacity-100">Remove</button>
+              <button type="button" onClick={() => onChange(value.filter((_, at) => at !== index))} className="text-[11px] text-[var(--site-muted)] opacity-0 transition-opacity hover:text-red-700 group-hover:opacity-100">Remove</button>
             </p>
             <JsonNode value={child} path={`${path}.${index}`} depth={depth + 1} onChange={(next) => update(index, next)} />
           </div>
@@ -355,7 +356,7 @@ const mapGoTo = (target?: string) => {
 function LocateLink({ target, onGoTo }: { target?: string; onGoTo?: (target: string) => void }) {
   if (!target) return null;
   return (
-    <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); (onGoTo ?? mapGoTo)(target); }} className="shrink-0 text-[10px] font-semibold text-cyan-600 hover:text-cyan-800" title="Jump to this section in the editor">Locate</button>
+    <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); (onGoTo ?? mapGoTo)(target); }} className="shrink-0 text-[10px] font-semibold text-[var(--site-accent)] hover:text-[var(--site-accent)]" title="Jump to this section in the editor">Locate</button>
   );
 }
 
@@ -364,22 +365,22 @@ function MapNodeView({ node, depth, activeTarget, onGoTo }: { node: MapNode; dep
   // A leaf carries a single labelled fact (e.g. an outcome, a condition factor).
   if (node.kind === "leaf") {
     return (
-      <div className={`min-w-0 ${isActive ? "rounded bg-cyan-50 px-1 -mx-1" : ""}`}>
-        <p className="text-[11px] font-semibold text-gray-700">{node.label}</p>
-        {node.detail && <p className="text-[11px] leading-5 text-gray-500">{node.detail}</p>}
+      <div className={`min-w-0 ${isActive ? "rounded bg-[var(--site-surface)] px-1 -mx-1" : ""}`}>
+        <p className="text-[11px] font-semibold text-[var(--foreground)]">{node.label}</p>
+        {node.detail && <p className="text-[11px] leading-5 text-[var(--site-muted)]">{node.detail}</p>}
       </div>
     );
   }
 
   const hasChildren = Boolean(node.children && node.children.length > 0);
   const label = (
-    <span className={`${depth === 0 ? "text-sm font-bold text-gray-950" : "text-xs font-semibold text-gray-800"} ${isActive ? "text-cyan-800" : ""}`}>{node.label}</span>
+    <span className={`${depth === 0 ? "text-sm font-bold text-[var(--foreground)]" : "text-xs font-semibold text-[var(--foreground)]"} ${isActive ? "text-[var(--site-accent)]" : ""}`}>{node.label}</span>
   );
 
   if (!hasChildren) {
     // A section with no recognised children still lets you jump to it.
     return (
-      <div className={`flex items-center gap-1.5 ${isActive ? "rounded bg-cyan-50 px-1 -mx-1" : ""}`}>
+      <div className={`flex items-center gap-1.5 ${isActive ? "rounded bg-[var(--site-surface)] px-1 -mx-1" : ""}`}>
         {label}
         <LocateLink target={node.target} onGoTo={onGoTo} />
       </div>
@@ -388,12 +389,12 @@ function MapNodeView({ node, depth, activeTarget, onGoTo }: { node: MapNode; dep
 
   return (
     <details open={depth < 2}>
-      <summary className={`flex cursor-pointer list-none items-center gap-1.5 ${isActive ? "rounded bg-cyan-50 px-1" : ""}`}>
-        <span className={`text-[10px] ${isActive ? "text-cyan-600" : "text-gray-400"}`}>▸</span>
+      <summary className={`flex cursor-pointer list-none items-center gap-1.5 ${isActive ? "rounded bg-[var(--site-surface)] px-1" : ""}`}>
+        <span className={`text-[10px] ${isActive ? "text-[var(--site-accent)]" : "text-[var(--site-muted)]"}`}>▸</span>
         {label}
         <LocateLink target={node.target} onGoTo={onGoTo} />
       </summary>
-      <div className="mt-1 space-y-1 border-l border-gray-200 pl-3">
+      <div className="mt-1 space-y-1 border-l border-[var(--site-line)] pl-3">
         {node.children!.map((child, i) => <MapNodeView key={i} node={child} depth={depth + 1} activeTarget={activeTarget} onGoTo={onGoTo} />)}
       </div>
     </details>
@@ -404,10 +405,10 @@ function StructureMap({ value, activeTarget, onGoTo }: { value: JsonValue; activ
   const root = buildStudyMap(value);
   if (!root.children || root.children.length === 0) return null;
   return (
-    <div className="border border-gray-200 bg-white">
-      <div className="border-b border-gray-100 bg-gray-50 px-4 py-2">
-        <p className="text-[10px] font-bold uppercase text-cyan-800">Study map</p>
-        <p className="mt-0.5 text-[10px] leading-4 text-gray-400">Minimap — highlights the section you are viewing.</p>
+    <div className="border border-[var(--site-line)] bg-[var(--background)]">
+      <div className="border-b border-[var(--site-line)] bg-[var(--site-surface)] px-4 py-2">
+        <p className="text-[10px] font-bold uppercase text-[var(--site-accent)]">Study map</p>
+        <p className="mt-0.5 text-[10px] leading-4 text-[var(--site-muted)]">Minimap — highlights the section you are viewing.</p>
       </div>
       <div className="space-y-3 p-4">
         <MapNodeView node={root} depth={0} activeTarget={activeTarget} onGoTo={onGoTo} />
@@ -448,20 +449,20 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
     const missing = sectionMissingCount(child);
     const isOpen = !collapsed[key];
     return (
-      <section key={key} id={sectionId(key)} className="scroll-mt-2 border border-gray-200 bg-white">
+      <section key={key} id={sectionId(key)} className="scroll-mt-2 border border-[var(--site-line)] bg-[var(--background)]">
         <button
           type="button"
           onClick={() => setCollapsed((current) => ({ ...current, [key]: isOpen }))}
-          className="flex w-full items-center justify-between gap-3 bg-gray-50 px-4 py-3 text-left hover:bg-gray-100"
+          className="flex w-full items-center justify-between gap-3 bg-[var(--site-surface)] px-4 py-3 text-left hover:bg-[var(--site-surface)]"
         >
           <span className="flex min-w-0 items-center gap-2">
-            <span className={`shrink-0 text-gray-400 transition-transform ${isOpen ? "rotate-90" : ""}`}>›</span>
-            <span className="truncate text-sm font-semibold text-gray-900">{label(key)}</span>
+            <span className={`shrink-0 text-[var(--site-muted)] transition-transform ${isOpen ? "rotate-90" : ""}`}>›</span>
+            <span className="truncate text-sm font-semibold text-[var(--foreground)]">{label(key)}</span>
           </span>
           {missing > 0 && <span className="shrink-0 bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800">{missing} to fill</span>}
         </button>
         {isOpen && (
-          <div className="min-w-0 border-t border-gray-100 p-4">
+          <div className="min-w-0 border-t border-[var(--site-line)] p-4">
             <JsonNode value={child} path={key} depth={1} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} />
           </div>
         )}
@@ -471,15 +472,15 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
 
   return (
     <div className="space-y-3">
-      <div className="border border-gray-200 bg-white p-3">
+      <div className="border border-[var(--site-line)] bg-[var(--background)] p-3">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <p className="text-[11px] font-bold uppercase text-gray-500">Sections in this file</p>
+          <p className="text-[11px] font-bold uppercase text-[var(--site-muted)]">Sections in this file</p>
           <div className="flex items-center gap-3">
-            <button type="button" onClick={() => setCollapsed(Object.fromEntries(visible.map(([key]) => [key, true])))} className="text-[11px] font-semibold text-gray-500 hover:text-gray-900">Collapse all</button>
-            <button type="button" onClick={() => setCollapsed({})} className="text-[11px] font-semibold text-gray-500 hover:text-gray-900">Expand all</button>
+            <button type="button" onClick={() => setCollapsed(Object.fromEntries(visible.map(([key]) => [key, true])))} className="text-[11px] font-semibold text-[var(--site-muted)] hover:text-[var(--foreground)]">Collapse all</button>
+            <button type="button" onClick={() => setCollapsed({})} className="text-[11px] font-semibold text-[var(--site-muted)] hover:text-[var(--foreground)]">Expand all</button>
           </div>
         </div>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-2">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--site-line)] pt-2">
           <p className={`text-xs font-semibold ${totalMissing > 0 ? "text-amber-700" : "text-emerald-700"}`}>
             {totalMissing > 0
               ? isChecklist
@@ -496,7 +497,7 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
                 key={key}
                 type="button"
                 onClick={() => jump(key)}
-                className={`border px-2 py-1 text-[11px] font-semibold ${missing > 0 ? "border-amber-300 bg-amber-50 text-amber-900" : "border-gray-200 bg-white text-gray-600 hover:border-cyan-300"}`}
+                className={`border px-2 py-1 text-[11px] font-semibold ${missing > 0 ? "border-amber-300 bg-amber-50 text-amber-900" : "border-[var(--site-line)] bg-[var(--background)] text-[var(--site-muted)] hover:border-[var(--site-line)]"}`}
               >
                 {label(key)}{missing > 0 ? ` · ${missing}` : ""}
               </button>
@@ -508,11 +509,11 @@ export function JsonEditor({ value, onChange, path = "" }: { value: JsonValue; o
       {visible.map(section)}
 
       {technical.length > 0 && (
-        <details className="border border-gray-200 bg-white">
-          <summary className="cursor-pointer bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-500">Technical extraction details</summary>
-          <div className="space-y-3 border-t border-gray-100 p-4">{technical.map(([key, child]) => (
+        <details className="border border-[var(--site-line)] bg-[var(--background)]">
+          <summary className="cursor-pointer bg-[var(--site-surface)] px-4 py-3 text-sm font-semibold text-[var(--site-muted)]">Technical extraction details</summary>
+          <div className="space-y-3 border-t border-[var(--site-line)] p-4">{technical.map(([key, child]) => (
             <div key={key} className="min-w-0">
-              <p className="mb-1 text-xs font-semibold text-gray-700">{label(key)}</p>
+              <p className="mb-1 text-xs font-semibold text-[var(--foreground)]">{label(key)}</p>
               <JsonNode value={child} path={key} depth={2} onChange={(next) => onChange({ ...(value as Record<string, JsonValue>), [key]: next })} />
             </div>
           ))}</div>
@@ -956,48 +957,48 @@ export default function PipelineStudio() {
 
   if (!job) {
     return (
-      <div className="min-h-[calc(100vh-4rem)] bg-[#f7f9fa]">
-        <header className="border-b border-gray-200 bg-white">
-          <div className="mx-auto max-w-6xl px-5 py-9 sm:px-8">
-            <p className="text-xs font-semibold uppercase text-cyan-700">Build an existing study</p>
-            <h1 className="mt-2 max-w-3xl font-serif text-3xl font-bold text-gray-950">Start with the paper</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">Upload the study. Our agent builds the runnable files; you review them before anything is published.</p>
+      <div className={styles.page}>
+        <header className="border-b border-[var(--site-line)] bg-[var(--background)]">
+          <div className="pb-8">
+            <p className="text-xs font-semibold uppercase text-[var(--site-accent)]">Build an existing study</p>
+            <h1 className="mt-2 max-w-3xl font-serif text-3xl font-bold text-[var(--foreground)]">Start with the paper</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--site-muted)]">Upload the study. Our agent builds the runnable files; you review them before anything is published.</p>
           </div>
         </header>
 
-        <main className="mx-auto grid max-w-6xl gap-8 px-5 py-9 sm:px-8 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <section className="border border-gray-200 bg-white p-6 shadow-sm">
-            <div className="border-b border-gray-100 pb-5">
-              <p className="text-sm font-semibold text-gray-950">1. Add the paper</p>
-              <p className="mt-1 text-xs text-gray-500">PDF required · up to 50 MB</p>
+        <div className="grid gap-8 py-9 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <section className="border border-[var(--site-line)] bg-[var(--background)] p-6 shadow-sm">
+            <div className="border-b border-[var(--site-line)] pb-5">
+              <p className="text-sm font-semibold text-[var(--foreground)]">1. Add the paper</p>
+              <p className="mt-1 text-xs text-[var(--site-muted)]">PDF required · up to 50 MB</p>
             </div>
 
-            <button type="button" onClick={() => fileInput.current?.click()} className={`mt-5 flex min-h-40 w-full flex-col items-center justify-center border border-dashed px-6 text-center transition-colors ${paper ? "border-emerald-400 bg-emerald-50" : "border-cyan-300 bg-cyan-50 hover:border-cyan-600 hover:bg-cyan-100"}`}>
-              <span className={`flex h-10 w-10 items-center justify-center rounded-full text-xl font-light ${paper ? "bg-emerald-600 text-white" : "bg-cyan-700 text-white"}`}>{paper ? "✓" : "+"}</span>
-              <span className="mt-3 text-sm font-semibold text-gray-950">{paper?.name || "Choose a paper PDF"}</span>
+            <button type="button" onClick={() => fileInput.current?.click()} className={`mt-5 flex min-h-40 w-full flex-col items-center justify-center border border-dashed px-6 text-center transition-colors ${paper ? "border-emerald-400 bg-emerald-50" : "border-[var(--site-line)] bg-[var(--site-surface)] hover:border-[var(--site-accent)] hover:bg-[var(--site-surface)]"}`}>
+              <span className={`flex h-10 w-10 items-center justify-center rounded-full text-xl font-light ${paper ? "bg-emerald-600 text-white" : "bg-[var(--site-accent)] text-white"}`}>{paper ? "✓" : "+"}</span>
+              <span className="mt-3 text-sm font-semibold text-[var(--foreground)]">{paper?.name || "Choose a paper PDF"}</span>
               {paper && <span className="mt-1 text-xs text-emerald-700">{(paper.size / 1024 / 1024).toFixed(1)} MB · ready</span>}
             </button>
             <input ref={fileInput} type="file" accept=".pdf,application/pdf" className="hidden" onChange={(event) => chooseFile(event.target.files?.[0])} />
 
-            <div className="mt-6 rounded border border-dashed border-gray-300 bg-gray-50 p-4">
-              <p className="text-xs font-semibold text-gray-700">Or import an existing study <span className="font-normal text-gray-400">(demo)</span></p>
-              <p className="mt-1 text-[11px] text-gray-500">Skip extraction and walk the review + ship flow with a benchmark study.</p>
+            <div className="mt-6 rounded border border-dashed border-[var(--site-line)] bg-[var(--site-surface)] p-4">
+              <p className="text-xs font-semibold text-[var(--foreground)]">Or import an existing study <span className="font-normal text-[var(--site-muted)]">(demo)</span></p>
+              <p className="mt-1 text-[11px] text-[var(--site-muted)]">Skip extraction and walk the review + ship flow with a benchmark study.</p>
               <div className="mt-3 flex gap-2">
-                <select value={importStudyId} onChange={(event) => setImportStudyId(event.target.value)} className="h-9 flex-1 border border-gray-300 px-2 text-sm outline-none focus:border-cyan-700">
+                <select value={importStudyId} onChange={(event) => setImportStudyId(event.target.value)} className="h-9 flex-1 border border-[var(--site-line)] px-2 text-sm outline-none focus:border-[var(--site-accent)]">
                   {Array.from({ length: 16 }, (_, i) => `study_${String(i + 1).padStart(3, "0")}`).map((id) => <option key={id} value={id}>{id}</option>)}
                 </select>
-                <button type="button" disabled={busy} onClick={importExisting} className="h-9 shrink-0 bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-600 disabled:bg-gray-300">{busy ? "Importing…" : "Import"}</button>
+                <button type="button" disabled={busy} onClick={importExisting} className="h-9 shrink-0 bg-emerald-700 px-3 text-xs font-semibold text-white hover:bg-emerald-600 disabled:bg-[var(--site-selected)]">{busy ? "Importing…" : "Import"}</button>
               </div>
             </div>
 
-            <div className="mt-6 border-b border-gray-100 pb-3"><p className="text-sm font-semibold text-gray-950">2. Add study details</p></div>
-            <label className="mt-5 block text-sm font-semibold text-gray-900" htmlFor="osf-url">Open materials <span className="font-normal text-gray-400">optional</span></label>
-            <input id="osf-url" value={osf} onChange={(event) => setOsf(event.target.value)} placeholder="https://osf.io/... or another materials URL" className="mt-2 h-10 w-full border border-gray-300 px-3 text-sm outline-none focus:border-cyan-700" />
+            <div className="mt-6 border-b border-[var(--site-line)] pb-3"><p className="text-sm font-semibold text-[var(--foreground)]">2. Add study details</p></div>
+            <label className="mt-5 block text-sm font-semibold text-[var(--foreground)]" htmlFor="osf-url">Open materials <span className="font-normal text-[var(--site-muted)]">optional</span></label>
+            <input id="osf-url" value={osf} onChange={(event) => setOsf(event.target.value)} placeholder="https://osf.io/... or another materials URL" className="mt-2 h-10 w-full border border-[var(--site-line)] px-3 text-sm outline-none focus:border-[var(--site-accent)]" />
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <input ref={openMaterialsZipInput} type="file" accept=".zip,application/zip,application/x-zip-compressed" className="hidden" onChange={(event) => chooseOpenMaterialsZip(event.target.files?.[0])} />
               <input ref={openMaterialsFolderInput} type="file" multiple className="hidden" {...directoryInputProps} onChange={(event) => chooseOpenMaterialsFolder(event.target.files)} />
-              <button type="button" disabled={busy} onClick={() => openMaterialsZipInput.current?.click()} className="h-9 border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-cyan-400 disabled:bg-gray-100">Upload a ZIP</button>
-              <button type="button" disabled={busy} onClick={() => openMaterialsFolderInput.current?.click()} className="h-9 border border-gray-300 bg-white px-3 text-xs font-semibold text-gray-700 hover:border-cyan-400 disabled:bg-gray-100">Upload a folder</button>
+              <button type="button" disabled={busy} onClick={() => openMaterialsZipInput.current?.click()} className="h-9 border border-[var(--site-line)] bg-[var(--background)] px-3 text-xs font-semibold text-[var(--foreground)] hover:border-[var(--site-accent)] disabled:bg-[var(--site-surface)]">Upload a ZIP</button>
+              <button type="button" disabled={busy} onClick={() => openMaterialsFolderInput.current?.click()} className="h-9 border border-[var(--site-line)] bg-[var(--background)] px-3 text-xs font-semibold text-[var(--foreground)] hover:border-[var(--site-accent)] disabled:bg-[var(--site-surface)]">Upload a folder</button>
               {openMaterialsFiles && openMaterialsFiles.length > 0 && (
                 <span className="flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
                   <span className="font-semibold">{openMaterialsFiles.length === 1 && openMaterialsFiles[0].name.toLowerCase().endsWith(".zip") ? openMaterialsFiles[0].name : `${(openMaterialsFiles[0].webkitRelativePath || "materials").split("/")[0]}/ · ${openMaterialsFiles.length} files`}</span>
@@ -1005,29 +1006,29 @@ export default function PipelineStudio() {
                 </span>
               )}
             </div>
-            <p className="mt-2 text-[11px] text-gray-500">Questionnaires, stimuli, or data. A URL is followed online; a ZIP or folder is extracted for the agent (folders are zipped in your browser, up to 100 MB).</p>
+            <p className="mt-2 text-[11px] text-[var(--site-muted)]">Questionnaires, stimuli, or data. A URL is followed online; a ZIP or folder is extracted for the agent (folders are zipped in your browser, up to 100 MB).</p>
 
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-semibold text-gray-900" htmlFor="contributor-name">Contributor name</label>
-                <input id="contributor-name" value={contributorName} onChange={(event) => setContributorName(event.target.value)} className="mt-2 h-10 w-full border border-gray-300 px-3 text-sm outline-none focus:border-cyan-700" />
+                <label className="block text-sm font-semibold text-[var(--foreground)]" htmlFor="contributor-name">Contributor name</label>
+                <input id="contributor-name" value={contributorName} onChange={(event) => setContributorName(event.target.value)} className="mt-2 h-10 w-full border border-[var(--site-line)] px-3 text-sm outline-none focus:border-[var(--site-accent)]" />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-900" htmlFor="contributor-id">GitHub ID <span className="font-normal text-gray-400">optional</span></label>
-                <input id="contributor-id" value={contributorId} onChange={(event) => setContributorId(event.target.value.replace(/^@/, ""))} className="mt-2 h-10 w-full border border-gray-300 px-3 text-sm outline-none focus:border-cyan-700" />
+                <label className="block text-sm font-semibold text-[var(--foreground)]" htmlFor="contributor-id">GitHub ID <span className="font-normal text-[var(--site-muted)]">optional</span></label>
+                <input id="contributor-id" value={contributorId} onChange={(event) => setContributorId(event.target.value.replace(/^@/, ""))} className="mt-2 h-10 w-full border border-[var(--site-line)] px-3 text-sm outline-none focus:border-[var(--site-accent)]" />
               </div>
             </div>
 
             {error && <p className="mt-5 border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
             {uploadPercent !== null && (
               <div className="mt-5">
-                <div className="flex items-center justify-between text-xs text-gray-600"><span>Uploading {paper?.name}</span><span className="font-mono font-semibold text-cyan-800">{Math.round(uploadPercent)}%</span></div>
-                <div className="mt-2 h-2 overflow-hidden bg-gray-100"><div className="h-full bg-cyan-700 transition-[width] duration-300" style={{ width: `${uploadPercent}%` }} /></div>
+                <div className="flex items-center justify-between text-xs text-[var(--site-muted)]"><span>Uploading {paper?.name}</span><span className="font-mono font-semibold text-[var(--site-accent)]">{Math.round(uploadPercent)}%</span></div>
+                <div className="mt-2 h-2 overflow-hidden bg-[var(--site-surface)]"><div className="h-full bg-[var(--site-accent)] transition-[width] duration-300" style={{ width: `${uploadPercent}%` }} /></div>
               </div>
             )}
-            <div className="mt-7 flex justify-end border-t border-gray-100 pt-5">
+            <div className="mt-7 flex justify-end border-t border-[var(--site-line)] pt-5">
               <div className="flex flex-col items-end gap-3 sm:flex-row sm:items-center">
-                <button type="button" disabled={!paper || !contributorName.trim() || busy} onClick={start} className="h-10 bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:bg-gray-300">
+                <button type="button" disabled={!paper || !contributorName.trim() || busy} onClick={start} className="h-10 bg-[var(--site-accent)] px-5 text-sm font-semibold text-white hover:bg-[var(--site-accent)] disabled:cursor-not-allowed disabled:bg-[var(--site-selected)]">
                   {busy ? (uploadPercent !== null ? `Uploading ${Math.round(uploadPercent)}%` : "Starting...") : "Build this study"}
                 </button>
               </div>
@@ -1035,39 +1036,39 @@ export default function PipelineStudio() {
           </section>
 
           <aside className="space-y-5">
-            <section className="border border-cyan-200 bg-cyan-50 p-4">
-              <p className="text-sm font-semibold text-cyan-950">Is this study a good fit?</p>
-              <ul className="mt-3 space-y-2 text-xs leading-5 text-cyan-950">
+            <section className="border border-[var(--site-line)] bg-[var(--site-surface)] p-4">
+              <p className="text-sm font-semibold text-[var(--site-accent)]">Is this study a good fit?</p>
+              <ul className="mt-3 space-y-2 text-xs leading-5 text-[var(--site-accent)]">
                 <li><span className="mr-2 text-emerald-600">✓</span>Human results are reported</li>
                 <li><span className="mr-2 text-emerald-600">✓</span>Instructions and stimuli are available</li>
                 <li><span className="mr-2 text-amber-600">!</span>Safe and appropriate to simulate</li>
               </ul>
             </section>
 
-            <section className="border border-gray-200 bg-white p-4">
-              <p className="text-sm font-semibold text-gray-900">Open a previous study</p>
+            <section className="border border-[var(--site-line)] bg-[var(--background)] p-4">
+              <p className="text-sm font-semibold text-[var(--foreground)]">Open a previous study</p>
               <div className="mt-3 flex">
-                <input value={lookupName} onChange={(event) => setLookupName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") findMyJobs(); }} placeholder="Contributor name" className="h-9 min-w-0 flex-1 border border-gray-300 px-3 text-xs outline-none focus:border-cyan-700" />
-                <button type="button" title="Search studies" disabled={searching || lookupName.trim().length < 2} onClick={findMyJobs} className="h-9 w-10 shrink-0 bg-gray-900 text-sm text-white hover:bg-cyan-700 disabled:bg-gray-300">→</button>
+                <input value={lookupName} onChange={(event) => setLookupName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") findMyJobs(); }} placeholder="Contributor name" className="h-9 min-w-0 flex-1 border border-[var(--site-line)] px-3 text-xs outline-none focus:border-[var(--site-accent)]" />
+                <button type="button" title="Search studies" disabled={searching || lookupName.trim().length < 2} onClick={findMyJobs} className="h-9 w-10 shrink-0 bg-[var(--site-accent)] text-sm text-white hover:bg-[var(--site-accent)] disabled:bg-[var(--site-selected)]">→</button>
               </div>
-              {foundJobs && foundJobs.length === 0 && <p className="mt-3 text-xs text-gray-500">No studies found.</p>}
-              {foundJobs && foundJobs.length > 0 && <ul className="mt-3 divide-y divide-gray-200">{foundJobs.map((entry) => <li key={entry.id}><button type="button" onClick={() => openJob(entry.id)} className="flex w-full items-center justify-between gap-2 py-2 text-left"><span className="truncate text-xs font-semibold text-gray-800">{entry.paperName}</span><span className={`shrink-0 px-1.5 py-0.5 text-[9px] font-semibold ${entry.status === "review" ? "bg-amber-100 text-amber-800" : entry.status === "complete" ? "bg-emerald-100 text-emerald-800" : entry.status === "failed" ? "bg-red-100 text-red-800" : "bg-cyan-100 text-cyan-800"}`}>{entry.status}</span></button></li>)}</ul>}
+              {foundJobs && foundJobs.length === 0 && <p className="mt-3 text-xs text-[var(--site-muted)]">No studies found.</p>}
+              {foundJobs && foundJobs.length > 0 && <ul className="mt-3 divide-y divide-[var(--site-line)]">{foundJobs.map((entry) => <li key={entry.id}><button type="button" onClick={() => openJob(entry.id)} className="flex w-full items-center justify-between gap-2 py-2 text-left"><span className="truncate text-xs font-semibold text-[var(--foreground)]">{entry.paperName}</span><span className={`shrink-0 px-1.5 py-0.5 text-[9px] font-semibold ${entry.status === "review" ? "bg-amber-100 text-amber-800" : entry.status === "complete" ? "bg-emerald-100 text-emerald-800" : entry.status === "failed" ? "bg-red-100 text-red-800" : "bg-[var(--site-surface)] text-[var(--site-accent)]"}`}>{entry.status}</span></button></li>)}</ul>}
             </section>
 
             <section className="px-2">
-            <p className="text-xs font-semibold uppercase text-gray-500">What happens next</p>
-            <ol className="mt-4 border-l border-gray-300">
+            <p className="text-xs font-semibold uppercase text-[var(--site-muted)]">What happens next</p>
+            <ol className="mt-4 border-l border-[var(--site-line)]">
               {agentTasks.map(([label, detail], index) => (
                 <li key={label} className="relative pb-5 pl-6">
-                  <span className="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full border border-cyan-200 bg-cyan-50 text-[11px] font-bold text-cyan-800">{index + 1}</span>
-                  <p className="text-sm font-semibold text-gray-800">{label}</p>
-                  <p className="mt-0.5 text-[11px] leading-4 text-gray-500">{detail}</p>
+                  <span className="absolute -left-3 flex h-6 w-6 items-center justify-center rounded-full border border-[var(--site-line)] bg-[var(--site-surface)] text-[11px] font-bold text-[var(--site-accent)]">{index + 1}</span>
+                  <p className="text-sm font-semibold text-[var(--foreground)]">{label}</p>
+                  <p className="mt-0.5 text-[11px] leading-4 text-[var(--site-muted)]">{detail}</p>
                 </li>
               ))}
             </ol>
             </section>
           </aside>
-        </main>
+        </div>
       </div>
     );
   }
@@ -1075,55 +1076,55 @@ export default function PipelineStudio() {
   const repairStatus = pipelineRepairStatus(job);
 
   return (
-    <div className="min-h-[calc(100vh-4rem)] bg-[#f7f9fa]">
-      <header className="border-b border-gray-200 bg-white px-5 py-4">
+    <div className={styles.page}>
+      <header className="border-b border-[var(--site-line)] bg-[var(--background)] px-5 py-4">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-semibold text-gray-950">{job.paperName}</p>
-            <p className="mt-1 font-mono text-xs text-gray-500">{job.experimentId.startsWith("draft_") ? "Draft study" : `studies/${job.experimentId}/`}</p>
+            <p className="text-sm font-semibold text-[var(--foreground)]">{job.paperName}</p>
+            <p className="mt-1 font-mono text-xs text-[var(--site-muted)]">{job.experimentId.startsWith("draft_") ? "Draft study" : `studies/${job.experimentId}/`}</p>
           </div>
-          <div className="flex items-center gap-3"><Link href="/" className="text-xs font-semibold text-gray-500 hover:text-gray-950">Back to Hub</Link><button type="button" onClick={() => setLeaving(true)} className="text-xs font-semibold text-cyan-700 hover:text-cyan-900">Start another study</button><span className={`px-2 py-1 text-xs font-semibold ${job.status === "failed" ? "bg-red-100 text-red-800" : job.status === "complete" ? "bg-emerald-100 text-emerald-800" : job.status === "review" ? "bg-amber-100 text-amber-800" : "bg-cyan-100 text-cyan-800"}`}>{job.status}</span></div>
+          <div className="flex items-center gap-3"><Link href="/" className="text-xs font-semibold text-[var(--site-muted)] hover:text-[var(--foreground)]">Back to Hub</Link><button type="button" onClick={() => setLeaving(true)} className="text-xs font-semibold text-[var(--site-accent)] hover:text-[var(--site-accent)]">Start another study</button><span className={`px-2 py-1 text-xs font-semibold ${job.status === "failed" ? "bg-red-100 text-red-800" : job.status === "complete" ? "bg-emerald-100 text-emerald-800" : job.status === "review" ? "bg-amber-100 text-amber-800" : "bg-[var(--site-surface)] text-[var(--site-accent)]"}`}>{job.status}</span></div>
         </div>
       </header>
 
       {leaving && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/40 p-4">
-          <div className="w-full max-w-md border border-gray-300 bg-white p-6 shadow-xl">
-            <p className="font-serif text-lg font-bold text-gray-950">Leave this study?</p>
-            <p className="mt-2 text-sm leading-6 text-gray-600">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--site-accent)]/40 p-4">
+          <div className="w-full max-w-md border border-[var(--site-line)] bg-[var(--background)] p-6 shadow-xl">
+            <p className="font-serif text-lg font-bold text-[var(--foreground)]">Leave this study?</p>
+            <p className="mt-2 text-sm leading-6 text-[var(--site-muted)]">
               {job.status === "review"
                 ? "This package is waiting for your review. Saved edits are kept, but unsaved ones are not."
                 : "This job keeps running whether or not you stay on the page."}
             </p>
-            <p className="mt-3 border-l-2 border-cyan-700 bg-cyan-50 p-3 text-xs leading-5 text-cyan-950">
+            <p className="mt-3 border-l-2 border-[var(--site-accent)] bg-[var(--site-surface)] p-3 text-xs leading-5 text-[var(--site-accent)]">
               You can come back to it. Keep this job id, or find it again from the name you submitted it under.
               <span className="mt-1 block break-all font-mono font-semibold">{job.id}</span>
             </p>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <button type="button" onClick={() => setLeaving(false)} className="h-10 border border-gray-300 px-4 text-sm font-semibold text-gray-700 hover:border-gray-400">Keep reviewing</button>
-              <button type="button" onClick={() => { setLeaving(false); leaveJob(); }} className="h-10 bg-cyan-700 px-4 text-sm font-semibold text-white hover:bg-cyan-600">Start another study</button>
+              <button type="button" onClick={() => setLeaving(false)} className="h-10 border border-[var(--site-line)] px-4 text-sm font-semibold text-[var(--foreground)] hover:border-[var(--site-line)]">Keep reviewing</button>
+              <button type="button" onClick={() => { setLeaving(false); leaveJob(); }} className="h-10 bg-[var(--site-accent)] px-4 text-sm font-semibold text-white hover:bg-[var(--site-accent)]">Start another study</button>
             </div>
           </div>
         </div>
       )}
 
-      <main className="mx-auto grid max-w-7xl gap-6 px-5 py-8 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <nav className="border border-gray-200 bg-white p-3">
-          <p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase text-gray-500">Agent workflow</p>
+      <div className="grid gap-6 py-8 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <nav className="border border-[var(--site-line)] bg-[var(--background)] p-3">
+          <p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase text-[var(--site-muted)]">Agent workflow</p>
           {agentTasks.map(([label, detail]) => (
             <div key={label} className="flex gap-3 p-3">
-              <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${job.status === "failed" ? "bg-gray-300" : job.status === "review" || job.status === "complete" ? "bg-emerald-600" : "animate-pulse bg-cyan-700"}`} />
-              <div><p className="text-xs font-semibold">{label}</p><p className="mt-1 text-[11px] leading-4 text-gray-500">{detail}</p></div>
+              <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${job.status === "failed" ? "bg-[var(--site-selected)]" : job.status === "review" || job.status === "complete" ? "bg-emerald-600" : "animate-pulse bg-[var(--site-accent)]"}`} />
+              <div><p className="text-xs font-semibold">{label}</p><p className="mt-1 text-[11px] leading-4 text-[var(--site-muted)]">{detail}</p></div>
             </div>
           ))}
         </nav>
 
-        <section className="min-w-0 border border-gray-200 bg-white">
-          <div className="border-b border-gray-200 p-6">
-            <p className="text-xs font-semibold uppercase text-cyan-700">Agent study builder</p>
+        <section className="min-w-0 border border-[var(--site-line)] bg-[var(--background)]">
+          <div className="border-b border-[var(--site-line)] p-6">
+            <p className="text-xs font-semibold uppercase text-[var(--site-accent)]">Agent study builder</p>
             <h1 className="mt-2 font-serif text-2xl font-bold">{job.message.replace("Claude Code", "Our agent")}</h1>
-            <p className="mt-2 text-sm text-gray-500">Progress and review decisions are saved under job {job.id}.</p>
-            {repairStatus && <p className={`mt-2 text-sm ${repairStatus.failed ? "text-red-800" : "text-gray-600"}`}>{repairStatus.message}</p>}
+            <p className="mt-2 text-sm text-[var(--site-muted)]">Progress and review decisions are saved under job {job.id}.</p>
+            {repairStatus && <p className={`mt-2 text-sm ${repairStatus.failed ? "text-red-800" : "text-[var(--site-muted)]"}`}>{repairStatus.message}</p>}
           </div>
 
           {(job.status === "running" || job.status === "queued") && (
@@ -1132,20 +1133,20 @@ export default function PipelineStudio() {
                 <div className="mb-5 border-l-2 border-amber-500 bg-amber-50 p-4">
                   <p className="text-sm font-semibold text-amber-950">The build has not started yet</p>
                   <p className="mt-1 text-sm leading-6 text-amber-900">GitHub Actions has not given this job a runner. Your paper is saved, so restarting does not require another upload.</p>
-                  <button type="button" disabled={busy} onClick={retry} className="mt-3 h-9 bg-amber-700 px-4 text-xs font-semibold text-white hover:bg-amber-600 disabled:bg-gray-300">{busy ? "Restarting..." : "Restart the build"}</button>
+                  <button type="button" disabled={busy} onClick={retry} className="mt-3 h-9 bg-amber-700 px-4 text-xs font-semibold text-white hover:bg-amber-600 disabled:bg-[var(--site-selected)]">{busy ? "Restarting..." : "Restart the build"}</button>
                 </div>
               )}
               {error && <p className="mb-5 border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
               {job.progress ? <>
                 <div className="flex items-end justify-between gap-4">
-                  <div><p className="text-sm font-semibold text-gray-950">{progressLabels[job.progress.phase]}</p><p className="mt-1 text-xs text-gray-500">{job.progress.completedRequired} of {job.progress.totalRequired} required files · {job.progress.totalFiles} total files</p></div>
-                  <p className="font-mono text-sm font-semibold text-cyan-800">{Math.round((job.progress.completedRequired / Math.max(1, job.progress.totalRequired)) * 100)}%</p>
+                  <div><p className="text-sm font-semibold text-[var(--foreground)]">{progressLabels[job.progress.phase]}</p><p className="mt-1 text-xs text-[var(--site-muted)]">{job.progress.completedRequired} of {job.progress.totalRequired} required files · {job.progress.totalFiles} total files</p></div>
+                  <p className="font-mono text-sm font-semibold text-[var(--site-accent)]">{Math.round((job.progress.completedRequired / Math.max(1, job.progress.totalRequired)) * 100)}%</p>
                 </div>
-                <div className="mt-3 h-2 overflow-hidden bg-gray-100"><div className="h-full bg-cyan-700 transition-[width] duration-500" style={{ width: `${Math.min(100, (job.progress.completedRequired / Math.max(1, job.progress.totalRequired)) * 100)}%` }} /></div>
-                {job.progress.missing.length > 0 && <details className="mt-4 border-t border-gray-200 pt-3"><summary className="cursor-pointer text-xs font-semibold text-gray-600">Remaining required files ({job.progress.missing.length})</summary><ul className="mt-2 grid gap-1 sm:grid-cols-2">{job.progress.missing.map((file) => <li key={file} className="break-all font-mono text-[11px] text-gray-500">{file}</li>)}</ul></details>}
-              </> : <div className="h-1.5 overflow-hidden bg-gray-100"><div className="h-full w-1/2 animate-pulse bg-cyan-700" /></div>}
-              <p className="mt-4 text-sm leading-6 text-gray-600">The agent is reading the paper, {job.osfUrl ? "processing the supplied open materials, " : ""}building the study files, and running package checks. You can leave this page and return to the same job.</p>
-              {log && <pre className="mt-5 max-h-80 overflow-auto bg-gray-950 p-4 text-xs leading-5 text-gray-200">{log}</pre>}
+                <div className="mt-3 h-2 overflow-hidden bg-[var(--site-surface)]"><div className="h-full bg-[var(--site-accent)] transition-[width] duration-500" style={{ width: `${Math.min(100, (job.progress.completedRequired / Math.max(1, job.progress.totalRequired)) * 100)}%` }} /></div>
+                {job.progress.missing.length > 0 && <details className="mt-4 border-t border-[var(--site-line)] pt-3"><summary className="cursor-pointer text-xs font-semibold text-[var(--site-muted)]">Remaining required files ({job.progress.missing.length})</summary><ul className="mt-2 grid gap-1 sm:grid-cols-2">{job.progress.missing.map((file) => <li key={file} className="break-all font-mono text-[11px] text-[var(--site-muted)]">{file}</li>)}</ul></details>}
+              </> : <div className="h-1.5 overflow-hidden bg-[var(--site-surface)]"><div className="h-full w-1/2 animate-pulse bg-[var(--site-accent)]" /></div>}
+              <p className="mt-4 text-sm leading-6 text-[var(--site-muted)]">The agent is reading the paper, {job.osfUrl ? "processing the supplied open materials, " : ""}building the study files, and running package checks. You can leave this page and return to the same job.</p>
+              {log && <pre className="mt-5 max-h-80 overflow-auto bg-[var(--site-surface)] p-4 text-xs leading-5 text-[var(--foreground)]">{log}</pre>}
             </div>
           )}
 
@@ -1156,8 +1157,8 @@ export default function PipelineStudio() {
               </div>
               <div className="mt-6 space-y-4">
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">Final study package review</p>
-                  <p className="mt-1 text-sm text-gray-500">Pick a file on the left, edit what needs input, save, then approve below.</p>
+                  <p className="text-sm font-semibold text-[var(--foreground)]">Final study package review</p>
+                  <p className="mt-1 text-sm text-[var(--site-muted)]">Pick a file on the left, edit what needs input, save, then approve below.</p>
                 </div>
                 {(() => {
                   const studyFile = reviewFiles.find((file) => file.path.endsWith("study.json"));
@@ -1169,12 +1170,12 @@ export default function PipelineStudio() {
                   const studies = Array.isArray(root.empirical_studies_identified_in_paper) ? root.empirical_studies_identified_in_paper : [];
                   const decisions = filePendingCount("/audit/missing_information.json", reviewFiles.find((f) => f.path.endsWith("missing_information.json"))?.content || "{}");
                   return (
-                    <div className="border border-gray-200 bg-white">
-                      <div className="border-b border-gray-100 bg-gray-50 px-4 py-2">
-                        <p className="text-[10px] font-bold uppercase text-cyan-800">Before you start</p>
+                    <div className="border border-[var(--site-line)] bg-[var(--background)]">
+                      <div className="border-b border-[var(--site-line)] bg-[var(--site-surface)] px-4 py-2">
+                        <p className="text-[10px] font-bold uppercase text-[var(--site-accent)]">Before you start</p>
                       </div>
                       <div className="space-y-3 p-4">
-                        <p className="text-sm leading-6 text-gray-600">
+                        <p className="text-sm leading-6 text-[var(--site-muted)]">
                           This paper was split into <b>{studies.length} empirical stud{studies.length === 1 ? "y" : "ies"}</b>. Below is what each one is and what needs your attention.
                         </p>
                         <div className="space-y-2">
@@ -1184,15 +1185,15 @@ export default function PipelineStudio() {
                             const participants = typeof so.participants === "string" ? so.participants : "";
                             const design = typeof so.design === "string" ? so.design : "";
                             return (
-                              <button key={i} type="button" onClick={() => goToStudySection("empirical_studies_identified_in_paper")} className="block w-full rounded border border-gray-200 bg-white p-3 text-left hover:border-cyan-500">
-                                <p className="text-sm font-semibold text-gray-900">{name}</p>
-                                {participants && <p className="mt-1 text-xs leading-5 text-gray-600"><span className="font-semibold text-gray-500">Participants:</span> {participants}</p>}
-                                {design && <p className="mt-1 text-xs leading-5 text-gray-600"><span className="font-semibold text-gray-500">Design:</span> {design}</p>}
+                              <button key={i} type="button" onClick={() => goToStudySection("empirical_studies_identified_in_paper")} className="block w-full rounded border border-[var(--site-line)] bg-[var(--background)] p-3 text-left hover:border-[var(--site-accent)]">
+                                <p className="text-sm font-semibold text-[var(--foreground)]">{name}</p>
+                                {participants && <p className="mt-1 text-xs leading-5 text-[var(--site-muted)]"><span className="font-semibold text-[var(--site-muted)]">Participants:</span> {participants}</p>}
+                                {design && <p className="mt-1 text-xs leading-5 text-[var(--site-muted)]"><span className="font-semibold text-[var(--site-muted)]">Design:</span> {design}</p>}
                               </button>
                             );
                           })}
                         </div>
-                        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--site-line)] pt-3">
                           <span className={`text-xs font-semibold ${decisions > 0 ? "text-amber-700" : "text-emerald-600"}`}>
                             {decisions > 0 ? `${decisions} decisions still need input` : "No decisions left"}
                           </span>
@@ -1201,17 +1202,17 @@ export default function PipelineStudio() {
                     </div>
                   );
                 })()}
-                {reviewFiles.length === 0 ? <p className="border border-gray-200 bg-gray-50 p-4 text-sm text-gray-500">Loading generated files...</p> : <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
+                {reviewFiles.length === 0 ? <p className="border border-[var(--site-line)] bg-[var(--site-surface)] p-4 text-sm text-[var(--site-muted)]">Loading generated files...</p> : <div className="grid gap-4 lg:grid-cols-[240px_minmax(0,1fr)]">
                   <div className="space-y-4">
-                    <div className="border border-gray-200 bg-gray-50 p-2">
+                    <div className="border border-[var(--site-line)] bg-[var(--site-surface)] p-2">
                       {(() => {
                         const priorityPaths = ["/study.json", "/materials/materials.json", "/task/task.json", "/audit/missing_information.json", "/audit/agent_report.md"];
                         const priority = reviewFiles.filter((file) => priorityPaths.some((suffix) => file.path.endsWith(suffix)));
                         const additional = reviewFiles.filter((file) => !priority.includes(file));
                         // What a file contains is what a reviewer is choosing between;
                         // its path only matters once they need to find it on disk.
-                        const fileButton = (file: ReviewFile) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); setEditedJson(file.path.endsWith(".json") ? JSON.parse(file.content) : null); setSaved(true); }} className={`block w-full border-l-2 px-3 py-2 text-left ${selectedFile === file.path ? "border-cyan-700 bg-white" : "border-transparent hover:bg-white"}`}><span className="flex items-center gap-1.5"><span className={`block text-xs font-semibold leading-5 ${selectedFile === file.path ? "text-cyan-800" : "text-gray-800"}`}>{fileGuide(file.path)}</span>{(() => { const pending = filePendingCount(file.path, file.content); return pending > 0 ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${file.path.endsWith("missing_information.json") ? "bg-amber-200 text-amber-900" : "bg-amber-100 text-amber-800"}`}>{pending}</span> : null; })()}</span><span className="mt-1 block break-all font-mono text-[10px] leading-4 text-gray-400">{file.path.split("/").slice(1).join("/") || file.path}</span></button>;
-                        return <><p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wide text-cyan-800">Review first</p>{priority.map(fileButton)}<details className="mt-2 border-t border-gray-200 pt-2"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-gray-600">Additional files ({additional.length})</summary>{additional.map(fileButton)}</details></>;
+                        const fileButton = (file: ReviewFile) => <button key={file.path} onClick={() => { setSelectedFile(file.path); setEditedContent(file.content); setEditedJson(file.path.endsWith(".json") ? JSON.parse(file.content) : null); setSaved(true); }} className={`block w-full border-l-2 px-3 py-2 text-left ${selectedFile === file.path ? "border-[var(--site-accent)] bg-[var(--background)]" : "border-transparent hover:bg-[var(--background)]"}`}><span className="flex items-center gap-1.5"><span className={`block text-xs font-semibold leading-5 ${selectedFile === file.path ? "text-[var(--site-accent)]" : "text-[var(--foreground)]"}`}>{fileGuide(file.path)}</span>{(() => { const pending = filePendingCount(file.path, file.content); return pending > 0 ? <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${file.path.endsWith("missing_information.json") ? "bg-amber-200 text-amber-900" : "bg-amber-100 text-amber-800"}`}>{pending}</span> : null; })()}</span><span className="mt-1 block break-all font-mono text-[10px] leading-4 text-[var(--site-muted)]">{file.path.split("/").slice(1).join("/") || file.path}</span></button>;
+                        return <><p className="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-wide text-[var(--site-accent)]">Review first</p>{priority.map(fileButton)}<details className="mt-2 border-t border-[var(--site-line)] pt-2"><summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-[var(--site-muted)]">Additional files ({additional.length})</summary>{additional.map(fileButton)}</details></>;
                       })()}
                     </div>
                     {(() => {
@@ -1222,30 +1223,30 @@ export default function PipelineStudio() {
                       return json ? <StructureMap value={json} activeTarget={activeSection} onGoTo={goToStudySection} /> : null;
                     })()}
                   </div>
-                  <div className="min-w-0 border border-gray-200">
+                  <div className="min-w-0 border border-[var(--site-line)]">
                     {selectedFile ? <>
                       {/* min-w-0 and a truncated path are what stop a long file
                           name from pushing the save button out of the header. */}
-                      <div className="flex items-center justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-2">
+                      <div className="flex items-center justify-between gap-3 border-b border-[var(--site-line)] bg-[var(--site-surface)] px-4 py-2">
                         <div className="min-w-0">
-                          <p className="truncate text-xs font-semibold text-gray-800">{fileGuide(selectedFile)}</p>
-                          <p className="truncate font-mono text-[10px] text-gray-400" title={selectedFile}>{selectedFile}</p>
+                          <p className="truncate text-xs font-semibold text-[var(--foreground)]">{fileGuide(selectedFile)}</p>
+                          <p className="truncate font-mono text-[10px] text-[var(--site-muted)]" title={selectedFile}>{selectedFile}</p>
                         </div>
                         <div className="flex shrink-0 items-center gap-3">
                           {!saved && <span className="text-xs text-amber-700">Unsaved changes</span>}
-                          <button disabled={busy || saved} onClick={saveFile} className="h-8 shrink-0 bg-cyan-700 px-3 text-xs font-semibold text-white disabled:bg-gray-300">{busy ? "Saving..." : saved ? "Saved" : "Save changes"}</button>
+                          <button disabled={busy || saved} onClick={saveFile} className="h-8 shrink-0 bg-[var(--site-accent)] px-3 text-xs font-semibold text-white disabled:bg-[var(--site-selected)]">{busy ? "Saving..." : saved ? "Saved" : "Save changes"}</button>
                         </div>
                       </div>
-                      {selectedFile.endsWith(".json") && editedJson !== null ? <div className="min-w-0"><div className="max-h-[calc(100vh-13rem)] overflow-auto bg-gray-50"><div className="p-4"><JsonEditor value={editedJson} path={selectedFile} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div></div></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[calc(100vh-18rem)] w-full resize-y p-4 font-mono text-xs leading-5 text-gray-700 outline-none focus:ring-2 focus:ring-cyan-700" />}
-                    </> : <p className="p-6 text-sm text-gray-500">Select a file to inspect and edit.</p>}
+                      {selectedFile.endsWith(".json") && editedJson !== null ? <div className="min-w-0"><div className="max-h-[calc(100vh-13rem)] overflow-auto bg-[var(--site-surface)]"><div className="p-4"><JsonEditor value={editedJson} path={selectedFile} onChange={(next) => { setEditedJson(next); setSaved(false); }} /></div></div></div> : <textarea value={editedContent} onChange={(event) => { setEditedContent(event.target.value); setSaved(false); }} spellCheck={false} className="min-h-[calc(100vh-18rem)] w-full resize-y p-4 font-mono text-xs leading-5 text-[var(--foreground)] outline-none focus:ring-2 focus:ring-[var(--site-accent)]" />}
+                    </> : <p className="p-6 text-sm text-[var(--site-muted)]">Select a file to inspect and edit.</p>}
                   </div>
                 </div>}
               </div>
               <label htmlFor="review-note" className="mt-6 block text-sm font-semibold">Review note</label>
-              <textarea id="review-note" value={note} onChange={(event) => setNote(event.target.value)} className="mt-2 h-32 w-full border border-gray-300 p-3 text-sm outline-none focus:border-cyan-700" placeholder="Corrections, missing evidence, or approval rationale" />
+              <textarea id="review-note" value={note} onChange={(event) => setNote(event.target.value)} className="mt-2 h-32 w-full border border-[var(--site-line)] p-3 text-sm outline-none focus:border-[var(--site-accent)]" placeholder="Corrections, missing evidence, or approval rationale" />
               <div className="mt-4 flex justify-end gap-2">
-                <button disabled={busy || !note.trim()} onClick={() => review("changes_requested")} className="h-10 border border-gray-300 px-4 text-sm font-semibold text-gray-700 disabled:text-gray-300">Request changes</button>
-                <button disabled={busy || !saved} onClick={() => review("approved")} className="h-10 bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-600 disabled:bg-gray-300">Approve package</button>
+                <button disabled={busy || !note.trim()} onClick={() => review("changes_requested")} className="h-10 border border-[var(--site-line)] px-4 text-sm font-semibold text-[var(--foreground)] disabled:text-[var(--site-muted)]">Request changes</button>
+                <button disabled={busy || !saved} onClick={() => review("approved")} className="h-10 bg-emerald-700 px-4 text-sm font-semibold text-white hover:bg-emerald-600 disabled:bg-[var(--site-selected)]">Approve package</button>
               </div>
             </div>
           )}
@@ -1253,19 +1254,19 @@ export default function PipelineStudio() {
           {job.status === "failed" && (
             <div className="p-6">
               <p className="border-l-2 border-red-600 bg-red-50 p-4 text-sm text-red-900">{job.error || "The pipeline failed."}</p>
-              <pre className="mt-5 max-h-80 overflow-auto bg-gray-950 p-4 text-xs leading-5 text-gray-200">{log}</pre>
+              <pre className="mt-5 max-h-80 overflow-auto bg-[var(--site-surface)] p-4 text-xs leading-5 text-[var(--foreground)]">{log}</pre>
             </div>
           )}
 
           {job.status === "complete" && (
             <div className="p-6">
-              {job.packageReady ? <><div className="border-l-2 border-emerald-600 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">The reviewed HumanStudy-Bench package is ready for download.</div><div className="mt-5 flex flex-wrap gap-2">{job.source !== "import" && <><button disabled={busy} onClick={reopenReview} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Opening..." : "Reopen review"}</button><a href={`/api/pipeline/jobs/${job.id}/download`} className="inline-flex h-10 items-center bg-cyan-700 px-5 text-sm font-semibold text-white hover:bg-cyan-600">Download experiment ZIP</a><button disabled={busy || Boolean(prUrl)} onClick={publish} className="h-10 border border-gray-300 bg-white px-5 text-sm font-semibold text-gray-800 hover:bg-gray-50 disabled:text-gray-400">{busy ? "Saving..." : prUrl ? "Contributed to benchmark" : "Contribute this study to benchmark"}</button></>}</div>{prUrl && <a href={prUrl} target="_blank" rel="noreferrer" className="mt-4 block text-sm font-semibold text-cyan-700 hover:underline">Open pull request</a>}</> : <div className="border-l-2 border-cyan-700 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">The extraction is saved, but the study is not yet a runnable package.</div>}
+              {job.packageReady ? <><div className="border-l-2 border-emerald-600 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">The reviewed HumanStudy-Bench package is ready for download.</div><div className="mt-5 flex flex-wrap gap-2">{job.source !== "import" && <><button disabled={busy} onClick={reopenReview} className="h-10 border border-[var(--site-line)] bg-[var(--background)] px-5 text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--site-surface)] disabled:text-[var(--site-muted)]">{busy ? "Opening..." : "Reopen review"}</button><a href={`/api/pipeline/jobs/${job.id}/download`} className="inline-flex h-10 items-center bg-[var(--site-accent)] px-5 text-sm font-semibold text-white hover:bg-[var(--site-accent)]">Download experiment ZIP</a><button disabled={busy || Boolean(prUrl)} onClick={publish} className="h-10 border border-[var(--site-line)] bg-[var(--background)] px-5 text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--site-surface)] disabled:text-[var(--site-muted)]">{busy ? "Saving..." : prUrl ? "Contributed to benchmark" : "Contribute this study to benchmark"}</button></>}</div>{prUrl && <a href={prUrl} target="_blank" rel="noreferrer" className="mt-4 block text-sm font-semibold text-[var(--site-accent)] hover:underline">Open pull request</a>}</> : <div className="border-l-2 border-[var(--site-accent)] bg-[var(--site-surface)] p-4 text-sm leading-6 text-[var(--site-accent)]">The extraction is saved, but the study is not yet a runnable package.</div>}
             </div>
           )}
 
           {error && <p className="mx-6 mb-6 border-l-2 border-red-600 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
         </section>
-      </main>
+      </div>
     </div>
   );
 }
