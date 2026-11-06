@@ -30,6 +30,8 @@ function NavigationLinks({
       <li key={link.href}>
         <Link
           href={link.href}
+          // /forum redirects to another site; prefetching it only fails on CORS.
+          prefetch={link.href === "/forum" ? false : undefined}
           className={styles.navigationLink}
           aria-current={active ? "page" : undefined}
           onClick={onSelect}
