@@ -210,10 +210,9 @@ try {
       assert.equal(await page.locator('main').count(), 1);
       assert.equal(await page.locator('h1').count(), 1);
       if (route.startsWith('/studies')) {
-        assert.ok(await page.getByRole('heading', { name: 'Study Library', exact: true }).isVisible());
+        const heading = route.includes('pending') ? 'Not yet extracted' : 'Study Library';
+        await page.getByRole('heading', { name: heading, exact: true }).waitFor({ state: 'visible' });
         assert.equal(await page.getByRole('navigation', { name: 'Study collections', exact: true }).count(), 0);
-        assert.equal(await page.getByText(/Extracted studies|Not yet extracted|awaiting extraction/).count(), 0);
-        assert.equal(await page.getByText(/^\d+ papers?$/).count(), 0);
       }
       if (width === 1280 || width === 390) {
         const name = route === '/account' ? 'account' : route.includes('pending') ? 'legacy-studies' : 'studies';
@@ -222,7 +221,7 @@ try {
       report.views.push({ page: route, width, ...size });
     }
   }
-  report.checks.push('Responsive account and extracted-only study library without collection labels or totals');
+  report.checks.push('Responsive account, study library and not-yet-extracted list');
 
   await page.setViewportSize({ width: 390, height: 900 });
   await visit('/');
@@ -240,27 +239,25 @@ try {
   const paperLinks = page.locator('main a[href^="/studies/paper_"]');
   const listedLinks = () => paperLinks.evaluateAll(links => links.map(link => link.getAttribute('href')));
   assert.deepEqual(await listedLinks(), extractedLinks.slice(0, 30), 'The library lists the extracted catalog.');
-  await visit('/studies?pool=pending');
-  assert.deepEqual(await listedLinks(), extractedLinks.slice(0, 30), 'Legacy collection links show the same extracted studies.');
   assert.ok(extractedLinks.length > 1, 'The bundled catalog can exercise pagination with an offset.');
-  await visit('/studies?pool=pending&offset=1');
+  await visit('/studies?offset=1');
   assert.deepEqual(await listedLinks(), extractedLinks.slice(1, 31), 'The existing offset contract still applies.');
   await page.getByRole('navigation', { name: 'Research pages', exact: true }).getByRole('link', { name: '← Previous', exact: true }).click();
-  await page.waitForURL(url => url.searchParams.get('offset') === '0' && !url.searchParams.has('pool'));
+  await page.waitForURL(url => url.searchParams.get('offset') === '0');
   await page.waitForLoadState('networkidle');
   assert.deepEqual(await listedLinks(), extractedLinks.slice(0, 30));
   const nextPage = page.getByRole('navigation', { name: 'Research pages', exact: true }).getByRole('link', { name: 'Next →', exact: true });
   if (extractedLinks.length > 30) {
     await nextPage.click();
-    await page.waitForURL(url => url.searchParams.get('offset') === '30' && !url.searchParams.has('pool'));
+    await page.waitForURL(url => url.searchParams.get('offset') === '30');
     await page.waitForLoadState('networkidle');
     assert.deepEqual(await listedLinks(), extractedLinks.slice(30, 60));
   } else {
     assert.equal(await nextPage.count(), 0, 'A single-page catalog does not show a next-page link.');
   }
-  report.checks.push('Extracted catalog contents, legacy collection links and real pagination');
+  report.checks.push('Extracted catalog contents and real pagination');
 
-  await visit('/studies?pool=pending&offset=1');
+  await visit('/studies?offset=1');
   await page.getByRole('textbox', { name: 'Search research' }).fill('knobe');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.waitForURL(url => url.pathname === '/studies' && url.searchParams.get('q') === 'knobe' && !url.searchParams.has('pool') && !url.searchParams.has('offset'));

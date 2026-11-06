@@ -2,10 +2,16 @@ name: Frontend regression checks
 
 on:
   pull_request:
+    paths-ignore:
+      - '**/*.md'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -13,8 +19,9 @@ jobs:
     timeout-minutes: 20
     env:
       NEXT_TELEMETRY_DISABLED: '1'
-      FRONTEND_TEST_OUTPUT: ${{ runner.temp }}/frontend-validation
     steps:
+      # runner.temp is not available in job-level env, so set the output path here.
+      - run: echo "FRONTEND_TEST_OUTPUT=$RUNNER_TEMP/frontend-validation" >> "$GITHUB_ENV"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false

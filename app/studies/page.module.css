@@ -26,6 +26,23 @@
   line-height: 1.6;
 }
 
+.back {
+  display: inline-block;
+  margin-bottom: 16px;
+  color: var(--site-accent);
+  font-size: 14px;
+}
+
+.count {
+  margin-bottom: 12px;
+  color: var(--site-muted);
+  font-size: 13px;
+}
+
+.count a {
+  color: var(--site-accent);
+}
+
 .search {
   display: flex;
   align-items: stretch;

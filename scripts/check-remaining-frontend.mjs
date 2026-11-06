@@ -228,7 +228,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
     for (const route of ['/docs', '/docs/what_to_submit', '/docs/extract_from_paper', '/docs/build_study_files', '/docs/submit_study', '/playground', '/studies/paper_000000000000000000000000', '/missing-page']) {
       const response = await page.goto(origin + route, { waitUntil: 'networkidle' });
       assert.equal(response.status(), 404, route + ' keeps its existing not-found behavior');
-      assert.ok(await page.getByRole('heading', { name: 'Page not found.', exact: true }).isVisible());
+      await page.getByRole('heading', { name: 'Page not found.', exact: true }).waitFor({ state: 'visible', timeout: 15000 });
       assert.equal(await page.getByRole('link', { name: 'Explore studies →', exact: true }).getAttribute('href'), '/studies');
       report.documentResponses.push({ path: route, status: response.status() });
     }

@@ -154,25 +154,38 @@ test('the styled study library uses the real search contract and retains paper m
   assert.match(html, /2024/);
   assert.match(html, /Study materials/);
   assert.match(html, /<h1>Study Library<\/h1>/);
-  assert.doesNotMatch(html, /Study collections|Extracted studies|Not yet extracted|awaiting extraction|\b\d+ papers?\b|name="pool"/);
+  assert.match(html, /1 paper\b/);
+  assert.match(html, /href="\/studies\?q=knobe&amp;pool=pending"[^>]*>287 more indexed, not yet extracted/);
+  assert.doesNotMatch(html, /Study collections|name="pool"/);
 });
 
-test('library pagination preserves the search query and discards legacy collection parameters', async () => {
+test('the not-yet-extracted list keeps its own pool, heading and labels', async () => {
+  const html = await renderStudies({ q: 'knobe', pool: 'pending' }, {
+    ...results, items: [{ ...paper, legacyStudyId: null }], other: 0,
+  });
+  assert.equal(libraryCalls[0].pool, 'pending');
+  assert.match(html, /<h1>Not yet extracted<\/h1>/);
+  assert.match(html, /name="pool" value="pending"/);
+  assert.match(html, /href="\/studies\?q=knobe"[^>]*>← Study Library/);
+  assert.match(html, /<span>Not yet extracted<\/span>/);
+  assert.doesNotMatch(html, /more indexed/);
+});
+
+test('library pagination preserves the search query and the selected pool', async () => {
   const html = await renderStudies({ q: 'choice & risk', pool: 'pending', offset: '30' }, {
     ...results, total: 90, offset: 30, nextOffset: 60,
   });
-  assert.equal(libraryCalls[0].pool, 'extracted');
+  assert.equal(libraryCalls[0].pool, 'pending');
   assert.equal(libraryCalls[0].input.query, 'choice & risk');
   assert.equal(libraryCalls[0].input.offset, 30);
-  assert.match(html, /<h1>Study Library<\/h1>/);
-  assert.doesNotMatch(html, /name="pool"|Not yet extracted|awaiting extraction|\b\d+ papers?\b/);
+  assert.match(html, /<h1>Not yet extracted<\/h1>/);
   const links = [...html.matchAll(/href="([^"]+)"/g)]
     .map(match => new URL(match[1].replaceAll('&amp;', '&'), 'http://local.test'));
   for (const offset of ['0', '60']) {
     const url = links.find(link => link.searchParams.get('offset') === offset);
     assert.ok(url, 'Pagination exposes offset ' + offset);
     assert.equal(url.searchParams.get('q'), 'choice & risk');
-    assert.equal(url.searchParams.has('pool'), false);
+    assert.equal(url.searchParams.get('pool'), 'pending');
   }
 });
 

@@ -48,7 +48,7 @@ function DownloadLink({ asset, fallback, label, primary }: { asset: DesktopAsset
     >
       <AppleMark />
       {label}
-      {size && <span className={`font-normal ${primary ? "text-[var(--site-accent)]" : "text-[var(--site-muted)]"}`}>{size}</span>}
+      {size && <span className={`font-normal ${primary ? "text-white/75" : "text-[var(--site-muted)]"}`}>{size}</span>}
     </a>
   );
 }

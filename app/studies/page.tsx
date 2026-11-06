@@ -3,7 +3,7 @@ import ArrowRight from "@/components/ArrowRight";
 import { searchLibrary, validateResearchQuery, type ResearchPaper } from "@/lib/research";
 import styles from "./page.module.css";
 
-type SearchParams = { q?: string; offset?: string };
+type SearchParams = { q?: string; offset?: string; pool?: string };
 
 export default async function StudiesPage({
   searchParams,
@@ -11,6 +11,7 @@ export default async function StudiesPage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
+  const pending = params.pool === "pending";
   const raw = new URLSearchParams();
   if (typeof params.q === "string") raw.set("q", params.q);
   if (typeof params.offset === "string") raw.set("offset", params.offset);
@@ -26,7 +27,7 @@ export default async function StudiesPage({
   }
   if (input) {
     try {
-      result = await searchLibrary(input, "extracted");
+      result = await searchLibrary(input, pending ? "pending" : "extracted");
     } catch {
       error = "The research library could not be loaded. Try again shortly.";
     }
@@ -34,17 +35,26 @@ export default async function StudiesPage({
 
   const link = (extra: Record<string, string>) => `/studies?${new URLSearchParams({
     ...(params.q ? { q: params.q } : {}),
+    ...(pending ? { pool: "pending" } : {}),
     ...extra,
+  })}`;
+  const otherPool = `/studies?${new URLSearchParams({
+    ...(params.q ? { q: params.q } : {}),
+    ...(pending ? {} : { pool: "pending" }),
   })}`;
 
   return (
     <div className={styles.page}>
       <header className={styles.heading}>
-        <h1>Study Library</h1>
-        <p>Search published human studies and their research files.</p>
+        {pending && <Link href={otherPool} className={styles.back}>← Study Library</Link>}
+        <h1>{pending ? "Not yet extracted" : "Study Library"}</h1>
+        <p>{pending
+          ? "Papers we have indexed but not yet turned into a Human Program. They have no materials or artifacts yet."
+          : "Search published human studies and their research files."}</p>
       </header>
 
       <form action="/studies" className={styles.search} role="search">
+        {pending && <input type="hidden" name="pool" value="pending" />}
         <label className={styles.searchField}>
           <svg
             width="20"
@@ -72,6 +82,12 @@ export default async function StudiesPage({
       {error && <p role="alert" className={styles.error}>{error}</p>}
       {result && (
         <>
+          <p className={styles.count}>
+            {result.total} {result.total === 1 ? "paper" : "papers"}
+            {!pending && result.other > 0 && (
+              <> · <Link href={otherPool}>{result.other} more indexed, not yet extracted →</Link></>
+            )}
+          </p>
           <div className={styles.studyList}>
             {result.items.map((paper: ResearchPaper) => (
               <article key={paper.id} className={styles.study}>
@@ -85,7 +101,7 @@ export default async function StudiesPage({
                     )}
                   </div>
                   <p className={styles.capability}>
-                    <span>{paper.currentRevision ? "Human Program" : "Study materials"}</span>
+                    <span>{paper.currentRevision ? "Human Program" : paper.legacyStudyId ? "Study materials" : "Not yet extracted"}</span>
                     <ArrowRight />
                   </p>
                 </Link>
