@@ -12,9 +12,18 @@ const asset = (name) => ({ name, size: 182_000_000, browser_download_url: `https
 const release = (tag, at, extra = {}) => ({ tag_name: tag, published_at: at, draft: false, prerelease: false, html_url: `https://github.com/HumanStudy-Hub/humanstudy-desktop/releases/tag/${tag}`, assets: [], ...extra });
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
-test('the newest non-draft release wins, prereleases included', () => {
+test('a newer beta does not replace the newest stable release', () => {
   const picked = lib.pickDesktopRelease([
-    release('v0.2.0', '2026-10-01T00:00:00Z', { assets: [asset('HumanStudy-Hub-0.2.0-mac-arm64.dmg')] }),
+    release('v0.7.2-beta.1', '2026-11-07T00:00:00Z', { prerelease: true, assets: [asset('HumanStudy-Hub-0.7.2-beta.1-mac-arm64.dmg')] }),
+    release('v0.7.1', '2026-11-06T00:00:00Z', { assets: [asset('HumanStudy-Hub-0.7.1-mac-arm64.dmg')] }),
+  ]);
+  assert.equal(picked.version, 'v0.7.1');
+  assert.equal(picked.prerelease, false);
+});
+
+test('with no stable release yet, the newest non-draft prerelease is offered', () => {
+  const picked = lib.pickDesktopRelease([
+    release('v0.2.0-beta.1', '2026-10-01T00:00:00Z', { prerelease: true, assets: [asset('HumanStudy-Hub-0.2.0-mac-arm64.dmg')] }),
     release('v0.4.0', '2026-10-14T00:00:00Z', { draft: true, assets: [asset('HumanStudy-Hub-0.4.0-mac-arm64.dmg')] }),
     release('v0.3.0-beta.1', '2026-10-10T00:00:00Z', { prerelease: true, assets: [asset('HumanStudy-Hub-0.3.0-mac-arm64.dmg'), asset('HumanStudy-Hub-0.3.0-mac-x64.dmg'), asset('HumanStudy-Hub-0.3.0-mac-arm64.dmg.blockmap')] }),
   ]);

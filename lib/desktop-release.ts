@@ -1,6 +1,6 @@
 // Download links for the HumanStudy Hub desktop app, resolved from the public GitHub
 // Releases of HumanStudy-Hub/humanstudy-desktop. The page renders whatever the newest
-// non-draft release (prereleases included) carries; when nothing is published yet, or
+// non-draft stable release carries (a beta only if none is stable yet); when nothing is published yet, or
 // GitHub is unreachable, every button falls back to the releases page instead of a
 // broken asset link.
 
@@ -62,14 +62,16 @@ function findAsset(assets: unknown, pattern: RegExp): DesktopAsset | null {
   return null;
 }
 
-/** Picks the newest non-draft release from a GitHub Releases API response. */
+/** Picks the newest stable non-draft release (newest prerelease if none) from a GitHub Releases API response. */
 export function pickDesktopRelease(payload: unknown): DesktopRelease {
   if (!Array.isArray(payload)) return NO_RELEASE;
   const published = (payload as GitHubRelease[])
     .filter((r) => r && typeof r === "object" && r.draft !== true)
     .map((r) => ({ r, at: Date.parse(str(r.published_at) ?? str(r.created_at) ?? "") || 0 }))
     .sort((a, b) => b.at - a.at);
-  const newest = published[0]?.r;
+  // Betas are for testers who install them from the releases page; the download page offers the
+  // newest stable release, and a prerelease only while no stable release exists.
+  const newest = (published.find(({ r }) => r.prerelease !== true) ?? published[0])?.r;
   if (!newest) return NO_RELEASE;
   const pageUrl = str(newest.html_url);
   return {
