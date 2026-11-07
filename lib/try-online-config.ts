@@ -9,3 +9,8 @@ export function tokenSecret(): string {
 export function tryConfigured(): boolean {
   return Boolean(process.env.TRY_SNAPSHOT_ID && tokenSecret());
 }
+
+/** Whether /download offers it (TRY_LISTED=1). /try itself works once configured, for testing before that. */
+export function tryListed(): boolean {
+  return tryConfigured() && process.env.TRY_LISTED === "1";
+}

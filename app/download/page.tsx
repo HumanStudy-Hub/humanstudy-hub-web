@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import styles from "@/components/folio-page.module.css";
 import { DESKTOP_RELEASES_URL, formatSize, getDesktopRelease, type DesktopAsset, type DesktopRelease } from "@/lib/desktop-release";
-import { tryConfigured } from "@/lib/try-online-config";
+import { tryListed } from "@/lib/try-online-config";
 
 // Release links are read from GitHub at request time and cached for five minutes.
 export const revalidate = 300;
@@ -232,7 +232,7 @@ export default async function DownloadPage() {
             points back to the page of the original PDF it came from.{release.windows ? " A Windows preview is also available." : ""}
           </p>
           <div className="mt-8">
-            <Downloads release={release} tryOnline={tryConfigured()} />
+            <Downloads release={release} tryOnline={tryListed()} />
           </div>
         </div>
 
@@ -388,7 +388,7 @@ export default async function DownloadPage() {
           ))}
         </div>
         <div className="mt-12">
-          <Downloads release={release} tryOnline={tryConfigured()} />
+          <Downloads release={release} tryOnline={tryListed()} />
         </div>
       </section>
     </div>
