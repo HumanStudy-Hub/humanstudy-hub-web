@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import styles from "@/components/folio-page.module.css";
 import { DESKTOP_RELEASES_URL, formatSize, getDesktopRelease, type DesktopAsset, type DesktopRelease } from "@/lib/desktop-release";
+import { tryConfigured } from "@/lib/try-online";
 
 // Release links are read from GitHub at request time and cached for five minutes.
 export const revalidate = 300;
@@ -61,7 +62,7 @@ function AppleMark() {
   );
 }
 
-function Downloads({ release }: { release: DesktopRelease }) {
+function Downloads({ release, tryOnline }: { release: DesktopRelease; tryOnline: boolean }) {
   const date = releaseDate(release.publishedAt);
   const hasBuild = Boolean(release.macArm64 || release.macX64);
   return (
@@ -79,6 +80,14 @@ function Downloads({ release }: { release: DesktopRelease }) {
           >
             Windows: coming soon
           </button>
+        )}
+        {tryOnline && (
+          <Link
+            href="/try"
+            className="inline-flex items-center gap-2 border border-[var(--site-line)] bg-[var(--background)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] hover:border-[var(--site-accent)] hover:text-[var(--site-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-accent)]"
+          >
+            Try it online
+          </Link>
         )}
       </div>
       <p className="mt-3 text-sm text-[var(--site-muted)]">
@@ -194,6 +203,10 @@ const faq: [string, React.ReactNode][] = [
     <>The app fetches its study assistant, about 170 MB, the first time it opens. Later launches use the copy on your Mac.</>,
   ],
   [
+    "Can I use it without installing anything?",
+    <>Yes: “Try it online” opens the same app in your browser. It runs in a workspace of your own in the cloud, which keeps your projects between visits. A session lasts up to 45 minutes; open it again to continue where you left off.</>,
+  ],
+  [
     "Is there a Windows version?",
     <>A Windows preview is available. It has not been tested on many machines yet and the installer is not code-signed, so Windows SmartScreen will warn on first run: choose “More info”, then “Run anyway”. Please tell us what breaks.</>,
   ],
@@ -219,7 +232,7 @@ export default async function DownloadPage() {
             points back to the page of the original PDF it came from.{release.windows ? " A Windows preview is also available." : ""}
           </p>
           <div className="mt-8">
-            <Downloads release={release} />
+            <Downloads release={release} tryOnline={tryConfigured()} />
           </div>
         </div>
 
@@ -375,7 +388,7 @@ export default async function DownloadPage() {
           ))}
         </div>
         <div className="mt-12">
-          <Downloads release={release} />
+          <Downloads release={release} tryOnline={tryConfigured()} />
         </div>
       </section>
     </div>
