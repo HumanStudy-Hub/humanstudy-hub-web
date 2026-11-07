@@ -3,7 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import styles from "@/components/folio-page.module.css";
 import { DESKTOP_RELEASES_URL, formatSize, getDesktopRelease, type DesktopAsset, type DesktopRelease } from "@/lib/desktop-release";
-import { tryConfigured } from "@/lib/try-online";
+import { tryConfigured } from "@/lib/try-online-config";
 
 // Release links are read from GitHub at request time and cached for five minutes.
 export const revalidate = 300;
@@ -204,7 +204,7 @@ const faq: [string, React.ReactNode][] = [
   ],
   [
     "Can I use it without installing anything?",
-    <>Yes: “Try it online” opens the same app in your browser. It runs in a workspace of your own in the cloud, which keeps your projects between visits. A session lasts up to 45 minutes; open it again to continue where you left off.</>,
+    <>Yes: “Try it online” opens the same app in your browser. It runs in a workspace of your own in the cloud, which keeps your projects between visits. It needs your HumanStudy-Hub account and an invitation code. A session lasts up to 45 minutes; open it again to continue where you left off.</>,
   ],
   [
     "Is there a Windows version?",
