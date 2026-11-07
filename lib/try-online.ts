@@ -149,7 +149,11 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
     const reuse = current !== null && (await healthy(current)) && (await app(current, token, "/__seed", {})) !== null;
     if (!reuse) {
       resumed = false;
-      const started = await sandbox.runCommand({ cmd: "bash", args: [`${HS}/app/start.sh`], env: { HS_WEB_TOKEN: token } });
+      // TRY_APP_URL/TRY_APP_SHA256: a newer web build (a desktop release's humanstudy-web-<version>.tgz) that
+      // start.sh installs first, since each user's sandbox keeps the app it was created with.
+      const env: Record<string, string> = { HS_WEB_TOKEN: token };
+      if (process.env.TRY_APP_URL && process.env.TRY_APP_SHA256) Object.assign(env, { HS_APP_URL: process.env.TRY_APP_URL, HS_APP_SHA256: process.env.TRY_APP_SHA256 });
+      const started = await sandbox.runCommand({ cmd: "bash", args: [`${HS}/app/start.sh`], env });
       if (started.exitCode !== 0) throw FAILED();
     }
     base = sandbox.domain(PORT);
