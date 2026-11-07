@@ -22,8 +22,10 @@ export function tryConfigured(): boolean {
   return Boolean(process.env.TRY_SNAPSHOT_ID && tokenSecret());
 }
 
+/** A secret of its own: never a shared code (anyone holding it could open every user's sandbox). */
 function tokenSecret(): string {
-  return process.env.TRY_TOKEN_SECRET || process.env.ACCESS_COOKIE_SECRET || process.env.PROMO_CODE || "";
+  const s = process.env.TRY_TOKEN_SECRET || "";
+  return s.length >= 32 ? s : "";
 }
 
 const sandboxName = (userId: string) => `try-${userId}`;
