@@ -377,7 +377,7 @@ export default async function DownloadPage() {
       <section className="mt-16 max-w-3xl">
         <h2 className="font-serif text-2xl font-bold sm:text-3xl">Questions</h2>
         <div className="mt-6 divide-y divide-[var(--site-line)] border-y border-[var(--site-line)]">
-          {faq.map(([question, answer]) => (
+          {faq.filter(([question]) => tryListed() || !question.startsWith("Can I use it without installing")).map(([question, answer]) => (
             <details key={question} className="group py-4">
               <summary className="flex cursor-pointer list-none items-start justify-between gap-4 font-semibold text-[var(--foreground)] marker:hidden focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-accent)]">
                 {question}
