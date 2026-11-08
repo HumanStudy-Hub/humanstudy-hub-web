@@ -57,7 +57,10 @@ function credentials(): { token: string; teamId: string; projectId: string } | R
 
 /** A Supabase session of the sandbox's own, so the app's token refreshes never sign the website out. */
 async function sessionFor(email: string): Promise<{ accessToken: string; refreshToken: string; expiresAt: number; email: string } | null> {
-  const url = process.env.SUPABASE_URL, service = process.env.SUPABASE_SERVICE_ROLE_KEY, anon = process.env.SUPABASE_PUBLISHABLE_KEY;
+  // A key of its own name, so enabling one-click sign-in for /try does not also switch on the other
+  // service-role features (community store, research sync and its crons) in an environment.
+  const url = process.env.SUPABASE_URL, anon = process.env.SUPABASE_PUBLISHABLE_KEY;
+  const service = process.env.TRY_SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !service || !anon) return null;
   const link = await fetch(`${url}/auth/v1/admin/generate_link`, {
     method: "POST",
