@@ -8,8 +8,91 @@ export type ResearchPaper = {
   conceptIds: string[]; capabilities: Record<string, boolean>; coverage: string;
   searchText: string; studies: { id: string; title: string; searchText?: string; evidenceIds?: string[] }[];
   resources: { id: string; kind: string; url?: string; access: string; license?: string }[];
+  /** v0.8 protocol summary (Bench catalog, B3). Absent on papers without a protocol.json revision. */
+  protocol?: unknown;
   [key: string]: unknown;
 };
+
+/**
+ * What the study page shows of a v0.8 protocol: metadata only, never protocol content.
+ * Bench writes `paper.protocol` in research_index.json from `hsenv study sync`; the shape
+ * is read tolerantly (unknown fields ignored, malformed fields dropped), so a newer
+ * schema never breaks the page.
+ */
+export type ResearchProtocol = {
+  slug: string;
+  schemaVersion: string;
+  /** False when the index carries a schema this site was not written for (shown, not hidden). */
+  schemaKnown: boolean;
+  /** Protocol v1 (hsenv engine schema): the only schema a protocol run is dispatched for. */
+  schemaRunnable: boolean;
+  hsenv?: string;
+  fidelity: { verdict: string | null; signedBy: string[] };
+  /** `label` is what the page shows: the index's label, else the id with underscores as spaces. */
+  arms: { id: string; label: string; runnable: boolean; nPaper: number | null }[];
+  runExcluded: { what: string; reason?: string }[];
+  effects: number | null;
+  revision: string | null;
+  /**
+   * Participant view, screen by screen per arm. Protocols are private by policy, so this is
+   * set only when the entry explicitly marks the preview public (`previewPublic: true` or
+   * `preview_public: true`) and the URL is https. Otherwise null and the page shows no link.
+   */
+  preview: string | null;
+};
+
+/** "1" = protocol v1, what Bench catalog.py writes (engine schema_version). "0.8" = early entries, read only. */
+export const PROTOCOL_SCHEMA_RUNNABLE = "1";
+const PROTOCOL_SCHEMA_LEGACY = "0.8";
+const sameMajor = (version: string, major: string) => version === major || version.startsWith(`${major}.`);
+
+const str = (v: unknown, max = 200) => typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+const httpsUrl = (v: unknown) => {
+  try { const url = new URL(String(v ?? "")); return url.protocol === "https:" && !url.username && !url.password ? url.href : null; }
+  catch { return null; }
+};
+
+export function readProtocol(paper: Pick<ResearchPaper, "protocol">): ResearchProtocol | null {
+  const raw = paper.protocol;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const p = raw as Record<string, unknown>;
+  const slug = str(p.slug, 200);
+  // Same shape as hsenv study ids; no dots or slashes, so it is safe in a store path.
+  if (!slug || slug.length > 80 || !/^[a-z0-9][a-z0-9_-]*$/.test(slug)) return null;
+  const schemaVersion = str(p.schemaVersion ?? p.schema_version, 20) ?? "unknown";
+  const fid = p.fidelity && typeof p.fidelity === "object" ? p.fidelity as Record<string, unknown> : {};
+  const signed = fid.signedBy ?? fid.signed_by;
+  const arms = (Array.isArray(p.arms) ? p.arms : []).flatMap((a): ResearchProtocol["arms"] => {
+    if (!a || typeof a !== "object") return [];
+    const arm = a as Record<string, unknown>, id = str(arm.id, 80);
+    const n = Number(arm.nPaper ?? arm.n_paper);
+    const label = str(arm.label, 120) ?? id?.replace(/_+/g, " ");
+    return id && label ? [{ id, label, runnable: arm.runnable === true, nPaper: Number.isInteger(n) && n > 0 ? n : null }] : [];
+  }).slice(0, 50);
+  const runExcluded = (Array.isArray(p.runExcluded) ? p.runExcluded : []).flatMap((x): ResearchProtocol["runExcluded"] => {
+    if (typeof x === "string") return x.trim() ? [{ what: x.trim().slice(0, 200) }] : [];
+    if (!x || typeof x !== "object") return [];
+    const e = x as Record<string, unknown>, what = str(e.what ?? e.id);
+    return what ? [{ what, reason: str(e.reason, 400) ?? undefined }] : [];
+  }).slice(0, 50);
+  const effects = Number(p.effects);
+  const revision = str(p.revision, 64);
+  return {
+    slug, schemaVersion,
+    schemaKnown: sameMajor(schemaVersion, PROTOCOL_SCHEMA_RUNNABLE) || sameMajor(schemaVersion, PROTOCOL_SCHEMA_LEGACY),
+    schemaRunnable: sameMajor(schemaVersion, PROTOCOL_SCHEMA_RUNNABLE),
+    hsenv: str(p.hsenv, 40) ?? undefined,
+    fidelity: {
+      // "high_fidelity", "HIGH FIDELITY" and "high fidelity" are one verdict.
+      verdict: str(fid.verdict, 80)?.replace(/[_\s]+/g, " ").toLowerCase() ?? null,
+      signedBy: (Array.isArray(signed) ? signed : [signed]).map(s => str(s, 80)).filter((s): s is string => Boolean(s)),
+    },
+    arms, runExcluded,
+    effects: Number.isInteger(effects) && effects >= 0 ? effects : null,
+    revision: revision && /^[a-f0-9]{64}$/.test(revision) ? revision : null,
+    preview: (p.previewPublic ?? p.preview_public) === true ? httpsUrl(p.preview) : null,
+  };
+}
 export type ResearchIndex = {
   schemaVersion: 1; snapshot: string; taxonomyVersion: string; papers: ResearchPaper[];
   taxonomy: { concepts: { id: string; label: string; aliases: string[]; status: string }[] };

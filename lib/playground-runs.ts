@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import { normaliseGroup, type PersonaGroup } from "@/lib/persona-groups";
 import { Octokit } from "@octokit/rest";
+import { getResearchPaper, readProtocol, type ResearchProtocol } from "@/lib/research";
+import { privateProtocolsEnabled, resolvePrivateProtocol } from "@/lib/protocols";
 
 export type PlaygroundStatus = "queued" | "running" | "analysing" | "complete" | "failed";
 
@@ -40,8 +42,32 @@ export type PlaygroundReview = {
   updatedAt?: string;
 };
 
+// v0.8 protocol runs (V080-PLATFORM §4.1). The runner side is Bench run_protocol.py (B4);
+// the field names below are the contract with it. Runs without `kind` are legacy runs.
+export type ProtocolRendering = "screen" | "screen+seen" | "chat";
+export const PROTOCOL_RENDERINGS: readonly ProtocolRendering[] = ["screen", "screen+seen", "chat"];
+export type ProtocolStudyPin = {
+  store: "bench" | "protocols";
+  /** community/paper_<id>/revisions/<sha256> (bench) or studies/<slug> (protocols). */
+  path: string;
+  /** Git commit of the store, pinned when the run is created. */
+  commit: string;
+};
+export const PROTOCOL_MAX_RETRIES = 2;
+export const PROTOCOL_MAX_SEEDS = 5;
+
+/** Off by default: protocol runs need Bench B4 (run_protocol.py + hsenv in run-playground.yml) merged first. */
+export const protocolRunsEnabled = () => process.env.PROTOCOL_RUNS_ENABLED === "1";
+
 export type PlaygroundRun = {
   id: string;
+  kind?: "protocol";
+  study?: ProtocolStudyPin;
+  rendering?: ProtocolRendering;
+  n?: "paper" | number;
+  seeds?: number[];
+  arms?: string[] | null;
+  maxRetries?: number;
   studyId: string;
   studyTitle?: string;
   jobId?: string;
@@ -264,7 +290,78 @@ export type CreateRunInput = {
   researcherName?: string;
   apiKey?: string;
   selection?: PlaygroundSelection;
+  /** "protocol" for a v0.8 protocol run; a paper_ id implies it. */
+  kind?: string;
+  /** "protocols" = private store (W3, behind PRIVATE_PROTOCOLS_ENABLED). Default "bench". */
+  store?: string;
+  rendering?: string;
+  n?: unknown;
+  seeds?: unknown;
+  arms?: unknown;
 };
+
+export type ProtocolRunOptions = {
+  rendering: ProtocolRendering;
+  n: "paper" | number;
+  seeds: number[];
+  arms: string[] | null;
+  maxRetries: number;
+};
+
+/** Run options for a protocol, checked against the catalog summary. Pure, so it is tested directly. */
+export function validateProtocolOptions(input: CreateRunInput, protocol: Pick<ResearchProtocol, "arms" | "schemaRunnable">, limit: number): ProtocolRunOptions {
+  if (!protocol.schemaRunnable) throw new Error("Only protocol v1 (schemaVersion \"1\") can be run from this site.");
+  const runnable = protocol.arms.filter((arm) => arm.runnable).map((arm) => arm.id);
+  if (!runnable.length) throw new Error("No arm of this protocol is runnable yet.");
+  const rendering = String(input.rendering || "screen") as ProtocolRendering;
+  if (!PROTOCOL_RENDERINGS.includes(rendering)) throw new Error("Choose how the participant sees the study: screen, screen+seen or chat.");
+  let n: "paper" | number = "paper";
+  if (input.n !== undefined && input.n !== null && input.n !== "paper") {
+    const value = Number(input.n);
+    if (!Number.isInteger(value) || value < 1) throw new Error("Choose how many sessions run each arm, or the paper's n.");
+    n = Math.min(value, limit);
+  }
+  const rawSeeds = Array.isArray(input.seeds) ? input.seeds : [42];
+  const seeds = [...new Set(rawSeeds.map(Number).filter((seed) => Number.isSafeInteger(seed) && seed >= 0))].slice(0, PROTOCOL_MAX_SEEDS);
+  if (!seeds.length) throw new Error("Give at least one seed.");
+  let arms: string[] | null = null;
+  if (Array.isArray(input.arms) && input.arms.length) {
+    arms = [...new Set(input.arms.map((arm) => String(arm)))];
+    const blocked = arms.filter((arm) => !runnable.includes(arm));
+    if (blocked.length) throw new Error(`Not runnable in this protocol: ${blocked.join(", ").slice(0, 200)}.`);
+  }
+  return { rendering, n, seeds, arms, maxRetries: PROTOCOL_MAX_RETRIES };
+}
+
+const PAPER_ID = /^paper_[a-f0-9]{24}$/;
+
+/** Pin a public protocol: Bench commit now, then current.json at that commit → revision sha. */
+async function resolveBenchProtocol(paperId: string) {
+  const api = octokit();
+  const target = splitRepo(benchRepo);
+  const ref = await api.git.getRef({ ...target, ref: "heads/main" });
+  const commit = ref.data.object.sha;
+  const current = await api.repos.getContent({ ...target, path: `community/${paperId}/current.json`, ref: commit });
+  if (Array.isArray(current.data) || !("content" in current.data)) throw new Error("This paper has no current revision.");
+  const revision = JSON.parse(Buffer.from(current.data.content, "base64").toString("utf8"))?.revision;
+  if (typeof revision !== "string" || !/^[a-f0-9]{64}$/.test(revision)) throw new Error("This paper's current revision is unreadable.");
+  return { store: "bench" as const, path: `community/${paperId}/revisions/${revision}`, commit };
+}
+
+async function protocolRun(input: CreateRunInput, studyId: string, limit: number) {
+  if (!protocolRunsEnabled()) throw new Error("Protocol runs are not enabled on this deployment yet.");
+  if (input.store === "protocols") {
+    if (!privateProtocolsEnabled()) throw new Error("Private protocols are not enabled on this deployment.");
+    const resolved = await resolvePrivateProtocol(studyId);
+    return { study: resolved.pin, ...validateProtocolOptions(input, resolved.protocol, limit) };
+  }
+  if (!PAPER_ID.test(studyId)) throw new Error("Choose a paper from the library to run its protocol.");
+  const paper = await getResearchPaper(studyId);
+  const protocol = paper ? readProtocol(paper) : null;
+  if (!protocol) throw new Error("This paper has no protocol yet.");
+  const options = validateProtocolOptions(input, protocol, limit);
+  return { study: await resolveBenchProtocol(studyId), ...options };
+}
 
 // Only the profile fields the participant prompts actually read, so an arbitrary
 // object cannot be pushed into the run configuration.
@@ -291,7 +388,7 @@ function cleanDemographics(value: CreateRunInput["demographics"]) {
   return Object.keys(cleaned).length ? cleaned : undefined;
 }
 
-function validate(input: CreateRunInput) {
+async function validate(input: CreateRunInput) {
   const studyId = String(input.studyId || "").trim();
   if (!/^[a-zA-Z0-9_-]{3,60}$/.test(studyId)) throw new Error("Choose a study to run.");
   const model = String(input.model || "").trim();
@@ -320,7 +417,11 @@ function validate(input: CreateRunInput) {
       }
     : { mode: "whole" };
   if (selection.mode === "material" && !selection.materialId) throw new Error("Choose a material to run.");
+  const isProtocol = input.kind === "protocol" || PAPER_ID.test(studyId);
+  const protocol = isProtocol ? { kind: "protocol" as const, ...(await protocolRun(input, studyId, limit)) } : undefined;
+  if (protocol && selection.mode !== "whole") throw new Error("A protocol run takes arms, not a single material.");
   return {
+    protocol,
     studyId,
     jobId: input.jobId?.trim() || undefined,
     packageSlug: input.packageSlug?.trim() || undefined,
@@ -363,7 +464,7 @@ export async function listRunsByStudy(studyId: string): Promise<PlaygroundRun[]>
   return out.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
 }
 
-async function findCachedRun(checked: ReturnType<typeof validate>): Promise<PlaygroundRun | null> {
+async function findCachedRun(checked: Awaited<ReturnType<typeof validate>>): Promise<PlaygroundRun | null> {
   for (const run of await listRunsByStudy(checked.studyId)) {
     if (run.status !== "complete" || !run.resultsReady) continue;
     if ((run.jobId ?? undefined) !== (checked.jobId ?? undefined)) continue;
@@ -376,13 +477,18 @@ async function findCachedRun(checked: ReturnType<typeof validate>): Promise<Play
     if (JSON.stringify(run.demographics ?? null) !== JSON.stringify(checked.demographics ?? null)) continue;
     if (JSON.stringify(run.personaGroup ?? null) !== JSON.stringify(checked.personaGroup ?? null)) continue;
     if (JSON.stringify(run.selection ?? null) !== JSON.stringify(checked.selection ?? null)) continue;
+    const p = checked.protocol;
+    if ((run.kind ?? null) !== (p?.kind ?? null)) continue;
+    if (p && (JSON.stringify(run.study) !== JSON.stringify(p.study) || run.rendering !== p.rendering
+      || JSON.stringify(run.n) !== JSON.stringify(p.n) || JSON.stringify(run.seeds) !== JSON.stringify(p.seeds)
+      || JSON.stringify(run.arms ?? null) !== JSON.stringify(p.arms))) continue;
     return run;
   }
   return null;
 }
 
 export async function createRun(input: CreateRunInput) {
-  const checked = validate(input);
+  const checked = await validate(input);
   const cached = await findCachedRun(checked);
   if (cached) return { ...cached, cached: true };
   const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
@@ -391,6 +497,7 @@ export async function createRun(input: CreateRunInput) {
   const now = new Date().toISOString();
   const run: PlaygroundRun = {
     id,
+    ...(checked.protocol ?? {}),
     studyId: checked.studyId,
     jobId: checked.jobId,
     packageSlug: checked.packageSlug,
