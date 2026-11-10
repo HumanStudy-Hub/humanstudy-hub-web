@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ResearchPaper } from "@/lib/research";
+import { readProtocol, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
 import styles from "./folio-page.module.css";
 
 const label: Record<string, string> = { "original-data-link": "Original data", "transcription-code": "Transcription code", "metadata": "Source reference", "claim-metadata": "Claim and analysis metadata" };
@@ -38,22 +38,63 @@ function Capabilities({ caps }: { caps: StudyCapabilities }) {
   </section>;
 }
 
+const PROTOCOL_NOTE: Record<string, string> = {
+  "high fidelity": "Its protocol was reviewed against the paper and rated high fidelity.",
+  "not high fidelity": "Its protocol was reviewed against the paper and not rated high fidelity.",
+  "": "A protocol exists for this study. It has not been reviewed against the paper yet.",
+};
+const QUALITY: Record<string, string> = { "high fidelity": "High fidelity", "not high fidelity": "Not high fidelity" };
+
+/** The v0.8 protocol summary from the catalog, as text: quality level, conditions, what cannot run. */
+function Protocol({ protocol }: { protocol: ResearchProtocol }) {
+  const verdict = protocol.fidelity.verdict;
+  const quality = verdict ? QUALITY[verdict] ?? verdict : "Not reviewed yet";
+  const signed = protocol.fidelity.signedBy.length ? `signed by ${protocol.fidelity.signedBy.join(", ")}` : null;
+  const runnable = protocol.arms.filter(a => a.runnable).length;
+  return <section className="mt-10">
+    <h2 className="text-lg font-semibold font-serif">Protocol</h2>
+    <dl className="mt-3 divide-y divide-[var(--site-line)] text-sm">
+      <div className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[16rem_1fr]">
+        <dt className="text-[var(--foreground)]">Quality level</dt>
+        <dd className="text-[var(--site-muted)]"><span className="font-medium text-[var(--foreground)]">{quality}</span>{signed ? ` · ${signed}` : ""}</dd>
+      </div>
+      <div className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[16rem_1fr]">
+        <dt className="text-[var(--foreground)]">Conditions</dt>
+        <dd className="text-[var(--site-muted)]">{protocol.arms.length
+          ? `${runnable} of ${protocol.arms.length} runnable: ` + protocol.arms.map(a => `${a.label}${a.nPaper ? ` (n = ${a.nPaper} in the paper)` : ""}${a.runnable ? "" : " — not runnable"}`).join("; ")
+          : "None listed"}</dd>
+      </div>
+      {protocol.effects !== null && <div className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[16rem_1fr]">
+        <dt className="text-[var(--foreground)]">Effects scored against the paper</dt>
+        <dd className="text-[var(--site-muted)]">{protocol.effects}</dd>
+      </div>}
+    </dl>
+    {protocol.runExcluded.length > 0 && <ul className="mt-3 space-y-1 text-sm text-[var(--site-muted)]">
+      {protocol.runExcluded.map((x, i) => <li key={i}>Not run: {x.what}{x.reason ? `: ${x.reason}` : ""}</li>)}
+    </ul>}
+    {!protocol.schemaKnown && <p className="mt-3 text-sm text-[var(--site-muted)]">This protocol uses a newer format than this site reads, so some details may be missing.</p>}
+  </section>;
+}
+
 export default function ResearchPaperDetail({ paper }: { paper: ResearchPaper }) {
   // Catalog documents from different sources omit empty lists.
   const authors = paper.authors ?? [], resources = paper.resources ?? [];
   const repository = paper.assetRoot && /^(studies\/study_\d+|community\/[A-Za-z0-9_.-]+\/revisions\/[a-f0-9]{64})$/.test(paper.assetRoot)
     ? `https://github.com/HumanStudy-Hub/HumanStudy-Bench/tree/main/${paper.assetRoot}` : null;
+  const protocol = readProtocol(paper);
   return <div className={`${styles.page} ${styles.narrow}`}>
     <div>
       <Link href="/studies" className={styles.back}>← Study Library</Link>
       <h1>{paper.title}</h1>
       <p className="mt-3 text-sm text-[var(--site-muted)]">{[authors.join(", "), paper.year].filter(Boolean).join(" · ")}</p>
       <p className="mt-6 whitespace-pre-wrap leading-7 text-[var(--foreground)]">{paper.description}</p>
-      <p className="mt-6 text-sm text-[var(--site-muted)]">{paper.currentRevision ? "The recommended Human Program is available in the desktop research library." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This source is indexed. Its full Human Program and interactive execution have not been validated yet."}</p>
+      <p className="mt-6 text-sm text-[var(--site-muted)]">{protocol ? PROTOCOL_NOTE[protocol.fidelity.verdict ?? ""] ?? PROTOCOL_NOTE[""] : paper.currentRevision ? "The recommended Human Program is available in the desktop research library." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This source is indexed. Its full Human Program and interactive execution have not been validated yet."}</p>
       <div className="mt-6 flex gap-4 text-sm text-[var(--site-accent)]">
         <Link href="/build">HumanStudy desktop</Link>
         {repository && <a href={repository} target="_blank" rel="noopener noreferrer">Research files ↗</a>}
+        {protocol?.preview && <a href={protocol.preview} target="_blank" rel="noopener noreferrer">Participant view ↗</a>}
       </div>
+      {protocol && <Protocol protocol={protocol} />}
       {paper.studyCapabilities ? <Capabilities caps={paper.studyCapabilities as StudyCapabilities} /> : null}
       {resources.length > 0 && <section className="mt-10">
         <h2 className="text-lg font-semibold font-serif">Sources</h2>

@@ -1,0 +1,36 @@
+{
+  "_comment": "Made-up v0.8 catalog entries for tests. No real study, paper or protocol text.",
+  "papers": [
+    {
+      "id": "paper_0123456789abcdef01234567",
+      "title": "Example protocol study",
+      "authors": ["A. Example", "B. Placeholder"],
+      "year": 2001,
+      "aliases": ["example2001fixture"],
+      "currentRevision": "1111111111111111111111111111111111111111111111111111111111111111",
+      "assetRoot": "community/paper_0123456789abcdef01234567/revisions/1111111111111111111111111111111111111111111111111111111111111111",
+      "conceptIds": [], "capabilities": {"replayable": true, "humanBenchmark": true},
+      "coverage": "protocol", "searchText": "example fixture", "studies": [], "resources": [],
+      "protocol": {
+        "slug": "example2001fixture",
+        "schemaVersion": "1",
+        "hsenv": ">=0.8,<0.9",
+        "fidelity": {"verdict": "high fidelity", "review": "review/fidelity-review-1.md", "signed_by": ["reviewer-agent", "maintainer"]},
+        "arms": [{"id": "control", "runnable": true, "nPaper": 40}, {"id": "treatment", "runnable": true, "nPaper": 41}, {"id": "lab", "runnable": false}],
+        "runExcluded": [{"what": "lab", "reason": "the screen layout is missing from the materials"}],
+        "effects": 3,
+        "revision": "1111111111111111111111111111111111111111111111111111111111111111",
+        "preview": "https://example.org/preview/example2001fixture/",
+        "previewPublic": true
+      }
+    },
+    {
+      "id": "paper_fedcba9876543210fedcba98",
+      "title": "Example with a future schema",
+      "authors": [], "year": null, "aliases": [], "currentRevision": null,
+      "conceptIds": [], "capabilities": {}, "coverage": "", "searchText": "", "studies": [], "resources": [],
+      "protocol": {"slug": "future2099fixture", "schemaVersion": "0.9", "arms": "not-a-list", "fidelity": null,
+                   "effects": -1, "revision": "short", "preview": "javascript:alert(1)", "unknownField": {"x": 1}}
+    }
+  ]
+}

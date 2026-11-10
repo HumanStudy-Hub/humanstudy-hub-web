@@ -34,6 +34,13 @@ export async function POST(request: Request) {
       researcherName: String(body.researcherName || ""),
       apiKey: String(body.apiKey || ""),
       selection: body.selection,
+      // v0.8 protocol runs (off unless PROTOCOL_RUNS_ENABLED=1); validated in lib/playground-runs.
+      kind: body.kind ? String(body.kind) : undefined,
+      store: body.store ? String(body.store) : undefined,
+      rendering: body.rendering ? String(body.rendering) : undefined,
+      n: body.n,
+      seeds: body.seeds,
+      arms: body.arms,
     });
     return NextResponse.json({ run }, { status: 202 });
   } catch (error) {
