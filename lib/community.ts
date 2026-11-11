@@ -2,12 +2,16 @@
 // HumanStudy-Bench scripts/community.py), Hub signatures, encrypted token storage and
 // the check a contribution zip has to pass before anything is sent to GitHub.
 
-import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import AdmZip from "adm-zip";
 import { ACCESS_SECRET } from "./access";
+import {
+  CONTRIBUTION_METADATA, CONTRIBUTION_PROGRAM, MAX_CONTRIBUTION_ZIP_BYTES,
+  contributionPathKey, contributionPathProblem, ignorableContributionPath,
+} from "./community-archive";
 
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
-export const MAX_ZIP_BYTES = 40 * 1024 * 1024;
+export const MAX_ZIP_BYTES = MAX_CONTRIBUTION_ZIP_BYTES;
 export const MAX_PUBLISHES_PER_HOUR = 5;
 export const BOT_LOGIN = process.env.COMMUNITY_BOT_LOGIN || "humanstudy-bot";
 
@@ -123,10 +127,6 @@ export type ZipEntryInfo = { name: string; size: number; isDirectory?: boolean }
 
 const mb = (n: number) => `${Math.round(n / 1024 / 1024)} MB`;
 
-function ignorable(name: string): boolean {
-  return name.startsWith("__MACOSX/") || name.split("/").pop() === ".DS_Store";
-}
-
 /** Plain-language problems with a contribution zip; an empty list means it can be published. */
 export function validateContributionZip(
   entries: ZipEntryInfo[],
@@ -136,44 +136,23 @@ export function validateContributionZip(
   if (opts.zipBytes !== undefined && opts.zipBytes > MAX_ZIP_BYTES) {
     errors.push(`The contribution is ${mb(opts.zipBytes)}, over the ${mb(MAX_ZIP_BYTES)} limit. Leave out large simulation outputs and try again.`);
   }
-  const files = entries.filter((e) => !e.isDirectory && !ignorable(e.name));
+  const files = entries.filter(entry => !entry.isDirectory && !ignorableContributionPath(entry.name));
   const names = new Set<string>();
-  let unsafe = false;
+  const pathKeys = new Set<string>();
   let totalBytes = 0;
-  const extra = new Set<string>();
-  for (const f of files) {
-    const name = f.name;
-    const parts = name.split("/");
-    if (name.startsWith("/") || name.includes("\\") || /^[A-Za-z]:/.test(name) || name.includes("\0") || parts.some((p) => p === ".." || p === "." || p === "")) {
-      if (!unsafe) errors.push(`The zip contains a file path that is not allowed (${JSON.stringify(name)}). Paths must stay inside the contribution folder.`);
-      unsafe = true;
-      continue;
-    }
-    if (parts.some(p => [".env", ".git", ".opencode", ".humanstudy", "node_modules", "threads", "conversations", "chat", "chats", "credentials", "account.json", "settings.json"].includes(p.toLowerCase()) || p.toLowerCase().startsWith(".env."))) {
-      errors.push(`${name} is a private project file and is not published.`);
-      continue;
-    }
-    if (names.has(name)) errors.push(`The zip contains the same file more than once: ${name}.`);
+  for (const { name, size } of files) {
+    const key = contributionPathKey(name);
+    if (pathKeys.has(key)) errors.push(`The zip contains the same file more than once: ${name}.`);
+    pathKeys.add(key);
     names.add(name);
-    totalBytes += f.size;
-    const top = parts[0];
-    const allowed =
-      name === "program.json" || name === "CONTRIBUTION.json" ||
-      (top === "package" && parts.length > 1) ||
-      (top === "artifacts" && parts.length > 1) ||
-      (top === "sources" && parts.length > 1);
-    if (!allowed) extra.add(parts.length > 1 ? `${top}/` : top);
-    if (f.size > MAX_FILE_BYTES) errors.push(`${name} is ${mb(f.size)}, over the ${mb(MAX_FILE_BYTES)} per-file limit.`);
-    if (/\.pdf$/i.test(name) && !opts.includesPdf) {
-      errors.push(`${name} is a PDF. Papers are usually under copyright, so PDFs are only published when you tick "Include the paper PDF".`);
-    }
+    const problem = contributionPathProblem(name, opts.includesPdf === true);
+    if (problem) errors.push(problem);
+    if (size > MAX_FILE_BYTES) errors.push(`${name} is ${mb(size)}, over the ${mb(MAX_FILE_BYTES)} per-file limit.`);
+    totalBytes += size;
   }
-  if (files.length > 2000 || totalBytes > 128 * 1024 * 1024) errors.push("The expanded contribution is too large. Store large research data as referenced resources; no files have been published.");
-  if (!names.has("CONTRIBUTION.json")) errors.push("The zip has no CONTRIBUTION.json. It should be created by the HumanStudy app when you press Publish.");
-  if (!names.has("program.json")) errors.push("The zip has no program.json, so there is no study to publish.");
-  if (extra.size) {
-    errors.push(`The zip contains files that are not part of a contribution: ${[...extra].sort().join(", ")}. Only program.json, package/, sources/, research artifacts and CONTRIBUTION.json are published.`);
-  }
+  if (files.length > 2000 || totalBytes > 128 * 1024 * 1024) errors.push("The expanded contribution is too large. Store large research data as referenced resources.");
+  if (!names.has(CONTRIBUTION_METADATA)) errors.push("The zip has no CONTRIBUTION.json. Ask the study agent to export a community contribution.");
+  if (!names.has(CONTRIBUTION_PROGRAM)) errors.push("The zip has no program.json, so there is no study to publish.");
   return errors;
 }
 
@@ -194,15 +173,33 @@ export function readContributionZip(buf: Buffer, opts: { includesPdf?: boolean }
   if (errors.length) return { files: [], errors };
   const files: ZipFile[] = [];
   for (const e of list) {
-    if (e.isDirectory || ignorable(e.entryName)) continue;
+    if (e.isDirectory || ignorableContributionPath(e.entryName)) continue;
     let data: Buffer;
     try {
       data = e.getData();
     } catch {
       return { files: [], errors: [`${e.entryName} could not be read from the zip; it may be damaged.`] };
     }
-    if (data.length > MAX_FILE_BYTES) return { files: [], errors: [`${e.entryName} is larger than its zip entry claims and over the ${mb(MAX_FILE_BYTES)} limit.`] };
+    if (data.length !== e.header.size || data.length > MAX_FILE_BYTES) {
+      return { files: [], errors: [`${e.entryName} has an invalid size in the zip.`] };
+    }
     files.push({ name: e.entryName, data });
   }
   return { files, errors: [] };
+}
+
+
+/** Older exports omit the manifest. When supplied, it must describe the actual payload exactly. */
+export function matchesContributionManifest(files: ZipFile[], manifest: unknown): boolean {
+  if (manifest === undefined) return true;
+  const payload = files.filter(file => file.name !== CONTRIBUTION_METADATA);
+  if (!Array.isArray(manifest) || manifest.length !== payload.length) return false;
+  const remaining = new Map(payload.map(file => [file.name, file.data]));
+  for (const entry of manifest) {
+    if (!entry || typeof entry !== "object" || typeof entry.path !== "string") return false;
+    const bytes = remaining.get(entry.path);
+    if (!bytes || entry.bytes !== bytes.length || entry.sha256 !== createHash("sha256").update(bytes).digest("hex")) return false;
+    remaining.delete(entry.path);
+  }
+  return remaining.size === 0;
 }
