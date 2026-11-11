@@ -111,15 +111,15 @@ test('the homepage groups all four actions in the requested order without second
   assert.doesNotMatch(html, /Questions we’re exploring|Join the conversation|<h2/);
 });
 
-const { developmentUpdated, libraryAvailability, validateResearchQuery } = load('lib/research.ts');
+const { libraryFilters, libraryAvailability, validateResearchQuery } = load('lib/research.ts');
 const libraryCalls = [];
 let libraryResult;
 let libraryError;
 const Studies = load('app/studies/page.tsx', {
   '@/lib/research': {
-    validateResearchQuery, developmentUpdated, libraryAvailability,
-    searchLibrary: async (input, pool) => {
-      libraryCalls.push({ input, pool });
+    validateResearchQuery, libraryFilters, libraryAvailability,
+    searchLibrary: async (input, pool, validatedOnly) => {
+      libraryCalls.push({ input, pool, validatedOnly });
       if (libraryError) throw libraryError;
       return libraryResult;
     },
@@ -152,10 +152,14 @@ test('the styled study library uses the real search contract and retains paper m
   assert.match(html, /Published study/);
   assert.match(html, /Original author/);
   assert.match(html, /2024/);
-  assert.match(html, /Study materials/);
+  assert.match(html, />View paper /);
+  assert.doesNotMatch(html, />Run experiment</);
   assert.match(html, /<h1>Study Library<\/h1>/);
-  assert.match(html, /1 record\b/);
-  assert.match(html, /href="\/studies\?q=knobe&amp;status=development"[^>]*>In development <span>20/);
+  assert.match(html, /1 paper\b/);
+  assert.match(html, /href="\/studies\?q=knobe"[^>]*>All papers/);
+  assert.match(html, /href="\/studies\?q=knobe&amp;status=program"[^>]*>Interactive papers/);
+  assert.match(html, /name="validated"[^>]*>Validated protocols only/);
+  assert.doesNotMatch(html, /Awaiting extraction|In development|Runnable experiments|Human Study Programs/);
   assert.doesNotMatch(html, /Study collections|name="pool"/);
 });
 
@@ -166,18 +170,18 @@ test('the old pending link opens the awaiting-extraction filter', async () => {
   assert.equal(libraryCalls[0].pool, 'indexed');
   assert.match(html, /<h1>Study Library<\/h1>/);
   assert.match(html, /name="status" value="indexed"/);
-  assert.match(html, /href="\/studies\?q=knobe"[^>]*>All indexed/);
-  assert.match(html, /<span>Indexed<\/span>/);
+  assert.match(html, /href="\/studies\?q=knobe"[^>]*>All papers/);
   assert.doesNotMatch(html, /more indexed/);
 });
 
 test('library pagination preserves the search query and the selected pool', async () => {
-  const html = await renderStudies({ q: 'choice & risk', pool: 'pending', offset: '30' }, {
+  const html = await renderStudies({ q: 'choice & risk', pool: 'pending', validated: '1', offset: '30' }, {
     ...results, total: 90, offset: 30, nextOffset: 60,
   });
   assert.equal(libraryCalls[0].pool, 'indexed');
   assert.equal(libraryCalls[0].input.query, 'choice & risk');
   assert.equal(libraryCalls[0].input.offset, 30);
+  assert.equal(libraryCalls[0].validatedOnly, true);
   assert.match(html, /<h1>Study Library<\/h1>/);
   const links = [...html.matchAll(/href="([^"]+)"/g)]
     .map(match => new URL(match[1].replaceAll('&amp;', '&'), 'http://local.test'));
@@ -186,7 +190,17 @@ test('library pagination preserves the search query and the selected pool', asyn
     assert.ok(url, 'Pagination exposes offset ' + offset);
     assert.equal(url.searchParams.get('q'), 'choice & risk');
     assert.equal(url.searchParams.get('status'), 'indexed');
+    assert.equal(url.searchParams.get('validated'), '1');
   }
+});
+
+test('program cards open the interactive document and a separate run setup without implying validation', async () => {
+  const html = await renderStudies({ status: 'program' }, {
+    ...results, items: [{ ...paper, currentRevision: 'a'.repeat(64), assetFiles: [{ path: 'program.json' }] }],
+  });
+  assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#paper-program"[^>]*>Interact with paper/);
+  assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#run-experiment"[^>]*>Run experiment/);
+  assert.doesNotMatch(html, />Validated protocol<|>Runnable draft</);
 });
 
 test('invalid study queries display an error without querying the catalog', async () => {
@@ -198,7 +212,7 @@ test('invalid study queries display an error without querying the catalog', asyn
 
 test('empty studies and catalog outages retain accessible recovery states', async () => {
   const empty = await renderStudies({ q: 'no match' }, { ...results, items: [], total: 0 });
-  assert.match(empty, /No studies match this view\./);
+  assert.match(empty, /No papers match this view\./);
   const unavailable = await renderStudies({}, undefined, new Error('Unavailable'));
   assert.match(unavailable, /role="alert"/);
   assert.match(unavailable, /The research library could not be loaded/);
@@ -259,6 +273,25 @@ test('paper details preserve research links, capability caveats and safe resourc
   assert.match(html, /href="https:\/\/github\.com\/HumanStudy-Hub\/HumanStudy-Bench\/tree\/main\/studies\/study_005"/);
   assert.doesNotMatch(html, /href="javascript:/);
   assert.doesNotMatch(html, /<main\b/);
+});
+
+test('run setup identifies the Desktop import flow and shows program blockers', () => {
+  const RunExperiment = load('components/RunExperiment.tsx').default;
+  const html = renderToStaticMarkup(React.createElement(RunExperiment, {
+    paper, program: { source: { filename: 'supplement.pdf' }, studies: [{ type: 'empirical' }, { type: 'empirical' }], issues: [
+      { id: 'issue', severity: 'blocking', title: 'Missing scenario wording', reason: 'The available paper only summarizes the prompt.' },
+    ] }, protocol: null, validated: false, runnable: false,
+  }));
+  assert.match(html, /id="run-experiment"/);
+  assert.match(html, /Prepare a runnable draft/);
+  assert.match(html, /Fork to my projects/);
+  assert.match(html, /select the experiment you want to run/);
+  assert.match(html, /Build the study first/);
+  assert.match(html, /Run simulation/);
+  assert.match(html, /paper_0123456789abcdef01234567/);
+  assert.match(html, /supplement.pdf/);
+  assert.match(html, /Missing scenario wording/);
+  assert.doesNotMatch(html, />Validated protocol/);
 });
 
 let documentContent;

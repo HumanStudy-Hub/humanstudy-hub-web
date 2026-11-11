@@ -197,7 +197,6 @@ export async function searchResearch(input: ResearchQuery) {
 
 export const libraryFilters = ["all", "program", "runnable", "protocol", "development", "indexed"] as const;
 export type LibraryFilter = (typeof libraryFilters)[number];
-export const developmentUpdated = development.updated;
 
 export function libraryAvailability(paper: ResearchPaper) {
   const files = paper.assetFiles ?? [];
@@ -209,7 +208,9 @@ export function libraryAvailability(paper: ResearchPaper) {
   const runnableDraft = program && paper.capabilities?.replayable === true && (run === "yes" || run === "partial")
     && files.some(file => /^package\/[^/]+\/task\/adapter\.py$/.test(file.path));
   const runnable = runnableDraft || Boolean(publicProtocol && protocol?.schemaRunnable && protocol.arms.some(arm => arm.runnable));
-  const validated = Boolean(publicProtocol && protocol?.fidelity.verdict === "high fidelity" && protocol.fidelity.signedBy.length);
+  const validated = Boolean(publicProtocol && protocol?.schemaRunnable
+    && protocol.fidelity.verdict === "high fidelity" && protocol.fidelity.signedBy.length
+    && protocol.arms.some(arm => arm.runnable));
   return { program, runnable, publicProtocol, validated, inDevelopment: Boolean(paper.developmentStage && !publicProtocol) };
 }
 
@@ -245,7 +246,7 @@ export function includeDevelopment(index: ResearchIndex): ResearchIndex {
   return { ...index, papers: [...papers.values()] };
 }
 
-export async function searchLibrary(input: ResearchQuery, filter: LibraryFilter) {
+export async function searchLibrary(input: ResearchQuery, filter: LibraryFilter, validatedOnly = false) {
   const index = includeDevelopment(await getResearchIndex());
   const buckets: Record<LibraryFilter, ResearchPaper[]> = {
     all: [], program: [], runnable: [], protocol: [], development: [], indexed: [],
@@ -259,7 +260,7 @@ export async function searchLibrary(input: ResearchQuery, filter: LibraryFilter)
     if (!status.program && !status.publicProtocol && !status.inDevelopment) buckets.indexed.push(paper);
   }
   buckets.all = index.papers;
-  const papers = buckets[filter];
+  const papers = validatedOnly ? buckets[filter].filter(paper => libraryAvailability(paper).validated) : buckets[filter];
   const counts = Object.fromEntries(libraryFilters.map(key => [key, buckets[key].length])) as Record<LibraryFilter, number>;
   const { offset = 0, limit = 30 } = input;
   const result = searchSnapshot({ ...index, papers }, input);

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { libraryAvailability, readProtocol, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
 import { getPublishedProgram, publishedAssetUrl } from "@/lib/published-program";
 import PublishedProgram from "./PublishedProgram";
+import RunExperiment from "./RunExperiment";
 import styles from "./folio-page.module.css";
 
 const label: Record<string, string> = { "original-paper": "Original paper", "original-data-link": "Original data", "transcription-code": "Transcription code", "metadata": "Source reference", "claim-metadata": "Claim and analysis metadata" };
@@ -97,13 +98,27 @@ export default async function ResearchPaperDetail({ paper }: { paper: ResearchPa
         {paper.developmentStage === "draft" ? "In development · protocol draft exists." : "In development · study materials are being prepared."}
       </p>}
       {!program && !availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">{protocol ? PROTOCOL_NOTE[protocol.fidelity.verdict ?? ""] ?? PROTOCOL_NOTE[""] : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
-      <div className="mt-6 flex gap-4 text-sm text-[var(--site-accent)]">
-        <Link href="/download">Get HumanStudy desktop</Link>
+      <div className="mt-6 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
+        {program && <a href="#paper-program">Interact with paper</a>}
+        {(availability.program || availability.publicProtocol)
+          ? <a href="#run-experiment">Run experiment</a>
+          : <Link href="/pipeline">Build a study</Link>}
         {programSource && <a href={programSource} target="_blank" rel="noreferrer">Original paper ↗</a>}
         {repository && <a href={repository} target="_blank" rel="noopener noreferrer">Research files ↗</a>}
         {protocol?.preview && <a href={protocol.preview} target="_blank" rel="noopener noreferrer">Participant view ↗</a>}
       </div>
-      {program && <PublishedProgram paper={paper} program={program} />}
+      {(availability.program || availability.publicProtocol) && <RunExperiment
+        paper={paper}
+        program={program}
+        protocol={availability.publicProtocol ? protocol : null}
+        validated={availability.validated}
+        runnable={availability.runnable}
+      />}
+      {program ? <PublishedProgram paper={paper} program={program} /> : availability.program && (
+        <p id="paper-program" className="mt-9 scroll-mt-24 text-sm text-[var(--site-muted)]">
+          The published study document could not be loaded. Try refreshing the page.
+        </p>
+      )}
       {protocol && <Protocol protocol={protocol} />}
       {paper.studyCapabilities ? <Capabilities caps={paper.studyCapabilities as StudyCapabilities} /> : null}
       {resources.length > 0 && <section className="mt-10">
