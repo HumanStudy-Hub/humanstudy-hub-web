@@ -375,11 +375,28 @@ try {
     await response.arrayBuffer();
     assert.equal(response.status, 401, route + ' remains protected.');
   }
-  const forum = await fetch(origin + '/forum', { redirect: 'manual' });
-  await forum.arrayBuffer();
-  assert.equal(forum.status, 307);
-  assert.equal(forum.headers.get('location'), 'https://forum.humanstudy-hub.com/');
-  report.checks.push('Existing access gates and external forum redirect');
+  report.checks.push('Existing access gates');
+
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await visit('/forum');
+    await page.getByRole('heading', { name: 'Research & discussion', exact: true }).waitFor();
+    assert.equal(new URL(page.url()).origin, origin);
+    assert.equal(await page.locator('[data-site-navigation], [data-site-footer]').count(), 2);
+    const links = page.getByRole('region', { name: 'Research articles' }).getByRole('link');
+    assert.deepEqual(await links.evaluateAll(items => items.map(item => item.getAttribute('href'))), [
+      'https://xuanl17.github.io/blog/reproducible-human-studies.html',
+      'https://xuanl17.github.io/blog/implicit-agent-behavior.html',
+    ]);
+    const preview = page.getByRole('img', { name: /The HumanStudy Forum discussions page/ });
+    await preview.evaluate(img => img.decode());
+    assert.ok(await preview.isVisible());
+    assert.equal(await preview.evaluate(img => img.closest('a')?.href), 'https://forum.humanstudy-hub.com/');
+    assert.equal(await page.getByRole('link', { name: 'Open the forum', exact: true }).getAttribute('href'), 'https://forum.humanstudy-hub.com/');
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Forum stays within the viewport.');
+    await page.screenshot({ path: path.join(output, `forum-${width}.png`), fullPage: true });
+  }
+  report.checks.push('Same-site Forum landing, original articles and public forum preview');
 
   assert.deepEqual(report.runtimeErrors, []);
   assert.deepEqual(report.blockedWrites, []);
