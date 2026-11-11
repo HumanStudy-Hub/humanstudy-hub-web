@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url), ts = require('typescript'), AdmZip = require('adm-zip');
 function load(file, deps = {}) {
@@ -9,7 +10,9 @@ function load(file, deps = {}) {
 }
 const access = { ACCESS_SECRET: 'test-secret' };
 const admZip = { default: AdmZip };
-const lib = load('lib/community.ts', { './access': access, 'adm-zip': admZip });
+const archive = load('lib/community-archive.ts');
+const communityDeps = { 'adm-zip': admZip, './community-archive': archive };
+const lib = load('lib/community.ts', { './access': access, ...communityDeps });
 
 // Same cases as HumanStudy-Bench tests/test_community.py.
 test('paper keys match scripts/community.py', () => {
@@ -51,7 +54,7 @@ test('hub signatures round trip and reject forgeries', () => {
   assert.equal(lib.verifyHub('user-2', sig), false);
   assert.equal(lib.verifyHub('user-1', sig.slice(0, -2) + 'xx'), false);
   assert.equal(lib.verifyHub('user-1', undefined), false);
-  const other = load('lib/community.ts', { './access': { ACCESS_SECRET: 'other' }, 'adm-zip': admZip });
+  const other = load('lib/community.ts', { './access': { ACCESS_SECRET: 'other' }, ...communityDeps });
   assert.equal(other.verifyHub('user-1', sig), false);
 });
 
@@ -61,7 +64,7 @@ test('github tokens are sealed and only open with the same secret', () => {
   assert.equal(lib.decryptToken(sealed), 'gho_secret');
   assert.notEqual(lib.encryptToken('gho_secret'), sealed);
   assert.equal(lib.decryptToken(sealed.slice(0, -2) + 'AA'), null);
-  const other = load('lib/community.ts', { './access': { ACCESS_SECRET: 'other' }, 'adm-zip': admZip });
+  const other = load('lib/community.ts', { './access': { ACCESS_SECRET: 'other' }, ...communityDeps });
   assert.equal(other.decryptToken(sealed), null);
 });
 
@@ -87,6 +90,27 @@ test('zip validation explains each problem', () => {
   has(lib.validateContributionZip([...good, f('package/paper.pdf')]), /is a PDF/);
   assert.deepEqual(lib.validateContributionZip([...good, f('package/paper.pdf')], { includesPdf: true }), []);
   assert.deepEqual(lib.validateContributionZip([...good, f('__MACOSX/x'), f('.DS_Store')]), []);
+});
+
+test('private sources and raw runs are rejected while derived reports stay eligible', () => {
+  const privatePaths = [
+    'sources/Private/attachment.txt',
+    'sources/RESEARCHER/data.csv',
+    'sources/quarantine/source.txt',
+    'sources/ｐｒｉｖａｔｅ/file.txt',
+    'artifacts/archive/runs/result.json',
+    'artifacts/simulations/20260101/results.html',
+    'artifacts/records.jsonl',
+    'artifacts/participant-responses.csv',
+    'artifacts/notes.annotations.json',
+    'sources/another-archive.zip',
+    'package/fixture/human-data/table.csv',
+  ];
+  for (const path of privatePaths) {
+    assert.ok(lib.validateContributionZip([...good, f(path)]).some(error => /private project file or raw record/.test(error)), path);
+  }
+  assert.deepEqual(lib.validateContributionZip([...good, f('artifacts/simulations/20260101/summary.md')]), []);
+  assert.match(lib.validateContributionZip([...good, f('sources/Paper.txt'), f('sources/paper.txt')])[0], /more than once/);
 });
 
 test('readContributionZip rejects garbage and reads real zips', () => {
@@ -144,7 +168,7 @@ function setup({ identity = null, recent = 0, existingDir = null } = {}) {
   process.env.GITHUB_TOKEN = 'bot-token';
   const Fake = fakeOctokit({ existingDir, userLogin: identity?.login });
   const inserted = [];
-  const community = load('lib/community.ts', { './access': access, 'adm-zip': admZip });
+  const community = load('lib/community.ts', { './access': access, ...communityDeps });
   const store = {
     countRecentContributions: async () => recent,
     getIdentity: async () => identity && { ...identity, token_encrypted: community.encryptToken(identity.token) },
@@ -254,9 +278,36 @@ test('publish refuses bad input, big zips, PDFs and the sixth publish in an hour
   assert.equal(limited.Fake.calls.length, 0);
 });
 
+test('publish validates actual paths and the exact optional manifest before writing to GitHub', async () => {
+  const { Fake, publish } = setup();
+  const files = { 'program.json': '{"nodes":[]}', 'artifacts/simulations/example/report.md': 'Public derived report' };
+  const manifest = Object.entries(files).map(([path, text]) => ({
+    path, bytes: Buffer.byteLength(text), sha256: createHash('sha256').update(text).digest('hex'),
+  }));
+  function archiveOf(manifest, extra = {}) {
+    const zip = new AdmZip();
+    zip.addFile('CONTRIBUTION.json', Buffer.from(JSON.stringify({ files: manifest })));
+    for (const [path, text] of Object.entries({ ...files, ...extra })) zip.addFile(path, Buffer.from(text));
+    return zip.toBuffer();
+  }
+
+  for (const zip of [
+    archiveOf(manifest, { 'sources/quarantine/item.txt': 'Private attachment' }),
+    archiveOf(manifest, { 'program.json': '{"nodes": [ ]}' }),
+    archiveOf(manifest, { 'artifacts/other/report.md': 'Unlisted' }),
+  ]) {
+    const result = await publish({ userId, zip, body: body() });
+    assert.equal(result.error, 'invalid_zip');
+    assert.equal(Fake.calls.length, 0);
+  }
+  const valid = await publish({ userId, zip: archiveOf(manifest), body: body() });
+  assert.equal(valid.ok, true);
+  assert.ok(call(Fake, 'git.createTree')[0].tree.some(entry => entry.path.endsWith('/report.md')));
+});
+
 test('a rejected GitHub token gives a plain-language error', async () => {
   process.env.GITHUB_TOKEN = 'bot-token';
-  const community = load('lib/community.ts', { './access': access, 'adm-zip': admZip });
+  const community = load('lib/community.ts', { './access': access, ...communityDeps });
   const rejecting = class { constructor() { this.rest = { repos: { get: async () => { const e = new Error('Bad credentials'); e.status = 401; throw e; } } }; } };
   const mod = load('lib/community-publish.ts', {
     '@octokit/rest': { Octokit: rejecting }, './community': community,

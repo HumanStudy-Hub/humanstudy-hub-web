@@ -5,7 +5,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Octokit } from "@octokit/rest";
 import {
   BOT_LOGIN, MAX_PUBLISHES_PER_HOUR, decryptToken,
-  makePaperKey, readContributionZip, signHub,
+  makePaperKey, matchesContributionManifest, readContributionZip, signHub,
 } from "./community";
 import { countRecentContributions, getIdentity, insertContribution } from "./community-store";
 
@@ -89,6 +89,10 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) clientMeta = parsed;
   } catch {
     return bad(400, "invalid_zip", "CONTRIBUTION.json in the zip is not valid JSON.");
+  }
+
+  if (!matchesContributionManifest(read.files, clientMeta.files)) {
+    return bad(400, "invalid_zip", "The file list in CONTRIBUTION.json does not match the ZIP. Export the study again and review its files.");
   }
 
   // 4. Who is the author: the user's own GitHub account, or the Hub bot.

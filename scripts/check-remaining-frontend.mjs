@@ -364,11 +364,32 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
   await upload.setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('Preview only') });
   await page.locator('main').getByRole('alert').waitFor();
   assert.ok(await page.getByRole('button', { name: 'Contribute', exact: true }).isDisabled());
+  const zip = new (require('adm-zip'))();
+  zip.addFile('CONTRIBUTION.json', Buffer.from(JSON.stringify({
+    paper: { title: 'Framing experiment', firstAuthor: 'Original Researcher', year: 2025 },
+  })));
+  zip.addFile('program.json', Buffer.from('{}'));
+  zip.addFile('artifacts/simulations/example/report.md', Buffer.from('Public derived report'));
+  await upload.setInputFiles({ name: 'study.zip', mimeType: 'application/zip', buffer: zip.toBuffer() });
+  await page.getByText('Original paper authors: Original Researcher', { exact: false }).waitFor();
+  const inventory = page.locator('summary').filter({ hasText: 'Files to publish (2)' });
+  assert.equal(await inventory.evaluate(element => element.parentElement.open), false);
+  await inventory.click();
+  assert.ok(await page.getByText('artifacts/simulations/example/report.md', { exact: true }).isVisible());
+  await page.getByRole('textbox', { name: 'Your name', exact: true }).fill('Preview Contributor');
+  assert.ok(await page.getByRole('button', { name: 'Contribute', exact: true }).isEnabled());
+
+  zip.addFile('sources/private/item.txt', Buffer.from('Private attachment'));
+  await upload.setInputFiles({ name: 'private.zip', mimeType: 'application/zip', buffer: zip.toBuffer() });
+  const privateFileAlert = page.getByRole('alert').filter({ hasText: 'private project file or raw record' });
+  await privateFileAlert.waitFor();
+  assert.ok(await page.getByRole('button', { name: 'Contribute', exact: true }).isDisabled());
+
   setSignedIn(false);
   await visit('/contribute');
   await page.getByRole('link', { name: 'Sign in to HumanStudy Hub', exact: true }).waitFor();
   assert.equal(await page.getByLabel('Community contribution ZIP', { exact: true }).count(), 0);
-  checked('Contribution file validation and anonymous sign-in gate without uploading');
+  checked('Contribution file inventory, private file rejection and sign-in gate without uploading');
   workspace.title = model.title;
   workspace.document.title = model.title;
   projects[0].title = model.title;
