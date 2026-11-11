@@ -37,6 +37,11 @@ npm run test:studio
 npm run build
 ```
 
+## Releases
+
+Target feature pull requests to `dev`. Verify the integrated changes with CI and the Vercel preview.
+For production, open a pull request from `dev` to `main` and wait for explicit approval from the release owner before merging.
+
 ## Shared Build Study backend (`/pipeline` and `/build`)
 
 The browser uploads the paper directly to Vercel Blob and posts only the
