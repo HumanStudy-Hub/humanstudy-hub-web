@@ -91,6 +91,20 @@ test('library detail resolves a newly listed paper before the database mirror ca
   }
 });
 
+test('validation requires the signed public revision and runnable scope', () => {
+  const {libraryAvailability} = mod.exports;
+  const revision = 'b'.repeat(64);
+  const protocol = {slug:'reviewed', revision, schemaVersion:'1',
+    fidelity:{verdict:'high fidelity',signedBy:['Maintainer']},arms:[{id:'main',runnable:true}]};
+  const paper = {currentRevision:revision, assetFiles:[{path:'protocol.json'}], protocol};
+  assert.equal(libraryAvailability(paper).validated,true);
+  for (const override of [
+    {revision:'a'.repeat(64)}, {schemaVersion:'0.8'}, {arms:[{id:'main',runnable:false}]},
+    {fidelity:{verdict:'high fidelity',signedBy:[]}},
+  ]) assert.equal(libraryAvailability({...paper,protocol:{...protocol,...override}}).validated,false);
+  assert.equal(libraryAvailability({...paper,assetFiles:[{path:'program.json'}]}).validated,false);
+});
+
 test('library counts match filters and DOI updates keep one paper entry', async () => {
   const {searchLibrary, getResearchPaper, includeDevelopment} = mod.exports;
   const oldFetch = globalThis.fetch;
@@ -109,6 +123,9 @@ test('library counts match filters and DOI updates keep one paper entry', async 
     globalThis.fetch = async()=>new Response(JSON.stringify({...empty,papers:[published,reading]}));
     const result = await searchLibrary({limit:100},'all');
     assert.deepEqual(result.counts,{all:21,program:2,runnable:1,protocol:1,development:19,indexed:0});
+    const validated = await searchLibrary({limit:100}, 'all', true);
+    assert.deepEqual(validated.items.map(p => p.id), [published.id]);
+    assert.deepEqual((await searchLibrary({query:'no matching paper'}, 'all', true)).items, []);
     const rows = await searchLibrary({limit:100},'development');
     assert.equal(rows.items.length,19);
     assert.equal(rows.items.filter(p=>p.developmentStage==='draft').length,6);

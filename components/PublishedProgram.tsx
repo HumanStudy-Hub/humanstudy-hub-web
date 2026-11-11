@@ -66,8 +66,11 @@ export default function PublishedProgram({ paper, program }: { paper: ResearchPa
       {details.length > 0 && <details className="mt-3"><summary className="cursor-pointer">Study details</summary>{details.map(renderNode)}</details>}
     </>;
   };
-  return <section className="mt-9 border-t border-[var(--site-line)] pt-6">
-    <h2 className="text-xl font-semibold font-serif">Human Study Program</h2>
+  return <section id="paper-program" className="mt-9 scroll-mt-24 border-t border-[var(--site-line)] pt-6">
+    <div className="flex flex-wrap items-baseline justify-between gap-3">
+      <h2 className="text-xl font-semibold font-serif">Human Study Program</h2>
+      <a href="#run-experiment" className="text-sm text-[var(--site-accent)] underline">Run experiment</a>
+    </div>
     {overview.map(renderNode)}
     {program.studies.length > 0 && <section className="mt-7">
       <h3 className="font-semibold">Experiments and analyses</h3>

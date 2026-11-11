@@ -15,11 +15,11 @@ export default function Home() {
     <div className={styles.home}>
       <section className={styles.opening} aria-labelledby="home-title">
         <h1 id="home-title" className={styles.title}>
-          <span>Human studies.</span>
-          <em>Built for AI agents.</em>
+          <span>Read the paper.</span>
+          <em>Run the experiment.</em>
         </h1>
         <p className={styles.introduction}>
-          Turn published human studies into reusable datasets and runnable experiments for AI agents.
+          Explore the evidence, prepare an experiment, and see what is missing.
         </p>
         <nav className={styles.actions} aria-label="Explore HumanStudy Hub">
           {actions.map((action) => (
