@@ -21,13 +21,14 @@ Web part of the v0.8 platform design (PRs W1–W3). Everything is additive: pape
   link. **Bench side (not changed here):** if B3 ever publishes a preview, it must write
   `preview` together with `previewPublic: true`; a bare `preview` is ignored. Where previews
   are hosted is still open (the release allowlist has no `preview/`).
-- `components/ResearchPaperDetail.tsx` (the existing study page for `paper_` ids) shows a
-  text-only "Protocol" section: quality level (the fidelity verdict, plus who signed),
-  runnable and not-runnable conditions (the protocol's arms) with the paper's n, what is not
-  run and why, and the number of effects. The slug, schema and hsenv range are not shown; a
-  short note appears only when the schema is newer than the site reads. The status line under
-  the description follows the quality level. A "Participant view ↗" link sits in the existing
-  link row only for a public preview (above). No new button or tab.
+- Study pages show protocol conditions, effects and exclusions. Review wording and the
+  **Validated protocol** badge require catalog-level provenance for the exact current revision,
+  in addition to the signed fidelity verdict and runnable scope.
+- The optional catalog-level `publications` object maps a paper ID to
+  `{ "kind": "user-submitted" | "maintainer-reviewed-protocol", "revision": "<64 hex>" }`.
+  Bench should populate it from its controlled publication process. Keep contributor-authored
+  metadata inside paper records, where it cannot set publication provenance. Missing or stale
+  provenance leaves the quality badge hidden. `user-submitted` displays **User submitted**.
 - `getCommunityPapers` / `COMMUNITY_INDEX_BRANCH` are removed. `/api/community/paper`
   answers from `research_index.json` only.
 
