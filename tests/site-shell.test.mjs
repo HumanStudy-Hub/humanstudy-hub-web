@@ -119,6 +119,24 @@ test('forum landing keeps the original articles and the public forum entry', () 
   assert.doesNotMatch(html, /<main\b/);
 });
 
+test('contributor profiles show an unavailable state during storage errors', async () => {
+  const Profile = load('app/contributors/[id]/page.tsx', {
+    '@/lib/community-credit': {
+      UUID: /^[a-f0-9-]+$/,
+      creditPage: () => 1,
+      getContributor: async () => { throw Error('storage unavailable'); },
+      listCredits: async () => [],
+    },
+  }).default;
+  const html = renderToStaticMarkup(await Profile({
+    params: Promise.resolve({ id: '11111111-1111-4111-8111-111111111111' }),
+    searchParams: Promise.resolve({}),
+  }));
+  assert.match(html, /Contributor profile/);
+  assert.match(html, /This contributor profile is temporarily unavailable/);
+  assert.match(html, /href="\/community\?view=contributors"/);
+});
+
 test('the homepage groups all four actions in the requested order without secondary sections', () => {
   const html = render(Home);
   const links = [...html.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]);
@@ -302,6 +320,15 @@ test('paper details preserve research links, capability caveats and safe resourc
   assert.match(html, /href="https:\/\/github\.com\/HumanStudy-Hub\/HumanStudy-Bench\/tree\/main\/studies\/study_005"/);
   assert.doesNotMatch(html, /href="javascript:/);
   assert.doesNotMatch(html, /<main\b/);
+});
+
+test('catalog contributor names remain visible without a registered Hub profile', async () => {
+  const html = renderToStaticMarkup(await PaperDetail({ paper: {
+    ...paper, contributors: [{ name: 'Public Contributor', github: 'example' }, { hub: { id: 'private-account-id' } }],
+  } }));
+  assert.match(html, /Original author · 2024/);
+  assert.match(html, /Contributed by Public Contributor/);
+  assert.doesNotMatch(html, /private-account-id|href="\/contributors\//);
 });
 
 test('user-submitted protocol details show conditions and suppress uploader fidelity claims', async () => {
