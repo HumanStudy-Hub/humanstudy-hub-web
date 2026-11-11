@@ -240,8 +240,8 @@ test('unavailable desktop releases retain the release-page fallback', async () =
 
 const PaperDetail = load('components/ResearchPaperDetail.tsx').default;
 
-test('paper details preserve research links, capability caveats and safe resource URLs', () => {
-  const html = renderToStaticMarkup(React.createElement(PaperDetail, { paper: {
+test('paper details preserve research links, capability caveats and safe resource URLs', async () => {
+  const html = renderToStaticMarkup(await PaperDetail({ paper: {
     ...paper,
     description: 'Original research description.',
     assetRoot: 'studies/study_005',
