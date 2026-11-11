@@ -81,7 +81,7 @@ export default function ContributeUploadForm() {
   }
   if(!checked)return <p className="text-sm text-[var(--site-muted)]">Checking sign-in…</p>;
   if(!user)return <p className="text-sm text-[var(--foreground)]"><Link href="/build/projects" className="font-semibold text-[var(--site-accent)] underline">Sign in to HumanStudy Hub</Link> to contribute. A GitHub account is optional.</p>;
-  if(submitted)return <p role="status" className="text-sm leading-6 text-[var(--site-accent)]">Contribution submitted. The source checks and review run in the background; the current recommended version stays available.</p>;
+  if(submitted)return <p role="status" className="text-sm leading-6 text-[var(--site-accent)]"><strong>User submitted.</strong> The source checks and review run in the background; the current recommended version stays available.</p>;
   return <form onSubmit={submit} className="space-y-4">
     <input aria-label="Your name" required disabled={busy} value={name} onChange={e=>setName(e.target.value)} placeholder="Your name" className="w-full rounded-md border border-[var(--site-line)] px-3 py-2 text-sm" />
     <input aria-label="Affiliation" disabled={busy} value={affiliation} onChange={e=>setAffiliation(e.target.value)} placeholder="Affiliation (optional)" className="w-full rounded-md border border-[var(--site-line)] px-3 py-2 text-sm" />

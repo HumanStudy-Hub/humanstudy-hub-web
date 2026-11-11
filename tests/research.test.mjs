@@ -91,18 +91,25 @@ test('library detail resolves a newly listed paper before the database mirror ca
   }
 });
 
-test('validation requires the signed public revision and runnable scope', () => {
+test('validation requires maintainer provenance, the signed public revision and runnable scope', () => {
   const {libraryAvailability} = mod.exports;
   const revision = 'b'.repeat(64);
   const protocol = {slug:'reviewed', revision, schemaVersion:'1',
     fidelity:{verdict:'high fidelity',signedBy:['Maintainer']},arms:[{id:'main',runnable:true}]};
-  const paper = {currentRevision:revision, assetFiles:[{path:'protocol.json'}], protocol};
+  const paper = {currentRevision:revision, assetFiles:[{path:'protocol.json'}], protocol,
+    publication:{kind:'maintainer-reviewed-protocol',revision}};
   assert.equal(libraryAvailability(paper).validated,true);
   for (const override of [
     {revision:'a'.repeat(64)}, {schemaVersion:'0.8'}, {arms:[{id:'main',runnable:false}]},
     {fidelity:{verdict:'high fidelity',signedBy:[]}},
   ]) assert.equal(libraryAvailability({...paper,protocol:{...protocol,...override}}).validated,false);
   assert.equal(libraryAvailability({...paper,assetFiles:[{path:'program.json'}]}).validated,false);
+  assert.equal(libraryAvailability({...paper,publication:undefined}).validated,false);
+  assert.equal(libraryAvailability({...paper,publication:{...paper.publication,revision:'a'.repeat(64)}}).validated,false);
+  const user = libraryAvailability({...paper,publication:{kind:'user-submitted',revision}});
+  assert.equal(user.validated,false);
+  assert.equal(user.userSubmitted,true);
+  assert.equal(user.runnable,true);
 });
 
 test('library counts match filters and DOI updates keep one paper entry', async () => {
@@ -120,7 +127,8 @@ test('library counts match filters and DOI updates keep one paper entry', async 
   const reading = {...index.papers[0], currentRevision, assetFiles:[{path:'program.json'}],
     capabilities:{replayable:true}, studyCapabilities:{run:{status:'no'}}};
   try {
-    globalThis.fetch = async()=>new Response(JSON.stringify({...empty,papers:[published,reading]}));
+    globalThis.fetch = async()=>new Response(JSON.stringify({...empty,papers:[published,reading],
+      publications:{[published.id]:{kind:'maintainer-reviewed-protocol',revision:currentRevision}}}));
     const result = await searchLibrary({limit:100},'all');
     assert.deepEqual(result.counts,{all:21,program:2,runnable:1,protocol:1,development:19,indexed:0});
     const validated = await searchLibrary({limit:100}, 'all', true);
@@ -133,4 +141,27 @@ test('library counts match filters and DOI updates keep one paper entry', async 
     assert.equal((await getResearchPaper(published.id)).currentRevision,currentRevision);
     assert.equal((await getResearchPaper(rows.items[0].id)).doi,rows.items[0].doi);
   } finally {globalThis.fetch=oldFetch;}
+});
+
+
+test('catalog-level provenance takes precedence over contributor-supplied paper metadata', async () => {
+  const {getResearchPaper, libraryAvailability, searchLibrary} = mod.exports;
+  const oldFetch = globalThis.fetch;
+  const revision = 'a'.repeat(64);
+  const paper = {...index.papers[0], currentRevision:revision,
+    publication:{kind:'maintainer-reviewed-protocol',revision},
+    assetFiles:[{path:'program.json'},{path:'protocol.json'}],
+    protocol:{slug:'self-signed',schemaVersion:'1',revision,arms:[{id:'main',runnable:true}],
+      fidelity:{verdict:'high fidelity',signedBy:['Uploader']}}};
+  try {
+    const snapshot = {...index,papers:[paper]};
+    globalThis.fetch = async()=>new Response(JSON.stringify(snapshot));
+    assert.equal((await getResearchPaper(paper.id)).publication,undefined);
+    assert.equal((await searchLibrary({},'all',true)).total,0);
+    globalThis.fetch = async()=>new Response(JSON.stringify({...snapshot,
+      publications:{[paper.id]:{kind:'user-submitted',revision}}}));
+    const status = libraryAvailability(await getResearchPaper(paper.id));
+    assert.equal(status.userSubmitted,true);
+    assert.equal(status.validated,false);
+  } finally { globalThis.fetch = oldFetch; }
 });

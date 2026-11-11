@@ -102,6 +102,7 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
                       </p>
                     )}
                     {status.validated && <p className={styles.validated}>Validated protocol</p>}
+                    {status.userSubmitted && <p className={styles.authors}>User submitted</p>}
                   </div>
                   <div className={styles.actions}>
                     <Link className={styles.primary} href={status.program ? `${href}#paper-program` : href} aria-label={`${label}: ${paper.title}`}>

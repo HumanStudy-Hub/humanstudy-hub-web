@@ -3,6 +3,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import development from "../data/studies-in-development.json";
 
+type ResearchPublication = { kind: "user-submitted" | "maintainer-reviewed-protocol"; revision: string };
+
 export type ResearchPaper = {
   id: string; title: string; authors: string[]; year: number | null; description?: string;
   aliases: string[]; legacyStudyId?: string; currentRevision: string | null;
@@ -12,6 +14,7 @@ export type ResearchPaper = {
   resources: { id: string; kind: string; url?: string; access: string; license?: string }[];
   /** v0.8 protocol summary (Bench catalog, B3). Absent on papers without a protocol.json revision. */
   protocol?: unknown;
+  publication?: ResearchPublication;
   developmentStage?: "draft" | "preparation";
   [key: string]: unknown;
 };
@@ -121,16 +124,24 @@ export function validateResearchQuery(input: URLSearchParams): ResearchQuery {
 }
 
 function asIndex(value: unknown): ResearchIndex {
-  const index = value as ResearchIndex;
+  const index = value as ResearchIndex & { publications?: Record<string, unknown> };
   if (index?.schemaVersion !== 1 || !/^[a-f0-9]{64}$/.test(index.snapshot) || !Array.isArray(index.papers)
       || !Array.isArray(index.taxonomy?.concepts)) throw new Error("Invalid research index.");
   const ids = new Set<string>();
-  for (const paper of index.papers) {
+  const papers = index.papers.map(paper => {
     if (!/^paper_[a-f0-9]{24}$/.test(paper.id) || !paper.title || !Array.isArray(paper.aliases) || ids.has(paper.id))
       throw new Error("Invalid or duplicate paper identity.");
     ids.add(paper.id);
-  }
-  return index;
+    // Paper records may contain contributor metadata. Only the catalog-level publication index is authoritative.
+    const record = index.publications?.[paper.id] as Partial<ResearchPublication> | undefined;
+    const revision = record?.revision;
+    const kind = record?.kind;
+    const publication = revision && /^[a-f0-9]{64}$/.test(revision) && revision === paper.currentRevision
+      && (kind === "user-submitted" || kind === "maintainer-reviewed-protocol")
+      ? { kind, revision } : undefined;
+    return { ...paper, publication };
+  });
+  return { ...index, papers };
 }
 
 export async function getResearchIndex(): Promise<ResearchIndex> {
@@ -208,10 +219,11 @@ export function libraryAvailability(paper: ResearchPaper) {
   const runnableDraft = program && paper.capabilities?.replayable === true && (run === "yes" || run === "partial")
     && files.some(file => /^package\/[^/]+\/task\/adapter\.py$/.test(file.path));
   const runnable = runnableDraft || Boolean(publicProtocol && protocol?.schemaRunnable && protocol.arms.some(arm => arm.runnable));
-  const validated = Boolean(publicProtocol && protocol?.schemaRunnable
+  const publication = paper.publication?.revision === paper.currentRevision ? paper.publication?.kind : undefined;
+  const validated = Boolean(publication === "maintainer-reviewed-protocol" && publicProtocol && protocol?.schemaRunnable
     && protocol.fidelity.verdict === "high fidelity" && protocol.fidelity.signedBy.length
     && protocol.arms.some(arm => arm.runnable));
-  return { program, runnable, publicProtocol, validated, inDevelopment: Boolean(paper.developmentStage && !publicProtocol) };
+  return { program, runnable, publicProtocol, validated, userSubmitted: publication === "user-submitted", inDevelopment: Boolean(paper.developmentStage && !publicProtocol) };
 }
 
 export function includeDevelopment(index: ResearchIndex): ResearchIndex {

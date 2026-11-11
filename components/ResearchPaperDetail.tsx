@@ -41,26 +41,16 @@ function Capabilities({ caps }: { caps: StudyCapabilities }) {
   </section>;
 }
 
-const PROTOCOL_NOTE: Record<string, string> = {
-  "high fidelity": "Its protocol was reviewed against the paper and rated high fidelity.",
-  "not high fidelity": "Its protocol was reviewed against the paper and not rated high fidelity.",
-  "": "A protocol exists for this study. It has not been reviewed against the paper yet.",
-};
-const QUALITY: Record<string, string> = { "high fidelity": "High fidelity", "not high fidelity": "Not high fidelity" };
-
-/** The v0.8 protocol summary from the catalog, as text: quality level, conditions, what cannot run. */
-function Protocol({ protocol }: { protocol: ResearchProtocol }) {
-  const verdict = protocol.fidelity.verdict;
-  const quality = verdict ? QUALITY[verdict] ?? verdict : "Not reviewed yet";
-  const signed = protocol.fidelity.signedBy.length ? `signed by ${protocol.fidelity.signedBy.join(", ")}` : null;
+/** Displays fidelity only for the independently reviewed published revision. */
+function Protocol({ protocol, validated }: { protocol: ResearchProtocol; validated: boolean }) {
   const runnable = protocol.arms.filter(a => a.runnable).length;
   return <section className="mt-10">
     <h2 className="text-lg font-semibold font-serif">Protocol</h2>
     <dl className="mt-3 divide-y divide-[var(--site-line)] text-sm">
-      <div className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[16rem_1fr]">
+      {validated && <div className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[16rem_1fr]">
         <dt className="text-[var(--foreground)]">Quality level</dt>
-        <dd className="text-[var(--site-muted)]"><span className="font-medium text-[var(--foreground)]">{quality}</span>{signed ? ` · ${signed}` : ""}</dd>
-      </div>
+        <dd className="text-[var(--site-muted)]"><span className="font-medium text-[var(--foreground)]">High fidelity</span> · signed by {protocol.fidelity.signedBy.join(", ")}</dd>
+      </div>}
       <div className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[16rem_1fr]">
         <dt className="text-[var(--foreground)]">Conditions</dt>
         <dd className="text-[var(--site-muted)]">{protocol.arms.length
@@ -97,7 +87,8 @@ export default async function ResearchPaperDetail({ paper }: { paper: ResearchPa
       {availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">
         {paper.developmentStage === "draft" ? "In development · protocol draft exists." : "In development · study materials are being prepared."}
       </p>}
-      {!program && !availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">{protocol ? PROTOCOL_NOTE[protocol.fidelity.verdict ?? ""] ?? PROTOCOL_NOTE[""] : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
+      {availability.userSubmitted && <p className="mt-3 text-sm text-[var(--site-muted)]">User submitted</p>}
+      {!program && !availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">{availability.publicProtocol ? "A published protocol is available for this study." : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
       <div className="mt-6 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
         {program && <a href="#paper-program">Interact with paper</a>}
         {(availability.program || availability.publicProtocol)
@@ -119,7 +110,7 @@ export default async function ResearchPaperDetail({ paper }: { paper: ResearchPa
           The published study document could not be loaded. Try refreshing the page.
         </p>
       )}
-      {protocol && <Protocol protocol={protocol} />}
+      {protocol && availability.publicProtocol && <Protocol protocol={protocol} validated={availability.validated} />}
       {paper.studyCapabilities ? <Capabilities caps={paper.studyCapabilities as StudyCapabilities} /> : null}
       {resources.length > 0 && <section className="mt-10">
         <h2 className="text-lg font-semibold font-serif">Sources</h2>

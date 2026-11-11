@@ -219,6 +219,19 @@ test('program cards open the interactive document and a separate run setup witho
   assert.doesNotMatch(html, />Validated protocol<|>Runnable draft</);
 });
 
+test('user-submitted protocol cards hide self-declared review quality', async () => {
+  const revision = 'a'.repeat(64);
+  const html = await renderStudies({}, {
+    ...results, items: [{ ...paper, currentRevision: revision, assetFiles: [{ path: 'program.json' }, { path: 'protocol.json' }],
+      publication: { kind: 'user-submitted', revision },
+      protocol: { slug: 'submitted', schemaVersion: '1', revision, arms: [{ id: 'main', runnable: true }],
+        fidelity: { verdict: 'high fidelity', signedBy: ['Uploader'] } } }],
+  });
+  assert.match(html, />User submitted</);
+  assert.match(html, />Run experiment</);
+  assert.doesNotMatch(html, />Validated protocol<|>High fidelity</);
+});
+
 test('invalid study queries display an error without querying the catalog', async () => {
   const html = await renderStudies({ offset: '-1' }, results);
   assert.equal(libraryCalls.length, 0);
@@ -289,6 +302,19 @@ test('paper details preserve research links, capability caveats and safe resourc
   assert.match(html, /href="https:\/\/github\.com\/HumanStudy-Hub\/HumanStudy-Bench\/tree\/main\/studies\/study_005"/);
   assert.doesNotMatch(html, /href="javascript:/);
   assert.doesNotMatch(html, /<main\b/);
+});
+
+test('user-submitted protocol details show conditions and suppress uploader fidelity claims', async () => {
+  const revision = 'a'.repeat(64);
+  const html = renderToStaticMarkup(await PaperDetail({ paper: {
+    ...paper, currentRevision: revision, assetFiles: [{ path: 'protocol.json' }],
+    publication: { kind: 'user-submitted', revision },
+    protocol: { slug: 'submitted', schemaVersion: '1', revision, arms: [{ id: 'main', label: 'Test condition', runnable: true }],
+      fidelity: { verdict: 'high fidelity', signedBy: ['Uploader'] } },
+  } }));
+  assert.match(html, />User submitted</);
+  assert.match(html, /Test condition/);
+  assert.doesNotMatch(html, /High fidelity|signed by Uploader|Validated protocol/);
 });
 
 test('run setup identifies the Desktop import flow and shows program blockers', () => {
