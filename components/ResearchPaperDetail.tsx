@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { readProtocol, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
+import { getPublishedProgram, publishedAssetUrl } from "@/lib/published-program";
+import PublishedProgram from "./PublishedProgram";
 import styles from "./folio-page.module.css";
 
 const label: Record<string, string> = { "original-data-link": "Original data", "transcription-code": "Transcription code", "metadata": "Source reference", "claim-metadata": "Claim and analysis metadata" };
@@ -76,24 +78,28 @@ function Protocol({ protocol }: { protocol: ResearchProtocol }) {
   </section>;
 }
 
-export default function ResearchPaperDetail({ paper }: { paper: ResearchPaper }) {
+export default async function ResearchPaperDetail({ paper }: { paper: ResearchPaper }) {
   // Catalog documents from different sources omit empty lists.
   const authors = paper.authors ?? [], resources = paper.resources ?? [];
   const repository = paper.assetRoot && /^(studies\/study_\d+|community\/[A-Za-z0-9_.-]+\/revisions\/[a-f0-9]{64})$/.test(paper.assetRoot)
     ? `https://github.com/HumanStudy-Hub/HumanStudy-Bench/tree/main/${paper.assetRoot}` : null;
   const protocol = readProtocol(paper);
+  const program = await getPublishedProgram(paper);
+  const programSource = program ? publishedAssetUrl(paper, program.source.filename) : null;
   return <div className={`${styles.page} ${styles.narrow}`}>
     <div>
       <Link href="/studies" className={styles.back}>← Study Library</Link>
       <h1>{paper.title}</h1>
       <p className="mt-3 text-sm text-[var(--site-muted)]">{[authors.join(", "), paper.year].filter(Boolean).join(" · ")}</p>
       <p className="mt-6 whitespace-pre-wrap leading-7 text-[var(--foreground)]">{paper.description}</p>
-      <p className="mt-6 text-sm text-[var(--site-muted)]">{protocol ? PROTOCOL_NOTE[protocol.fidelity.verdict ?? ""] ?? PROTOCOL_NOTE[""] : paper.currentRevision ? "The recommended Human Program is available in the desktop research library." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This source is indexed. Its full Human Program and interactive execution have not been validated yet."}</p>
+      {!program && <p className="mt-6 text-sm text-[var(--site-muted)]">{protocol ? PROTOCOL_NOTE[protocol.fidelity.verdict ?? ""] ?? PROTOCOL_NOTE[""] : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
       <div className="mt-6 flex gap-4 text-sm text-[var(--site-accent)]">
-        <Link href="/build">HumanStudy desktop</Link>
+        <Link href="/download">Get HumanStudy desktop</Link>
+        {programSource && <a href={programSource} target="_blank" rel="noreferrer">Original paper ↗</a>}
         {repository && <a href={repository} target="_blank" rel="noopener noreferrer">Research files ↗</a>}
         {protocol?.preview && <a href={protocol.preview} target="_blank" rel="noopener noreferrer">Participant view ↗</a>}
       </div>
+      {program && <PublishedProgram paper={paper} program={program} />}
       {protocol && <Protocol protocol={protocol} />}
       {paper.studyCapabilities ? <Capabilities caps={paper.studyCapabilities as StudyCapabilities} /> : null}
       {resources.length > 0 && <section className="mt-10">

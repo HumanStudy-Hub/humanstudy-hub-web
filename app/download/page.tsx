@@ -9,7 +9,7 @@ import { tryListed } from "@/lib/try-online-config";
 export const revalidate = 300;
 
 const description =
-  "A desktop app that reads a published empirical paper, reconstructs the study as a structured study document, and marks what the paper does not state.";
+  "Explore a paper’s findings and experiments in a Human Program, trace the original evidence, and prepare an experiment when the materials are available.";
 
 export const metadata: Metadata = {
   title: "Desktop app | HumanStudy-Hub",
@@ -123,56 +123,10 @@ function Shot({ src, alt, width, height, priority }: { src: string; alt: string;
   );
 }
 
-const features: { title: string; body: React.ReactNode; shot: { src: string; alt: string; width: number; height: number } }[] = [
-  {
-    title: "The study, rebuilt from the paper",
-    body: (
-      <>
-        <p>
-          Open a PDF and the study agent writes a twelve-section study document: research questions and hypotheses,
-          participants, design and conditions, the procedure with its materials transcribed verbatim, measures, the
-          analysis plan and the reported results.
-        </p>
-        <p>
-          Each item carries the page it came from and how it was obtained: quoted verbatim, reported in the text, or
-          derived from what the paper reports. Multi-study papers get one tab per study.
-        </p>
-      </>
-    ),
-    shot: { src: "/desktop/study-document.webp", alt: "Study document for Ross, Greene and House (1977) with sections for paper overview, research questions and studies", width: 1440, height: 848 },
-  },
-  {
-    title: "What the paper leaves out is marked, not filled in",
-    body: (
-      <>
-        <p>
-          The question the app keeps asking is whether there is enough information to reproduce the study. Anything the
-          paper does not state is shown in amber as not stated, with the decision it leaves open.
-        </p>
-        <p>
-          The agent does not invent a plausible assignment rule or a missing item wording. You record the decision
-          yourself, or discuss it with the agent and keep the reasoning next to the item.
-        </p>
-      </>
-    ),
-    shot: { src: "/desktop/gaps-amber.webp", alt: "Two conditions marked Not stated in the paper, with the assignment rule open for a decision", width: 1440, height: 848 },
-  },
-  {
-    title: "Every item next to the page it came from",
-    body: (
-      <>
-        <p>
-          Compare source opens the original PDF beside the study document. Select an item and the quoted passage is
-          boxed on its page.
-        </p>
-        <p>
-          It works the other way too: select a passage in the paper and the app lists every study item that cites it,
-          so you can check a hypothesis, a measure and an analysis against the same sentence.
-        </p>
-      </>
-    ),
-    shot: { src: "/desktop/cited-passage.webp", alt: "A passage selected on page 5 of the paper, listing the four study items that cite it", width: 1440, height: 848 },
-  },
+const workflow = [
+  ["Read the research", "Open a paper to see its question, findings and individual experiments in a Human Program."],
+  ["Check the evidence", "Open a source next to the Program to inspect the original passage. The Program records gaps in the available materials."],
+  ["Prepare an experiment", "Choose an experiment to prepare its procedure and materials. Preview the participant view before a simulation."],
 ];
 
 const faq: [string, React.ReactNode][] = [
@@ -226,10 +180,10 @@ export default async function DownloadPage() {
     <div className={styles.page}>
       <section>
         <div className="max-w-4xl">
-          <h1>Read the paper.<br />Build the study.</h1>
+          <h1>Turn a paper into a study you can inspect.</h1>
           <p className={styles.lede}>
-            HumanStudy Hub for Mac rebuilds the study from its paper and lists what the paper does not state. Every item
-            points back to the page of the original PDF it came from.{release.windows ? " A Windows preview is also available." : ""}
+            Explore the paper’s findings and experiments in a Human Program. Check the original sources,
+            see what the paper leaves unstated, and prepare an experiment when the materials are available.
           </p>
           <div className="mt-8">
             <Downloads release={release} tryOnline={tryListed()} />
@@ -245,89 +199,24 @@ export default async function DownloadPage() {
             priority
           />
           <figcaption className="mt-3 text-sm text-[var(--site-muted)]">
-            <span className="sm:hidden">
-              Left to right: the study agent, the study document with page references, and the original paper with the
-              cited sentence boxed.
-            </span>
-            <span className="hidden gap-4 sm:grid sm:grid-cols-[26fr_37fr_37fr]">
-              <span>The study agent reads the paper and answers questions about it.</span>
-              <span>The study document, with page references on every item.</span>
-              <span>The original paper, with the cited sentence boxed.</span>
-            </span>
+            An example of comparing a study document with its original paper.
           </figcaption>
         </figure>
       </section>
 
-      <div className="mt-16 space-y-16">
-        <section>
-          <h2 className="font-serif text-2xl font-bold leading-snug sm:text-3xl">Who it is for</h2>
-          <dl className="mt-6 divide-y divide-[var(--site-line)] border-y border-[var(--site-line)] text-base">
-            {[
-              ["Students and early PhDs reading an experimental paper", "Read the twelve-section study document and compare each item with the PDF."],
-              ["Researchers planning a replication or adaptation", "Start from verbatim materials, the procedure and the missing-information list, and ask the agent for a preregistration draft."],
-              ["Reviewers, editors and meta-scientists", "Judge reporting completeness from the amber \u201cnot stated in the paper\u201d items, each with page citations."],
-              ["Teachers of research methods", "Show the design and results as interactive charts, and run simulated participants on simple survey or vignette studies, clearly labelled as simulation."],
-            ].map(([who, use]) => (
-              <div key={who} className="grid gap-1 py-4 lg:grid-cols-12 lg:gap-8">
-                <dt className="font-semibold text-[var(--foreground)] lg:col-span-4">{who}</dt>
-                <dd className="leading-7 text-[var(--foreground)] lg:col-span-8">{use}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-
-        {features.map((feature, i) => (
-          <section key={feature.title} className="grid items-start gap-8 lg:grid-cols-12 lg:gap-12">
-            <div className={`lg:col-span-4 lg:pt-6 ${i % 2 ? "lg:order-2" : ""}`}>
-              <h2 className="font-serif text-2xl font-bold leading-snug sm:text-3xl">{feature.title}</h2>
-              <div className="mt-4 space-y-4 text-base leading-7 text-[var(--foreground)]">{feature.body}</div>
+      <section className="mt-16 border-t border-[var(--site-line)] pt-8">
+        <h2 className="font-serif text-2xl font-bold sm:text-3xl">From paper to experiment</h2>
+        <div className="mt-6 grid gap-6 sm:grid-cols-3">
+          {workflow.map(([title, detail]) => (
+            <div key={title}>
+              <h3 className="font-semibold">{title}</h3>
+              <p className="mt-2 leading-7 text-[var(--site-muted)]">{detail}</p>
             </div>
-            <div className={`lg:col-span-8 ${i % 2 ? "lg:order-1" : ""}`}>
-              <Shot {...feature.shot} />
-            </div>
-          </section>
-        ))}
-
-        <section>
-          <div className="max-w-2xl">
-            <h2 className="font-serif text-2xl font-bold leading-snug sm:text-3xl">Charts of the design and the reported results</h2>
-            <p className="mt-4 text-base leading-7 text-[var(--foreground)]">
-              From the study document the app draws the sample flow, the procedure and the conditions, and charts the
-              statistics the paper reports. Every value links back to its page. Spreads and counts the paper does not
-              report are drawn as not reported rather than estimated.
-            </p>
-          </div>
-          <div className="mt-8 grid items-start gap-6 md:grid-cols-2">
-            <figure>
-              <Shot src="/desktop/study-overview.webp" alt="Study overview for Study 1: sample sizes, a two-step procedure and four conditions, one step marked for checking" width={1200} height={1173} />
-              <figcaption className="mt-2 text-sm text-[var(--site-muted)]">Study overview: sample, procedure and conditions.</figcaption>
-            </figure>
-            <figure>
-              <Shot src="/desktop/results-chart.webp" alt="Reported results: headline statistics and a bar chart of consensus estimates by the rater's own choice" width={1200} height={944} />
-              <figcaption className="mt-2 text-sm text-[var(--site-muted)]">Reported results, charted from Table 1 of the paper.</figcaption>
-            </figure>
-          </div>
-        </section>
-
-        <section className="grid gap-8 border-l-4 border-[var(--site-accent)] bg-[var(--site-surface)]/60 px-6 py-8 sm:px-10 lg:grid-cols-12">
-          <h2 className="font-serif text-2xl font-bold leading-snug sm:text-3xl lg:col-span-4">Simulated participants, labelled as simulation</h2>
-          <div className="space-y-4 text-base leading-7 text-[var(--foreground)] lg:col-span-8">
-            <p>
-              Once the procedure is in place you can run it with LLM-simulated participants, each going through the
-              materials in the order the paper describes. Use it to find instructions that read ambiguously or
-              conditions that do not differ the way the paper intends.
-            </p>
-            <p>
-              Simulated responses are labelled as simulation everywhere they appear and are kept apart from the
-              paper&apos;s human results. They are not data about people.
-            </p>
-            <p>
-              Simulation works best for simple survey and vignette studies. Complex interactive experiments are mapped
-              and checked against the paper, not fully simulated.
-            </p>
-          </div>
-        </section>
-      </div>
+          ))}
+        </div>
+        <p className="mt-6 text-sm text-[var(--site-muted)]">Simulated responses are labelled and shown separately from the paper’s human results.</p>
+        <Link className="mt-3 inline-block text-sm font-semibold text-[var(--site-accent)] underline" href="/studies">Browse the Study Library</Link>
+      </section>
 
       <section className="mt-16">
         <div className="grid gap-12 border-t border-[var(--site-line)] pt-14 lg:grid-cols-2">

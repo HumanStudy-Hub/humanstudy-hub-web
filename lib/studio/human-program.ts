@@ -11,20 +11,20 @@ export type HumanProgram = {schemaVersion:2;id:string;title:string;intent:'recon
 type Rule = { $ref?:string; const?:unknown; enum?:unknown[]; type?:string; minLength?:number; maxLength?:number; pattern?:string; minimum?:number; maximum?:number; maxItems?:number; items?:Rule; properties?:Record<string,Rule>;required?:string[];additionalProperties?:boolean };
 const schema=((contract as unknown as {default?:unknown}).default??contract) as Rule&{$defs:Record<string,Rule>};
 export const humanProgramContract=schema;
-function check(value:unknown,rule:Rule,path:string,depth=0):void {
+function check(value:unknown,rule:Rule,path:string,depth=0,published=false):void {
  const fail=(reason:string):never=>{throw new Error(`${path}: ${reason}`);};
  if(depth>64)fail('structure is too deeply nested');
- if(rule.$ref)return check(value,schema.$defs[rule.$ref.split('/').at(-1)!],path,depth+1);
+ if(rule.$ref)return check(value,schema.$defs[rule.$ref.split('/').at(-1)!],path,depth+1,published);
  if('const' in rule&&value!==rule.const)fail('unsupported schema version');
  if(rule.enum&&!rule.enum.includes(value))fail('invalid choice');
  if(rule.type==='string'){
   if(typeof value!=='string')fail('must be a string');
-  const s=value as string,length=[...s].length;if(length<(rule.minLength??0)||length>(rule.maxLength??Infinity)||rule.pattern&&!new RegExp(rule.pattern).test(s))fail('invalid string');
+  const s=value as string,length=[...s].length;if(length<(rule.minLength??0)||!published&&length>(rule.maxLength??Infinity)||rule.pattern&&!new RegExp(rule.pattern).test(s))fail('invalid string');
  }
  if(rule.type==='integer'&&(typeof value!=='number'||!Number.isInteger(value)||value<(rule.minimum??-Infinity)||value>(rule.maximum??Infinity)))fail('invalid integer');
  if(rule.type==='array'){
-  if(!Array.isArray(value)||value.length>(rule.maxItems??Infinity))fail('invalid array');
-  (value as unknown[]).forEach((v,i)=>check(v,rule.items??{},`${path}[${i}]`,depth+1));
+  if(!Array.isArray(value)||!published&&value.length>(rule.maxItems??Infinity))fail('invalid array');
+  (value as unknown[]).forEach((v,i)=>check(v,rule.items??{},`${path}[${i}]`,depth+1,published));
  }
  if(rule.type==='object'){
   if(!value||typeof value!=='object'||Array.isArray(value))fail('must be an object');
@@ -32,21 +32,21 @@ function check(value:unknown,rule:Rule,path:string,depth=0):void {
   for(const key of rule.required??[])if(!(key in obj))fail(`missing ${key}`);
   for(const [key,v] of Object.entries(obj)){
    if(rule.additionalProperties===false&&!Object.hasOwn(rule.properties??{},key))fail(`unknown field ${key}; use extensions`);
-   if(rule.properties?.[key])check(v,rule.properties[key],`${path}.${key}`,depth+1);
+   if(rule.properties?.[key])check(v,rule.properties[key],`${path}.${key}`,depth+1,published);
   }
  }
 }
 const unique=(ids:string[],where:string)=>{if(new Set(ids).size!==ids.length)throw new Error(`${where}: duplicate ID`);};
-export function validateHumanProgram(value:unknown):HumanProgram {
+export function validateHumanProgram(value:unknown, { published = false } = {}):HumanProgram {
  const serialized=JSON.stringify(value);
- if(!serialized||new TextEncoder().encode(serialized).byteLength>500_000)throw new Error('Human Program exceeds 500 KB; reference large materials as resources');
+ if(!serialized||!published&&new TextEncoder().encode(serialized).byteLength>500_000)throw new Error('Human Program exceeds 500 KB; reference large materials as resources');
  const json=JSON.parse(serialized); // Reject NaN/Infinity and undefined by validating the input, not a sanitized clone.
  if(JSON.stringify(json)!==serialized)throw new Error('Invalid JSON');
  function finite(v:unknown,depth=0):void{if(depth>64)throw new Error('Human Program is too deeply nested');if(typeof v==='number'&&!Number.isFinite(v)||v===undefined||typeof v==='function'||typeof v==='bigint')throw new Error('Invalid JSON value');if(v&&typeof v==='object')Object.values(v).forEach(x=>finite(x,depth+1));}
- finite(value);check(value,schema,'program');
+ finite(value);check(value,schema,'program',0,published);
  const p=value as HumanProgram;
  for(const [key,items] of Object.entries({studies:p.studies,nodes:p.nodes,steps:p.steps,relations:p.relations,evidence:p.evidence,issues:p.issues}))unique(items.map(i=>i.id),key);
- if(p.relations.length+p.steps.reduce((n,s)=>n+s.next.length+s.children.length,0)>1200)throw new Error("Human Program exceeds 1200 display connections");
+ if(!published&&p.relations.length+p.steps.reduce((n,s)=>n+s.next.length+s.children.length,0)>1200)throw new Error("Human Program exceeds 1200 display connections");
  const nodes=new Map(p.nodes.map(n=>[n.id,n])),studies=new Set(p.studies.map(s=>s.id)),steps=new Map(p.steps.map(s=>[s.id,s])),evidence=new Set(p.evidence.map(e=>e.id));
  const refs=(ids:string[],known:ReadonlySet<string>|ReadonlyMap<string,unknown>,where:string)=>{unique(ids,where);for(const id of ids)if(!known.has(id))throw new Error(`${where}: unknown reference ${id}`);};
  const field=(f:ProgramField,where:string)=>{refs(f.evidenceIds,evidence,where);refs(f.studyIds??[],studies,where);if(f.origin==='derived'&&!f.derivation?.trim())throw new Error(`${where}: derived value requires derivation`);};
