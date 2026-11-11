@@ -68,7 +68,8 @@ export default function RunExperiment({
       {(program?.studies.filter(study => study.type === "empirical").length ?? 0) > 1 && !canRunProtocol && (
         <li>Open <strong>Study</strong> and select the experiment you want to run.</li>
       )}
-      <li>Open <strong>Simulation</strong>. If prompted, select <strong>Build the study first</strong> and review any missing materials or decisions.</li>
+      <li>Open <strong>Simulation</strong>. If a draft is needed, select <strong>Build the study first</strong> or <strong>Prepare a runnable protocol</strong>.</li>
+      <li>When available, select <strong>Check readiness</strong> and resolve any missing materials or decisions.</li>
       <li>When the checks pass, review the conditions and select <strong>Run simulation</strong>.</li>
     </ol>
     <CopyStudyId id={paper.id} />

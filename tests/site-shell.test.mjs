@@ -288,6 +288,7 @@ test('run setup identifies the Desktop import flow and shows program blockers', 
   assert.match(html, /Fork to my projects/);
   assert.match(html, /select the experiment you want to run/);
   assert.match(html, /Build the study first/);
+  assert.match(html, /Check readiness/);
   assert.match(html, /Run simulation/);
   assert.match(html, /paper_0123456789abcdef01234567/);
   assert.match(html, /supplement.pdf/);
