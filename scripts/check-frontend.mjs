@@ -182,7 +182,7 @@ try {
     assert.equal(await page.getByText('Questions we’re exploring.', { exact: true }).count(), 0);
     assert.equal(await page.getByText('Join the conversation.', { exact: true }).count(), 0);
     if (width >= 768) {
-      const lines = await page.getByText('Turn published human studies into reusable datasets and runnable experiments for AI agents.', { exact: true }).evaluate(element => {
+      const lines = await page.getByText('Explore the evidence, prepare an experiment, and see what is missing.', { exact: true }).evaluate(element => {
         const range = document.createRange();
         range.selectNodeContents(element);
         return range.getClientRects().length;
