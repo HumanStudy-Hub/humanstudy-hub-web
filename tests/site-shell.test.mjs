@@ -279,7 +279,7 @@ test('paper details preserve research links, capability caveats and safe resourc
 test('run setup identifies the Desktop import flow and shows program blockers', () => {
   const RunExperiment = load('components/RunExperiment.tsx').default;
   const html = renderToStaticMarkup(React.createElement(RunExperiment, {
-    paper, program: { source: { filename: 'supplement.pdf' }, studies: [{ type: 'empirical' }, { type: 'empirical' }], issues: [
+    paper, program: { source: { filename: 'supplement.pdf' }, evidence: [], studies: [{ type: 'empirical' }, { type: 'empirical' }], issues: [
       { id: 'issue', severity: 'blocking', title: 'Missing scenario wording', reason: 'The available paper only summarizes the prompt.' },
     ] }, protocol: null, validated: false, runnable: false,
   }));
@@ -293,6 +293,17 @@ test('run setup identifies the Desktop import flow and shows program blockers', 
   assert.match(html, /supplement.pdf/);
   assert.match(html, /Missing scenario wording/);
   assert.doesNotMatch(html, />Validated protocol/);
+});
+
+test('run setup recognizes the canonical paper path when its display filename differs', () => {
+  const RunExperiment = load('components/RunExperiment.tsx').default;
+  const html = renderToStaticMarkup(React.createElement(RunExperiment, {
+    paper: { ...paper, assetFiles: [{ path: 'sources/open/paper.pdf' }] },
+    program: { source: { filename: 'Published paper.pdf' }, studies: [], issues: [],
+      evidence: [{ sourceId: 'paper', path: 'sources/open/paper.pdf' }] },
+    protocol: null, validated: false, runnable: false,
+  }));
+  assert.doesNotMatch(html, /does not identify an included copy|has no paper PDF/);
 });
 
 let documentContent;

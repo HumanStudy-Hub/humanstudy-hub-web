@@ -24,9 +24,12 @@ export default function RunExperiment({
   const files = paper.assetFiles ?? [];
   const needsNewDesktop = Boolean(protocol || files.some(file =>
     file.path === "capabilities.json" || file.path === "effects.json"));
-  const sourceAvailable = source
-    ? files.some(file => file.path === source) || files.filter(file => file.path.endsWith("/" + source)).length === 1
-    : files.some(file => /^sources\/.+\.pdf$/i.test(file.path));
+  const paperPaths = new Set(program?.evidence.filter(item => item.sourceId === "paper").map(item => item.path));
+  const sourceAvailable = files.some(file => /\.pdf$/i.test(file.path) && (
+    paperPaths.has(file.path) || file.path === source
+  )) || (source
+    ? files.filter(file => file.path.endsWith("/" + source) && /\.pdf$/i.test(file.path)).length === 1
+    : files.some(file => /^sources\/.+\.pdf$/i.test(file.path)));
 
   return <section id="run-experiment" className="mt-9 scroll-mt-24 border-t border-[var(--site-line)] pt-6">
     <h2 className="text-xl font-semibold font-serif">Run experiment</h2>
@@ -47,7 +50,7 @@ export default function RunExperiment({
     )}
     {program && !sourceAvailable && (
       <p className="mt-3 text-sm">
-        {source ? <>The release is missing the source file <code>{source}</code>.</> : "The release has no paper PDF."}
+        {source ? <>The release does not identify an included copy of <code>{source}</code>.</> : "The release has no paper PDF."}
         {" "}Check the sources below and attach a copy in Desktop if needed.
       </p>
     )}
