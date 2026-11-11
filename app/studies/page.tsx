@@ -101,7 +101,7 @@ export default async function StudiesPage({
                     )}
                   </div>
                   <p className={styles.capability}>
-                    <span>{paper.currentRevision ? "Human Program" : paper.legacyStudyId ? "Study materials" : "Not yet extracted"}</span>
+                    <span>{paper.assetFiles?.some(file => file.path === "program.json") ? "Human Program" : paper.currentRevision || paper.legacyStudyId ? "Study materials" : "Not yet extracted"}</span>
                     <ArrowRight />
                   </p>
                 </Link>
