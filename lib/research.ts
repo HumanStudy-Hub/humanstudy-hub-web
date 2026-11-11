@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import development from "../data/studies-in-development.json";
 
 export type ResearchPaper = {
   id: string; title: string; authors: string[]; year: number | null; description?: string;
@@ -10,6 +12,7 @@ export type ResearchPaper = {
   resources: { id: string; kind: string; url?: string; access: string; license?: string }[];
   /** v0.8 protocol summary (Bench catalog, B3). Absent on papers without a protocol.json revision. */
   protocol?: unknown;
+  developmentStage?: "draft" | "preparation";
   [key: string]: unknown;
 };
 
@@ -192,23 +195,81 @@ export async function searchResearch(input: ResearchQuery) {
     nextOffset: offset + limit < result.total ? offset + limit : null };
 }
 
-/** Papers we have extracted: a community Human Program or a benchmark study package. */
-export const isExtracted = (p: Pick<ResearchPaper, "currentRevision" | "legacyStudyId">) => Boolean(p.currentRevision || p.legacyStudyId);
+export const libraryFilters = ["all", "program", "runnable", "protocol", "development", "indexed"] as const;
+export type LibraryFilter = (typeof libraryFilters)[number];
+export const developmentUpdated = development.updated;
 
-/** Library listing split into extracted papers and indexed papers not yet extracted. */
-export async function searchLibrary(input: ResearchQuery, pool: "extracted" | "pending") {
-  const index = await getResearchIndex();
-  const papers = index.papers.filter(p => isExtracted(p) === (pool === "extracted"));
-  const other = index.papers.length - papers.length;
+export function libraryAvailability(paper: ResearchPaper) {
+  const files = paper.assetFiles ?? [];
+  const program = Boolean(paper.currentRevision && files.some(file => file.path === "program.json"));
+  const protocol = readProtocol(paper);
+  const publicProtocol = Boolean(protocol && paper.currentRevision && protocol.revision === paper.currentRevision
+    && files.some(file => file.path === "protocol.json"));
+  const run = (paper.studyCapabilities as { run?: { status?: string } } | undefined)?.run?.status;
+  const runnableDraft = program && paper.capabilities?.replayable === true && (run === "yes" || run === "partial")
+    && files.some(file => /^package\/[^/]+\/task\/adapter\.py$/.test(file.path));
+  const runnable = runnableDraft || Boolean(publicProtocol && protocol?.schemaRunnable && protocol.arms.some(arm => arm.runnable));
+  const validated = Boolean(publicProtocol && protocol?.fidelity.verdict === "high fidelity" && protocol.fidelity.signedBy.length);
+  return { program, runnable, publicProtocol, validated, inDevelopment: Boolean(paper.developmentStage && !publicProtocol) };
+}
+
+export function includeDevelopment(index: ResearchIndex): ResearchIndex {
+  const papers = new Map(index.papers.map(paper => [paper.id, paper]));
+  const aliases = new Map<string, ResearchPaper[]>();
+  for (const paper of index.papers) {
+    const identities = [...paper.aliases, typeof paper.doi === "string" ? "doi:" + paper.doi : ""];
+    for (const key of new Set(identities.map(alias => alias.toLowerCase()))) {
+      if (!key.startsWith("doi:")) continue;
+      const matches = aliases.get(key) ?? [];
+      matches.push(paper);
+      aliases.set(key, matches);
+    }
+  }
+  for (const { doi, title, authors, year, stage } of development.papers) {
+    const alias = "doi:" + doi;
+    const matches = aliases.get(alias) ?? [];
+    const id = "paper_" + createHash("sha256").update(alias).digest("hex").slice(0, 24);
+    const developmentStage = stage === "draft" ? "draft" : "preparation";
+    if (matches.length > 1) continue;
+    const existing = matches[0] ?? papers.get(id);
+    if (existing) {
+      papers.set(existing.id, { ...existing, developmentStage });
+      continue;
+    }
+    papers.set(id, {
+      id, doi, title, authors, year, developmentStage, aliases: [alias], currentRevision: null,
+      conceptIds: [], capabilities: { discoverable: true }, coverage: "indexed-metadata", searchText: doi, studies: [],
+      resources: [{ id: alias, kind: "original-paper", url: "https://doi.org/" + doi, access: "Publisher" }],
+    });
+  }
+  return { ...index, papers: [...papers.values()] };
+}
+
+export async function searchLibrary(input: ResearchQuery, filter: LibraryFilter) {
+  const index = includeDevelopment(await getResearchIndex());
+  const buckets: Record<LibraryFilter, ResearchPaper[]> = {
+    all: [], program: [], runnable: [], protocol: [], development: [], indexed: [],
+  };
+  for (const paper of index.papers) {
+    const status = libraryAvailability(paper);
+    if (status.program) buckets.program.push(paper);
+    if (status.runnable) buckets.runnable.push(paper);
+    if (status.publicProtocol) buckets.protocol.push(paper);
+    if (status.inDevelopment) buckets.development.push(paper);
+    if (!status.program && !status.publicProtocol && !status.inDevelopment) buckets.indexed.push(paper);
+  }
+  buckets.all = index.papers;
+  const papers = buckets[filter];
+  const counts = Object.fromEntries(libraryFilters.map(key => [key, buckets[key].length])) as Record<LibraryFilter, number>;
   const { offset = 0, limit = 30 } = input;
   const result = searchSnapshot({ ...index, papers }, input);
-  return { ...result, other, offset, limit, nextOffset: offset + limit < result.total ? offset + limit : null };
+  return { ...result, counts, offset, limit, nextOffset: offset + limit < result.total ? offset + limit : null };
 }
 
 export async function getResearchPaper(identity: string): Promise<ResearchPaper | null> {
   // The library lists the live snapshot. Resolve its links from that same
   // catalog, rather than a database mirror that may not have synced a new paper.
-  const index = await getResearchIndex();
+  const index = includeDevelopment(await getResearchIndex());
   const matches = index.papers.filter((paper) => paper.id === identity || paper.aliases.includes(identity));
   return matches.length === 1 ? matches[0] : null;
 }

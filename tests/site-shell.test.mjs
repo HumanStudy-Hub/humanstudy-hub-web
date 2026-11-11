@@ -111,13 +111,13 @@ test('the homepage groups all four actions in the requested order without second
   assert.doesNotMatch(html, /Questions we’re exploring|Join the conversation|<h2/);
 });
 
-const { validateResearchQuery } = load('lib/research.ts');
+const { developmentUpdated, libraryAvailability, validateResearchQuery } = load('lib/research.ts');
 const libraryCalls = [];
 let libraryResult;
 let libraryError;
 const Studies = load('app/studies/page.tsx', {
   '@/lib/research': {
-    validateResearchQuery,
+    validateResearchQuery, developmentUpdated, libraryAvailability,
     searchLibrary: async (input, pool) => {
       libraryCalls.push({ input, pool });
       if (libraryError) throw libraryError;
@@ -141,12 +141,12 @@ const paper = {
   currentRevision: null,
   legacyStudyId: 'study_005',
 };
-const results = { items: [paper], total: 1, other: 287, offset: 0, limit: 30, nextOffset: null };
+const results = { items: [paper], total: 1, counts: { all: 336, program: 34, runnable: 9, protocol: 0, development: 20, indexed: 282 }, offset: 0, limit: 30, nextOffset: null };
 
 test('the styled study library uses the real search contract and retains paper metadata', async () => {
   const html = await renderStudies({ q: 'knobe' }, results);
   assert.equal(libraryCalls.length, 1);
-  assert.equal(libraryCalls[0].pool, 'extracted');
+  assert.equal(libraryCalls[0].pool, 'all');
   assert.equal(libraryCalls[0].input.query, 'knobe');
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567"/);
   assert.match(html, /Published study/);
@@ -154,20 +154,20 @@ test('the styled study library uses the real search contract and retains paper m
   assert.match(html, /2024/);
   assert.match(html, /Study materials/);
   assert.match(html, /<h1>Study Library<\/h1>/);
-  assert.match(html, /1 paper\b/);
-  assert.match(html, /href="\/studies\?q=knobe&amp;pool=pending"[^>]*>287 more indexed, not yet extracted/);
+  assert.match(html, /1 record\b/);
+  assert.match(html, /href="\/studies\?q=knobe&amp;status=development"[^>]*>In development <span>20/);
   assert.doesNotMatch(html, /Study collections|name="pool"/);
 });
 
-test('the not-yet-extracted list keeps its own pool, heading and labels', async () => {
+test('the old pending link opens the awaiting-extraction filter', async () => {
   const html = await renderStudies({ q: 'knobe', pool: 'pending' }, {
     ...results, items: [{ ...paper, legacyStudyId: null }], other: 0,
   });
-  assert.equal(libraryCalls[0].pool, 'pending');
-  assert.match(html, /<h1>Not yet extracted<\/h1>/);
-  assert.match(html, /name="pool" value="pending"/);
-  assert.match(html, /href="\/studies\?q=knobe"[^>]*>← Study Library/);
-  assert.match(html, /<span>Not yet extracted<\/span>/);
+  assert.equal(libraryCalls[0].pool, 'indexed');
+  assert.match(html, /<h1>Study Library<\/h1>/);
+  assert.match(html, /name="status" value="indexed"/);
+  assert.match(html, /href="\/studies\?q=knobe"[^>]*>All indexed/);
+  assert.match(html, /<span>Indexed<\/span>/);
   assert.doesNotMatch(html, /more indexed/);
 });
 
@@ -175,17 +175,17 @@ test('library pagination preserves the search query and the selected pool', asyn
   const html = await renderStudies({ q: 'choice & risk', pool: 'pending', offset: '30' }, {
     ...results, total: 90, offset: 30, nextOffset: 60,
   });
-  assert.equal(libraryCalls[0].pool, 'pending');
+  assert.equal(libraryCalls[0].pool, 'indexed');
   assert.equal(libraryCalls[0].input.query, 'choice & risk');
   assert.equal(libraryCalls[0].input.offset, 30);
-  assert.match(html, /<h1>Not yet extracted<\/h1>/);
+  assert.match(html, /<h1>Study Library<\/h1>/);
   const links = [...html.matchAll(/href="([^"]+)"/g)]
     .map(match => new URL(match[1].replaceAll('&amp;', '&'), 'http://local.test'));
   for (const offset of ['0', '60']) {
     const url = links.find(link => link.searchParams.get('offset') === offset);
     assert.ok(url, 'Pagination exposes offset ' + offset);
     assert.equal(url.searchParams.get('q'), 'choice & risk');
-    assert.equal(url.searchParams.get('pool'), 'pending');
+    assert.equal(url.searchParams.get('status'), 'indexed');
   }
 });
 
@@ -198,7 +198,7 @@ test('invalid study queries display an error without querying the catalog', asyn
 
 test('empty studies and catalog outages retain accessible recovery states', async () => {
   const empty = await renderStudies({ q: 'no match' }, { ...results, items: [], total: 0 });
-  assert.match(empty, /No matching papers\./);
+  assert.match(empty, /No studies match this view\./);
   const unavailable = await renderStudies({}, undefined, new Error('Unavailable'));
   assert.match(unavailable, /role="alert"/);
   assert.match(unavailable, /The research library could not be loaded/);

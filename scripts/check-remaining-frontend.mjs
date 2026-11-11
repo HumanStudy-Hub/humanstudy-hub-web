@@ -316,7 +316,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
   }
   await views.getByRole('button', { name: 'Resources', exact: true }).click();
   assert.ok(await page.locator('[data-pane="source"]').isVisible());
-  await views.getByRole('button', { name: 'Human Program', exact: true }).click();
+  await views.getByRole('button', { name: 'Human Study Program', exact: true }).click();
   assert.ok(await page.locator('[data-pane="model"]').isVisible());
   await views.getByRole('button', { name: 'Study agent', exact: true }).click();
   assert.ok(await page.locator('[data-pane="agent"]').isVisible());

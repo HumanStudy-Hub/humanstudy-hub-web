@@ -224,3 +224,34 @@
     font-size: 27px;
   }
 }
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.filters a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding-block: 6px;
+  color: var(--site-muted);
+  border-bottom: 1px solid transparent;
+}
+
+.filters a:hover,
+.filters a[aria-current="page"] {
+  color: var(--site-accent);
+  border-color: currentColor;
+}
+
+.filters span {
+  font-variant-numeric: tabular-nums;
+}
+
+.capability > span > span {
+  display: block;
+}

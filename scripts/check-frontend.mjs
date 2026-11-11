@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -26,10 +27,17 @@ const fixtures = new Map([
   ['/studies-index.json', fs.readFileSync(path.join(root, 'data/studies_index.json'))],
 ]);
 const researchIndex = JSON.parse(fixtures.get('/research-index.json').toString('utf8'));
-const extractedLinks = researchIndex.papers
-  .filter(paper => paper.currentRevision || paper.legacyStudyId)
-  .map(paper => '/studies/' + paper.id)
-  .sort();
+const development = JSON.parse(fs.readFileSync(path.join(root, 'data/studies-in-development.json'), 'utf8'));
+const developmentLinks = development.papers.map(paper => {
+  const alias = 'doi:' + paper.doi;
+  const existing = researchIndex.papers.find(item => item.doi === paper.doi || item.aliases.includes(alias));
+  const id = existing?.id ?? 'paper_' + createHash('sha256').update(alias).digest('hex').slice(0, 24);
+  return '/studies/' + id;
+}).sort();
+const indexedLinks = [...new Set([
+  ...researchIndex.papers.map(paper => '/studies/' + paper.id),
+  ...developmentLinks,
+])].sort();
 const fixtureServer = createServer((request, response) => {
   const body = fixtures.get(request.url);
   if (request.method !== 'GET' || !body) {
@@ -210,7 +218,7 @@ try {
       assert.equal(await page.locator('main').count(), 1);
       assert.equal(await page.locator('h1').count(), 1);
       if (route.startsWith('/studies')) {
-        const heading = route.includes('pending') ? 'Not yet extracted' : 'Study Library';
+        const heading = 'Study Library';
         await page.getByRole('heading', { name: heading, exact: true }).waitFor({ state: 'visible' });
         assert.equal(await page.getByRole('navigation', { name: 'Study collections', exact: true }).count(), 0);
       }
@@ -238,24 +246,34 @@ try {
 
   const paperLinks = page.locator('main a[href^="/studies/paper_"]');
   const listedLinks = () => paperLinks.evaluateAll(links => links.map(link => link.getAttribute('href')));
-  assert.deepEqual(await listedLinks(), extractedLinks.slice(0, 30), 'The library lists the extracted catalog.');
-  assert.ok(extractedLinks.length > 1, 'The bundled catalog can exercise pagination with an offset.');
+  assert.deepEqual(await listedLinks(), indexedLinks.slice(0, 30), 'The library lists the complete catalog.');
+  assert.ok(indexedLinks.length > 1, 'The bundled catalog can exercise pagination with an offset.');
   await visit('/studies?offset=1');
-  assert.deepEqual(await listedLinks(), extractedLinks.slice(1, 31), 'The existing offset contract still applies.');
+  assert.deepEqual(await listedLinks(), indexedLinks.slice(1, 31), 'The existing offset contract still applies.');
   await page.getByRole('navigation', { name: 'Research pages', exact: true }).getByRole('link', { name: '← Previous', exact: true }).click();
   await page.waitForURL(url => url.searchParams.get('offset') === '0');
   await page.waitForLoadState('networkidle');
-  assert.deepEqual(await listedLinks(), extractedLinks.slice(0, 30));
+  assert.deepEqual(await listedLinks(), indexedLinks.slice(0, 30));
   const nextPage = page.getByRole('navigation', { name: 'Research pages', exact: true }).getByRole('link', { name: 'Next →', exact: true });
-  if (extractedLinks.length > 30) {
+  if (indexedLinks.length > 30) {
     await nextPage.click();
     await page.waitForURL(url => url.searchParams.get('offset') === '30');
     await page.waitForLoadState('networkidle');
-    assert.deepEqual(await listedLinks(), extractedLinks.slice(30, 60));
+    assert.deepEqual(await listedLinks(), indexedLinks.slice(30, 60));
   } else {
     assert.equal(await nextPage.count(), 0, 'A single-page catalog does not show a next-page link.');
   }
-  report.checks.push('Extracted catalog contents and real pagination');
+  report.checks.push('Catalog contents and real pagination');
+
+  const developmentTab = page.getByRole('link', { name: 'In development 20', exact: true });
+  await developmentTab.click();
+  await page.waitForURL(url => url.searchParams.get('status') === 'development');
+  await page.waitForLoadState('networkidle');
+  assert.deepEqual(await listedLinks(), developmentLinks);
+  await paperLinks.first().click();
+  await page.waitForURL(/\/studies\/paper_[a-f0-9]{24}$/);
+  await page.getByText(/In development ·/).waitFor();
+  report.checks.push('Development queue counts and detail navigation');
 
   await visit('/studies?offset=1');
   await page.getByRole('textbox', { name: 'Search research' }).fill('knobe');
@@ -270,7 +288,7 @@ try {
   report.checks.push('Existing study search and catalog-to-detail navigation');
 
   await visit('/studies?q=zzzz-no-matching-paper-zzzz');
-  assert.ok(await page.getByText('No matching papers.', { exact: true }).isVisible());
+  assert.ok(await page.getByText('No studies match this view.', { exact: true }).isVisible());
   assert.equal(await page.locator('main a[href^="/studies/paper_"]').count(), 0);
   report.checks.push('Empty study search');
 
@@ -316,7 +334,7 @@ try {
   await page.waitForURL(origin + '/');
   report.checks.push('Mocked account validation, sign-in failure and success, returnTo, signup confirmation, resend cooldown and sign-out');
 
-  await checkRemainingFrontend({ page, origin, root, output, report, accessSecret, setSignedIn: value => { signedIn = value; }, paperPath: extractedLinks[0] });
+  await checkRemainingFrontend({ page, origin, root, output, report, accessSecret, setSignedIn: value => { signedIn = value; }, paperPath: indexedLinks[0] });
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   for (const route of ['/download', '/account', '/access', '/auth/confirm', '/auth/reset', '/results', '/studies/study_001', '/studies/study_005']) {
