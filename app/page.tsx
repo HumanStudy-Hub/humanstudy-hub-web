@@ -23,7 +23,7 @@ export default function Home() {
         </p>
         <nav className={styles.actions} aria-label="Explore HumanStudy Hub">
           {actions.map((action) => (
-            <Link href={action.href} prefetch={action.href === "/forum" ? false : undefined} className={styles.textLink} key={action.href}>
+            <Link href={action.href} className={styles.textLink} key={action.href}>
               {action.label} <ArrowRight />
             </Link>
           ))}

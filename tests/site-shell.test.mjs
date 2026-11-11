@@ -62,7 +62,7 @@ const render = component => renderToStaticMarkup(React.createElement(component))
 const destinations = ['/forum', '/studies', '/download', '/results', '/collaboration', '/account'];
 
 test('public navigation preserves every existing destination on desktop and mobile', () => {
-  for (pathname of ['/', '/studies', '/account', '/download', '/results', '/collaboration']) {
+  for (pathname of ['/', '/forum', '/studies', '/account', '/download', '/results', '/collaboration']) {
     const html = render(Navbar);
     assert.match(html, /aria-label="Main navigation"/);
     assert.match(html, /href="\/"/);
@@ -102,6 +102,21 @@ test('the real homepage retains its original actions and has one main heading', 
   assert.match(html, /Read the paper\./);
   assert.match(html, /Run the experiment\./);
   assert.match(html, /Explore the evidence, prepare an experiment, and see what is missing\./);
+});
+
+test('forum landing keeps the original articles and the public forum entry', () => {
+  const ForumPage = load('app/forum/page.tsx').default;
+  const html = render(ForumPage);
+  assert.match(html, /<h1>Research &amp; discussion<\/h1>/);
+  assert.equal((html.match(/<article\b/g) || []).length, 2);
+  assert.equal((html.match(/Xuan Liu/g) || []).length, 2);
+  assert.match(html, /Making Human Studies as Reproducible as Open-Source Code/);
+  assert.match(html, /Can Implicit Language Reliably Control Agent Behavior\?/);
+  assert.ok(html.includes('href="https://xuanl17.github.io/blog/reproducible-human-studies.html"'));
+  assert.ok(html.includes('href="https://xuanl17.github.io/blog/implicit-agent-behavior.html"'));
+  assert.ok(html.includes('href="https://forum.humanstudy-hub.com/"'));
+  assert.ok(html.includes('src="/images/forum-discussions.webp"'));
+  assert.doesNotMatch(html, /<main\b/);
 });
 
 test('the homepage groups all four actions in the requested order without secondary sections', () => {
