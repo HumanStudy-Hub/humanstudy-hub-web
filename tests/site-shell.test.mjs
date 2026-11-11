@@ -99,8 +99,9 @@ test('the real homepage retains its original actions and has one main heading', 
   for (const href of ['/forum', '/studies', '/download']) {
     assert.match(html, new RegExp(`href="${href}"`));
   }
-  assert.match(html, /Human studies\./);
-  assert.match(html, /Built for AI agents\./);
+  assert.match(html, /Read the paper\./);
+  assert.match(html, /Run the experiment\./);
+  assert.match(html, /Explore the evidence, prepare an experiment, and see what is missing\./);
 });
 
 test('the homepage groups all four actions in the requested order without secondary sections', () => {
