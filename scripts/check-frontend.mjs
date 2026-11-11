@@ -34,6 +34,11 @@ const developmentLinks = development.papers.map(paper => {
   const id = existing?.id ?? 'paper_' + createHash('sha256').update(alias).digest('hex').slice(0, 24);
   return '/studies/' + id;
 }).sort();
+const interactivePaper = researchIndex.papers.find(paper => !developmentLinks.includes('/studies/' + paper.id));
+interactivePaper.currentRevision = 'a'.repeat(64);
+interactivePaper.assetFiles = [{ path: 'program.json' }];
+fixtures.set('/research-index.json', Buffer.from(JSON.stringify(researchIndex)));
+const interactiveLink = '/studies/' + interactivePaper.id;
 const indexedLinks = [...new Set([
   ...researchIndex.papers.map(paper => '/studies/' + paper.id),
   ...developmentLinks,
@@ -160,7 +165,7 @@ try {
     });
     assert.equal(await page.locator('main').count(), 1, 'The page has one main landmark.');
     assert.equal(await page.locator('h1').count(), 1);
-    assert.ok(await page.getByRole('heading', { name: 'Human studies. Built for AI agents.' }).isVisible());
+    assert.ok(await page.getByRole('heading', { name: 'Read the paper. Run the experiment.' }).isVisible());
     const layout = await page.evaluate(() => ({
       viewport: innerWidth,
       width: document.documentElement.scrollWidth,
@@ -244,7 +249,7 @@ try {
   assert.equal(await page.locator('nav[data-site-navigation] details').getAttribute('open'), null, 'Selecting a mobile link closes the menu.');
   report.checks.push('Keyboard skip link, menu Escape and mobile navigation');
 
-  const paperLinks = page.locator('main a[href^="/studies/paper_"]');
+  const paperLinks = page.locator('main article h2 a');
   const listedLinks = () => paperLinks.evaluateAll(links => links.map(link => link.getAttribute('href')));
   assert.deepEqual(await listedLinks(), indexedLinks.slice(0, 30), 'The library lists the complete catalog.');
   assert.ok(indexedLinks.length > 1, 'The bundled catalog can exercise pagination with an offset.');
@@ -265,21 +270,37 @@ try {
   }
   report.checks.push('Catalog contents and real pagination');
 
-  const developmentTab = page.getByRole('link', { name: 'In development 20', exact: true });
-  await developmentTab.click();
-  await page.waitForURL(url => url.searchParams.get('status') === 'development');
+  const paperViews = page.getByRole('navigation', { name: 'Paper views', exact: true });
+  assert.deepEqual(await paperViews.getByRole('link').allTextContents(), ['All papers', 'Interactive papers']);
+  await paperViews.getByRole('link', { name: 'Interactive papers', exact: true }).click();
+  await page.waitForURL(url => url.searchParams.get('status') === 'program');
   await page.waitForLoadState('networkidle');
+  assert.deepEqual(await listedLinks(), [interactiveLink]);
+  assert.equal(await page.getByRole('link', { name: /^Interact with paper/ }).getAttribute('href'), interactiveLink + '#paper-program');
+  await page.getByRole('link', { name: /^Run experiment/ }).click();
+  await page.waitForURL(origin + interactiveLink + '#run-experiment');
+  await page.getByRole('heading', { name: 'Run experiment', exact: true }).waitFor();
+  assert.ok(await page.getByRole('button', { name: 'Copy study ID' }).isVisible());
+
+  await visit('/studies?status=program');
+  await page.getByRole('checkbox', { name: 'Validated protocols only' }).check();
+  await page.waitForURL(url => url.searchParams.get('status') === 'program' && url.searchParams.get('validated') === '1');
+  assert.ok(await page.getByRole('checkbox', { name: 'Validated protocols only' }).isChecked());
+  assert.ok(await page.getByText('No papers match this view.', { exact: true }).isVisible());
+  report.checks.push('Interactive paper view, validation filter and Desktop run setup');
+
+  await visit('/studies?status=development');
   assert.deepEqual(await listedLinks(), developmentLinks);
   await paperLinks.first().click();
   await page.waitForURL(/\/studies\/paper_[a-f0-9]{24}$/);
   await page.getByText(/In development ·/).waitFor();
-  report.checks.push('Development queue counts and detail navigation');
+  report.checks.push('Legacy development view and detail navigation');
 
   await visit('/studies?offset=1');
-  await page.getByRole('textbox', { name: 'Search research' }).fill('knobe');
+  await page.getByRole('textbox', { name: 'Search papers' }).fill('knobe');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
   await page.waitForURL(url => url.pathname === '/studies' && url.searchParams.get('q') === 'knobe' && !url.searchParams.has('pool') && !url.searchParams.has('offset'));
-  assert.equal(await page.getByRole('textbox', { name: 'Search research' }).inputValue(), 'knobe');
+  assert.equal(await page.getByRole('textbox', { name: 'Search papers' }).inputValue(), 'knobe');
   const paper = page.locator('main a[href^="/studies/paper_"]').first();
   assert.ok(await paper.isVisible(), 'Existing catalog search returns a paper.');
   await paper.click();
@@ -288,7 +309,7 @@ try {
   report.checks.push('Existing study search and catalog-to-detail navigation');
 
   await visit('/studies?q=zzzz-no-matching-paper-zzzz');
-  assert.ok(await page.getByText('No studies match this view.', { exact: true }).isVisible());
+  assert.ok(await page.getByText('No papers match this view.', { exact: true }).isVisible());
   assert.equal(await page.locator('main a[href^="/studies/paper_"]').count(), 0);
   report.checks.push('Empty study search');
 
