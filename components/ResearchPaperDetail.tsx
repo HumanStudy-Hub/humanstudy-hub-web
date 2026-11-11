@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { readProtocol, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
+import { libraryAvailability, readProtocol, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
 import { getPublishedProgram, publishedAssetUrl } from "@/lib/published-program";
 import PublishedProgram from "./PublishedProgram";
 import styles from "./folio-page.module.css";
 
-const label: Record<string, string> = { "original-data-link": "Original data", "transcription-code": "Transcription code", "metadata": "Source reference", "claim-metadata": "Claim and analysis metadata" };
+const label: Record<string, string> = { "original-paper": "Original paper", "original-data-link": "Original data", "transcription-code": "Transcription code", "metadata": "Source reference", "claim-metadata": "Claim and analysis metadata" };
 const safeUrl = (value?: string) => { try { const url = new URL(value || ""); return url.protocol === "https:" && !url.username && !url.password ? url.href : null; } catch { return null; } };
 
 type Part = { status?: string; reason?: string | null; detail?: string; what?: string };
@@ -84,6 +84,7 @@ export default async function ResearchPaperDetail({ paper }: { paper: ResearchPa
   const repository = paper.assetRoot && /^(studies\/study_\d+|community\/[A-Za-z0-9_.-]+\/revisions\/[a-f0-9]{64})$/.test(paper.assetRoot)
     ? `https://github.com/HumanStudy-Hub/HumanStudy-Bench/tree/main/${paper.assetRoot}` : null;
   const protocol = readProtocol(paper);
+  const availability = libraryAvailability(paper);
   const program = await getPublishedProgram(paper);
   const programSource = program ? publishedAssetUrl(paper, program.source.filename) : null;
   return <div className={`${styles.page} ${styles.narrow}`}>
@@ -92,7 +93,10 @@ export default async function ResearchPaperDetail({ paper }: { paper: ResearchPa
       <h1>{paper.title}</h1>
       <p className="mt-3 text-sm text-[var(--site-muted)]">{[authors.join(", "), paper.year].filter(Boolean).join(" · ")}</p>
       <p className="mt-6 whitespace-pre-wrap leading-7 text-[var(--foreground)]">{paper.description}</p>
-      {!program && <p className="mt-6 text-sm text-[var(--site-muted)]">{protocol ? PROTOCOL_NOTE[protocol.fidelity.verdict ?? ""] ?? PROTOCOL_NOTE[""] : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
+      {availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">
+        {paper.developmentStage === "draft" ? "In development · protocol draft exists." : "In development · study materials are being prepared."}
+      </p>}
+      {!program && !availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">{protocol ? PROTOCOL_NOTE[protocol.fidelity.verdict ?? ""] ?? PROTOCOL_NOTE[""] : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
       <div className="mt-6 flex gap-4 text-sm text-[var(--site-accent)]">
         <Link href="/download">Get HumanStudy desktop</Link>
         {programSource && <a href={programSource} target="_blank" rel="noreferrer">Original paper ↗</a>}

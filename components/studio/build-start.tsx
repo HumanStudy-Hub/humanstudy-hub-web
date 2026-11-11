@@ -9,7 +9,7 @@ import s from './build-start.module.css';
 const labels = {
   building_package: 'Extracting the study',
   validating_package: 'Checking the package',
-  ready_for_review: 'Opening Human Program',
+  ready_for_review: 'Opening Human Study Program',
   timed_out: 'The build reached its time limit',
   failed: 'The build stopped',
 };
@@ -47,7 +47,7 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
         <label>Anything the agent should know?<textarea maxLength={12000} value={instructions} onChange={event => setInstructions(event.target.value)} placeholder="Optional research question or instructions" /></label>
         <button type="button" className={s.primary} data-event="build.start" disabled={busy || !primaryPaper} onClick={() => void send()}>{busy ? 'Preparing…' : 'Build study'}</button>
       </section> : <div className={s.processing}>
-        <ol aria-label="Build workflow"><li className={!checking && !failed ? s.current : ''}>Read sources</li><li className={!checking && !failed ? s.current : ''}>Build Human Program</li><li className={checking && !failed ? s.current : ''}>Check package</li><li>Review together</li></ol>
+        <ol aria-label="Build workflow"><li className={!checking && !failed ? s.current : ''}>Read sources</li><li className={!checking && !failed ? s.current : ''}>Build Human Study Program</li><li className={checking && !failed ? s.current : ''}>Check package</li><li>Review together</li></ol>
         <section>
           <div aria-live="polite" aria-busy={!failed}>
           <h2>{failed ? 'Build interrupted' : progress ? labels[progress.phase] : status === 'queued' ? 'Waiting for the study agent' : 'Preparing your study'}</h2>
@@ -66,7 +66,7 @@ export default function BuildStart({ id, document, stage, resources, primaryPape
             <button type="button" className={s.primary} data-event="build.start" disabled={busy || !primaryPaper} onClick={() => void send()}>{busy ? 'Preparing…' : 'Build study'}</button>
           </div> : (failed || stalled) && <button type="button" className={s.primary} disabled={busy} data-event="build.retry" onClick={onRetry}>Restart build</button>}
           {error && !failed && <button type="button" disabled={busy} data-event="build.check" onClick={onCheck}>Try loading the result</button>}
-          {!failed && <p className={s.hint}>Human Program will open when the result is ready. You can leave and return to this study.</p>}
+          {!failed && <p className={s.hint}>Human Study Program will open when the result is ready. You can leave and return to this study.</p>}
           <details><summary>Materials ({document.sources.length})</summary><ul>{document.sources.map(source => <li key={source.id}>{source.name}{source.includeInBuild === false ? ' · excluded' : ''}</li>)}</ul></details>
         </section>
       </div>}

@@ -75,7 +75,7 @@ test('library detail resolves a newly listed paper before the database mirror ca
       }
       return new Response(JSON.stringify(snapshot));
     };
-    const listing=await searchLibrary({query:'GENIUS'},'extracted');
+    const listing=await searchLibrary({query:'GENIUS'},'all');
     assert.equal(listing.items[0].id,paper.id);
     assert.equal((await getResearchPaper(paper.id)).title,'GENIUS');
     assert.equal((await getResearchPaper(paper.aliases[0])).id,paper.id);
@@ -89,4 +89,31 @@ test('library detail resolves a newly listed paper before the database mirror ca
     if(saved.url===undefined)delete process.env.SUPABASE_URL;else process.env.SUPABASE_URL=saved.url;
     if(saved.key===undefined)delete process.env.SUPABASE_PUBLISHABLE_KEY;else process.env.SUPABASE_PUBLISHABLE_KEY=saved.key;
   }
+});
+
+test('library counts match filters and DOI updates keep one paper entry', async () => {
+  const {searchLibrary, getResearchPaper, includeDevelopment} = mod.exports;
+  const oldFetch = globalThis.fetch;
+  const empty = {...index, papers:[]};
+  const development = includeDevelopment(empty).papers;
+  assert.equal(development.length,20);
+  const draft = development.find(p=>p.developmentStage==='draft');
+  const currentRevision = 'a'.repeat(64);
+  const published = {...draft, id:'paper_'+'f'.repeat(24), aliases:draft.aliases.map(a=>a.toUpperCase()),
+    developmentStage:undefined, currentRevision, assetFiles:[{path:'program.json'},{path:'protocol.json'}],
+    protocol:{slug:'example',revision:currentRevision,schemaVersion:'1',
+      fidelity:{verdict:'high fidelity',signed_by:'Review team'},arms:[{id:'a',runnable:true}]}};
+  const reading = {...index.papers[0], currentRevision, assetFiles:[{path:'program.json'}],
+    capabilities:{replayable:true}, studyCapabilities:{run:{status:'no'}}};
+  try {
+    globalThis.fetch = async()=>new Response(JSON.stringify({...empty,papers:[published,reading]}));
+    const result = await searchLibrary({limit:100},'all');
+    assert.deepEqual(result.counts,{all:21,program:2,runnable:1,protocol:1,development:19,indexed:0});
+    const rows = await searchLibrary({limit:100},'development');
+    assert.equal(rows.items.length,19);
+    assert.equal(rows.items.filter(p=>p.developmentStage==='draft').length,6);
+    assert.equal(await getResearchPaper(draft.id),null,'existing catalog paper ID wins over the new DOI placeholder');
+    assert.equal((await getResearchPaper(published.id)).currentRevision,currentRevision);
+    assert.equal((await getResearchPaper(rows.items[0].id)).doi,rows.items[0].doi);
+  } finally {globalThis.fetch=oldFetch;}
 });
