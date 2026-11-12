@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createHmac } from 'node:crypto';
 import { readFile, mkdir } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
@@ -151,7 +150,6 @@ try {
   await page.screenshot({path:join(output,'leaderboard-mobile.png'),fullPage:true});
   console.log('Existing page checks passed; checking history');
   await context.addCookies([{name:'studio_access',value:'fixture-owner',url:origin,httpOnly:true}]);
-  await context.addCookies([{name:'hs_unlock',value:createHmac('sha256','local-fixture-access').update('humanstudy-hub:unlock:v1').digest('hex'),url:origin,httpOnly:true}]);
   await page.goto(origin+'/contribute');
   const history=page.getByRole('region',{name:'My contributions'});
   await history.getByText('10.0000/fixture',{exact:true}).waitFor();

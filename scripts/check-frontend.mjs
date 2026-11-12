@@ -370,7 +370,7 @@ try {
   await page.screenshot({ path: path.join(output, 'editor.png'), fullPage: true });
   report.checks.push('Existing editor navigation isolation');
 
-  for (const route of ['/api/pipeline/jobs', '/api/playground/runs', '/api/contribute/upload']) {
+  for (const route of ['/api/pipeline/jobs', '/api/playground/runs', '/api/contribute/upload', '/api/community/mine']) {
     const response = await fetch(origin + route, { redirect: 'manual' });
     await response.arrayBuffer();
     assert.equal(response.status, 401, route + ' remains protected.');

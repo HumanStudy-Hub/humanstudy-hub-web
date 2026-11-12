@@ -1,11 +1,11 @@
 // Shared access-gate constants and path matching.
 //
-// The gate is deliberately coarse: every page and API route under the Build
-// Study, Playground, and Contribute namespaces requires an unlocked session,
+// The Build Study and Playground namespaces require an unlocked session,
 // while the read-only browsing pages (home, datasets, study catalog, benchmark,
 // agent evaluations, citation, docs, partnerships) stay open. The free pages
 // read from public GitHub raw content, never from these gated APIs, so closing
-// the whole prefix cannot break browsing.
+// the whole prefix cannot break browsing. The community contribution page uses
+// Hub sign-in. The older contribution API remains behind the promo gate.
 
 export const COOKIE_NAME = "hs_unlock";
 
@@ -22,7 +22,7 @@ export const TOKEN_MESSAGE = "humanstudy-hub:unlock:v1";
 export const MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 // Pages that require an unlocked session.
-const GATED_PAGES = ["/pipeline", "/playground", "/contribute"];
+const GATED_PAGES = ["/pipeline", "/playground"];
 
 // API namespaces that require an unlocked session (everything here dispatches
 // work, uploads, or mutates run/job state).
