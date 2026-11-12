@@ -2,7 +2,7 @@ import Link from "next/link";
 import CreditPagination from "./CreditPagination";
 import { CREDIT_PAGE_SIZE, listCredits } from "@/lib/community-credit";
 import CommunityCreditList from "./CommunityCreditList";
-import { libraryAvailability, readProtocol, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
+import { libraryAvailability, readProtocol, researchContributorNames, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
 import { getPublishedProgram, publishedAssetUrl } from "@/lib/published-program";
 import PublishedProgram from "./PublishedProgram";
 import RunExperiment from "./RunExperiment";
@@ -83,18 +83,13 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
     getPublishedProgram(paper),
     paper.currentRevision ? listCredits({ by: "paper", id: paper.id, revision: paper.currentRevision }, contributionPage).catch(() => []) : [],
   ]);
-  const linkedNames = new Set(credits.map(credit => credit.display_name));
-  const publicNames = Array.isArray(paper.contributors) ? [...new Set(paper.contributors.flatMap(item => {
-    const name = typeof item === "string" ? item : item && typeof item.name === "string" ? item.name : "";
-    return name.trim() && !linkedNames.has(name.trim()) ? [name.trim()] : [];
-  }))] : [];
+  const contributors = researchContributorNames(paper, credits.map(credit => credit.display_name));
   const programSource = program ? publishedAssetUrl(paper, program.source.filename) : null;
   return <div className={`${styles.page} ${styles.narrow}`}>
     <div>
       <Link href="/studies" className={styles.back}>← Study Library</Link>
       <h1>{paper.title}</h1>
       <p className="mt-3 text-sm text-[var(--site-muted)]">{[authors.join(", "), paper.year].filter(Boolean).join(" · ")}</p>
-      {publicNames.length > 0 && <p className="mt-2 text-sm text-[var(--site-muted)]">Contributed by {publicNames.join(", ")}</p>}
       <p className="mt-6 whitespace-pre-wrap leading-7 text-[var(--foreground)]">{paper.description}</p>
       {availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">
         {paper.developmentStage === "draft" ? "In development · protocol draft exists." : "In development · study materials are being prepared."}
@@ -106,10 +101,13 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
         {(availability.program || availability.publicProtocol)
           ? <a href="#run-experiment">Run experiment</a>
           : <Link href="/pipeline">Build a study</Link>}
+      </div>
+      {contributors.length > 0 && <p className="mt-2 text-sm text-[var(--site-muted)]">Contributed by {contributors.join(", ")}</p>}
+      {(programSource || repository || protocol?.preview) && <div className="mt-4 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
         {programSource && <a href={programSource} target="_blank" rel="noreferrer">Original paper ↗</a>}
         {repository && <a href={repository} target="_blank" rel="noopener noreferrer">Research files ↗</a>}
         {protocol?.preview && <a href={protocol.preview} target="_blank" rel="noopener noreferrer">Participant view ↗</a>}
-      </div>
+      </div>}
       {(availability.program || availability.publicProtocol) && <RunExperiment
         paper={paper}
         program={program}

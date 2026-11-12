@@ -14,7 +14,7 @@ export default function Footer() {
           &copy; 2026 HumanStudy-Hub Team. All rights reserved.
         </p>
         <nav aria-label="Footer navigation" className={styles.footerLinks}>
-          <Link href="/forum">Forum</Link>
+          <Link href="/blog">Blog</Link>
           <Link href="/download">Desktop app</Link>
           <Link href="/collaboration">Contact</Link>
         </nav>

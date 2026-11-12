@@ -59,10 +59,10 @@ const Navbar = load('components/Navbar.tsx').default;
 const Footer = load('components/Footer.tsx').default;
 const Home = load('app/page.tsx').default;
 const render = component => renderToStaticMarkup(React.createElement(component));
-const destinations = ['/forum', '/studies', '/download', '/results', '/collaboration', '/account'];
+const destinations = ['/blog', '/studies', '/download', '/results', '/collaboration', '/account'];
 
 test('public navigation preserves every existing destination on desktop and mobile', () => {
-  for (pathname of ['/', '/forum', '/studies', '/account', '/download', '/results', '/collaboration']) {
+  for (pathname of ['/', '/blog', '/studies', '/account', '/download', '/results', '/collaboration']) {
     const html = render(Navbar);
     assert.match(html, /aria-label="Main navigation"/);
     assert.match(html, /href="\/"/);
@@ -96,7 +96,7 @@ test('the real homepage retains its original actions and has one main heading', 
   const html = render(Home);
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
   assert.doesNotMatch(html, /<main\b/);
-  for (const href of ['/forum', '/studies', '/download']) {
+  for (const href of ['/blog', '/studies', '/download']) {
     assert.match(html, new RegExp(`href="${href}"`));
   }
   assert.match(html, /Read the paper\./);
@@ -104,16 +104,23 @@ test('the real homepage retains its original actions and has one main heading', 
   assert.match(html, /Explore the evidence, prepare an experiment, and see what is missing\./);
 });
 
-test('forum landing keeps the original articles and the public forum entry', () => {
-  const ForumPage = load('app/forum/page.tsx').default;
-  const html = render(ForumPage);
-  assert.match(html, /<h1>Research &amp; discussion<\/h1>/);
+test('Blog opens adapted articles in the site and keeps the public forum entry', async () => {
+  const BlogPage = load('app/blog/page.tsx').default;
+  const html = render(BlogPage);
+  assert.match(html, /<h1>Blog<\/h1>/);
   assert.equal((html.match(/<article\b/g) || []).length, 2);
-  assert.equal((html.match(/Xuan Liu/g) || []).length, 2);
-  assert.match(html, /Making Human Studies as Reproducible as Open-Source Code/);
-  assert.match(html, /Can Implicit Language Reliably Control Agent Behavior\?/);
-  assert.ok(html.includes('href="https://xuanl17.github.io/blog/reproducible-human-studies.html"'));
-  assert.ok(html.includes('href="https://xuanl17.github.io/blog/implicit-agent-behavior.html"'));
+  assert.equal((html.match(/HumanStudy Hub Team/g) || []).length, 2);
+  assert.match(html, /From papers to reusable experiments/);
+  assert.match(html, /Making agent behavior measurable/);
+  const Article = load('app/blog/[slug]/page.tsx').default;
+  for (const slug of ['reproducible-human-studies', 'implicit-agent-behavior']) {
+    assert.ok(html.includes(`href="/blog/${slug}"`));
+    const article = renderToStaticMarkup(await Article({ params: Promise.resolve({ slug }) }));
+    assert.match(article, /Xuan Liu/);
+    assert.match(article, /<h2>/);
+    assert.match(article, /href="\/blog"/);
+  }
+  assert.doesNotMatch(html, /xuanl17\.github\.io/);
   assert.ok(html.includes('href="https://forum.humanstudy-hub.com/"'));
   assert.ok(html.includes('src="/images/forum-discussions.webp"'));
   assert.doesNotMatch(html, /<main\b/);
@@ -134,24 +141,24 @@ test('contributor profiles show an unavailable state during storage errors', asy
   }));
   assert.match(html, /Contributor profile/);
   assert.match(html, /This contributor profile is temporarily unavailable/);
-  assert.match(html, /href="\/community\?view=contributors"/);
+  assert.match(html, /href="\/studies"/);
 });
 
 test('the homepage groups all four actions in the requested order without secondary sections', () => {
   const html = render(Home);
   const links = [...html.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(links, ['/download', '/forum', '/collaboration', '/studies']);
+  assert.deepEqual(links, ['/download', '/blog', '/collaboration', '/studies']);
   assert.match(html, /aria-label="Explore HumanStudy Hub"/);
   assert.doesNotMatch(html, /Questions we’re exploring|Join the conversation|<h2/);
 });
 
-const { libraryFilters, libraryAvailability, validateResearchQuery } = load('lib/research.ts');
+const { libraryFilters, libraryAvailability, researchContributorNames, validateResearchQuery } = load('lib/research.ts');
 const libraryCalls = [];
 let libraryResult;
 let libraryError;
 const Studies = load('app/studies/page.tsx', {
   '@/lib/research': {
-    validateResearchQuery, libraryFilters, libraryAvailability,
+    validateResearchQuery, libraryFilters, libraryAvailability, researchContributorNames,
     searchLibrary: async (input, pool, validatedOnly) => {
       libraryCalls.push({ input, pool, validatedOnly });
       if (libraryError) throw libraryError;
@@ -174,13 +181,14 @@ const paper = {
   year: 2024,
   currentRevision: null,
   legacyStudyId: 'study_005',
+  aliases: [],
 };
 const results = { items: [paper], total: 1, counts: { all: 336, program: 34, runnable: 9, protocol: 0, development: 20, indexed: 282 }, offset: 0, limit: 30, nextOffset: null };
 
 test('the styled study library uses the real search contract and retains paper metadata', async () => {
   const html = await renderStudies({ q: 'knobe' }, results);
   assert.equal(libraryCalls.length, 1);
-  assert.equal(libraryCalls[0].pool, 'all');
+  assert.equal(libraryCalls[0].pool, 'program');
   assert.equal(libraryCalls[0].input.query, 'knobe');
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567"/);
   assert.match(html, /Published study/);
@@ -190,7 +198,7 @@ test('the styled study library uses the real search contract and retains paper m
   assert.doesNotMatch(html, />Run experiment</);
   assert.match(html, /<h1>Study Library<\/h1>/);
   assert.match(html, /1 paper\b/);
-  assert.match(html, /href="\/studies\?q=knobe"[^>]*>All papers/);
+  assert.match(html, /href="\/studies\?q=knobe&amp;status=all"[^>]*>All papers/);
   assert.match(html, /href="\/studies\?q=knobe&amp;status=program"[^>]*>Interactive papers/);
   assert.match(html, /name="validated"[^>]*>Validated protocols only/);
   assert.doesNotMatch(html, /Awaiting extraction|In development|Runnable experiments|Human Study Programs/);
@@ -204,36 +212,38 @@ test('the old pending link opens the awaiting-extraction filter', async () => {
   assert.equal(libraryCalls[0].pool, 'indexed');
   assert.match(html, /<h1>Study Library<\/h1>/);
   assert.match(html, /name="status" value="indexed"/);
-  assert.match(html, /href="\/studies\?q=knobe"[^>]*>All papers/);
+  assert.match(html, /href="\/studies\?q=knobe&amp;status=all"[^>]*>All papers/);
   assert.doesNotMatch(html, /more indexed/);
 });
 
 test('library pagination preserves the search query and the selected pool', async () => {
-  const html = await renderStudies({ q: 'choice & risk', pool: 'pending', validated: '1', offset: '30' }, {
+  const html = await renderStudies({ q: 'choice & risk', status: 'all', validated: '1', offset: '30' }, {
     ...results, total: 90, offset: 30, nextOffset: 60,
   });
-  assert.equal(libraryCalls[0].pool, 'indexed');
+  assert.equal(libraryCalls[0].pool, 'all');
   assert.equal(libraryCalls[0].input.query, 'choice & risk');
   assert.equal(libraryCalls[0].input.offset, 30);
   assert.equal(libraryCalls[0].validatedOnly, true);
   assert.match(html, /<h1>Study Library<\/h1>/);
+  assert.match(html, /name="status" value="all"/);
   const links = [...html.matchAll(/href="([^"]+)"/g)]
     .map(match => new URL(match[1].replaceAll('&amp;', '&'), 'http://local.test'));
   for (const offset of ['0', '60']) {
     const url = links.find(link => link.searchParams.get('offset') === offset);
     assert.ok(url, 'Pagination exposes offset ' + offset);
     assert.equal(url.searchParams.get('q'), 'choice & risk');
-    assert.equal(url.searchParams.get('status'), 'indexed');
+    assert.equal(url.searchParams.get('status'), 'all');
     assert.equal(url.searchParams.get('validated'), '1');
   }
 });
 
 test('program cards open the interactive document and a separate run setup without implying validation', async () => {
   const html = await renderStudies({ status: 'program' }, {
-    ...results, items: [{ ...paper, currentRevision: 'a'.repeat(64), assetFiles: [{ path: 'program.json' }] }],
+    ...results, items: [{ ...paper, currentRevision: 'a'.repeat(64), assetFiles: [{ path: 'program.json' }], contributors: [{ github: 'assassin808' }] }],
   });
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#paper-program"[^>]*>Interact with paper/);
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#run-experiment"[^>]*>Run experiment/);
+  assert.match(html, /Run experiment<\/a><p[^>]*>Contributed by HumanStudy Hub Team<\/p>/);
   assert.doesNotMatch(html, />Validated protocol<|>Runnable draft</);
 });
 
@@ -327,8 +337,23 @@ test('catalog contributor names remain visible without a registered Hub profile'
     ...paper, contributors: [{ name: 'Public Contributor', github: 'example' }, { hub: { id: 'private-account-id' } }],
   } }));
   assert.match(html, /Original author · 2024/);
-  assert.match(html, /Contributed by Public Contributor/);
+  assert.match(html, /Build a study<\/a><\/div><p[^>]*>Contributed by Public Contributor/);
   assert.doesNotMatch(html, /private-account-id|href="\/contributors\//);
+});
+
+test('contributor attribution distinguishes team, named collaborators and unknown provenance', () => {
+  const currentRevision = 'a'.repeat(64);
+  const curated = { ...paper, currentRevision, assetRoot: 'studies/study_005' };
+  const community = { ...curated, assetRoot: `community/${paper.id}/revisions/${currentRevision}` };
+  assert.deepEqual(researchContributorNames(curated), ['HumanStudy Hub Team']);
+  assert.deepEqual(researchContributorNames(community), []);
+  assert.deepEqual(researchContributorNames({ ...curated, aliases: ['community:doi:unknown'] }), []);
+  assert.deepEqual(researchContributorNames({ ...community, contributors: [
+    { name: 'Named Collaborator', github: 'https://github.com/example' },
+    { github: 'assassin808' }, { github: 'another-user' }, { hub: { id: 'private' } },
+  ] }, ['Named Collaborator', 'Verified Hub contributor']), [
+    'Named Collaborator', 'HumanStudy Hub Team', '@another-user', 'Verified Hub contributor',
+  ]);
 });
 
 test('user-submitted protocol details show conditions and suppress uploader fidelity claims', async () => {

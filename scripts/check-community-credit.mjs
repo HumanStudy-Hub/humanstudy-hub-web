@@ -143,11 +143,8 @@ try {
   assert.ok(await page.getByText('1 helpful vote received · 1 accepted',{exact:true}).isVisible());
   await page.screenshot({path:join(output,'profile-mobile.png'),fullPage:true});
   await page.goto(origin+'/community');
-  await page.getByRole('heading',{name:'Community leaderboard'}).waitFor();
-  assert.ok(await page.getByRole('link',{name:'Fixture Study',exact:true}).isVisible());
-  await page.getByRole('link',{name:'Contributors',exact:true}).click();
-  await page.getByText('1 helpful · 1 accepted',{exact:true}).waitFor();
-  await page.screenshot({path:join(output,'leaderboard-mobile.png'),fullPage:true});
+  assert.equal(page.url(),origin+'/studies');
+  await page.getByRole('heading',{name:'Study Library'}).waitFor();
   console.log('Existing page checks passed; checking history');
   await context.addCookies([{name:'studio_access',value:'fixture-owner',url:origin,httpOnly:true}]);
   await page.goto(origin+'/contribute');
@@ -164,7 +161,7 @@ try {
   await history.getByRole('link',{name:'View your public contribution credit'}).waitFor();
   assert.equal(await history.getByRole('link',{name:'View your public contribution credit'}).getAttribute('href'),'/contributors/'+profile);
   await page.screenshot({path:join(output,'my-contributions-mobile.png'),fullPage:true});
-  console.log('History reload, pagination, owned recheck, Local API authorization, concurrent voting, paper attribution, profile and leaderboard passed. Screenshots: '+output);
+  console.log('History reload, pagination, owned recheck, Local API authorization, concurrent voting, paper attribution, profile and library redirect passed. Screenshots: '+output);
 } finally {
   if (browser) await browser.close();
   if (next) next.kill('SIGTERM');

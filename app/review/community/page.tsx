@@ -21,7 +21,7 @@ export default function CommunityReviewPage() {
       <p className="mt-3 text-sm text-[var(--site-muted)]">This page is available only on preview deployments. Votes and status checks below stay in your browser and reset on reload.</p>
     </header>
     <nav aria-label="Review sections" className="flex flex-wrap gap-5 text-sm text-[var(--site-accent)] underline">
-      <a href="#paper-credit">Paper credit</a><a href="#contributor">Contributor profile</a><a href="#ranking">Ranking</a><a href="#submissions">My contributions</a>
+      <a href="#paper-credit">Paper credit</a><a href="#contributor">Contributor profile</a><a href="#submissions">My contributions</a>
     </nav>
     <section id="paper-credit" className={styles.section} aria-label="Paper credit example">
       <h2>{entry.paper_title}</h2>
@@ -34,20 +34,15 @@ export default function CommunityReviewPage() {
       <h3 className="font-semibold">Accepted contributions</h3>
       <CommunityCreditList entries={[entry]} preview />
     </section>
-    <section id="ranking" className={styles.section} aria-label="Ranking example">
-      <h2>Community leaderboard</h2>
-      <p className="mt-2 text-sm text-[var(--site-muted)]">Ranked by Helpful votes.</p>
-      <CommunityCreditList entries={[entry]} ranked preview />
-    </section>
     <section id="submissions" aria-label="Submission history example">
       <MyContributions previewRows={[{ id: "example-submission", paperKey: entry.paper_title, status: "merged", prUrl: null, createdAt: "2026-11-11T00:00:00Z" }]} />
     </section>
     <section className={styles.section} aria-label="Explore real pages">
       <h2>Explore the rest of the site</h2>
       <div className="mt-4 flex flex-wrap gap-5 text-[var(--site-accent)] underline">
-        <Link href="/forum">Forum</Link><Link href="/studies">Study Library</Link><Link href="/contribute">Submit a study</Link>
+        <Link href="/blog">Blog</Link><Link href="/studies">Study Library</Link><Link href="/contribute">Submit a study</Link>
       </div>
-      <p className="mt-3 text-sm text-[var(--site-muted)]">These links open the real pages. Submission requires your usual account and access code; the real pages are not seeded with these examples.</p>
+      <p className="mt-3 text-sm text-[var(--site-muted)]">Sign in to HumanStudy Hub to submit a study.</p>
     </section>
   </div>;
 }
