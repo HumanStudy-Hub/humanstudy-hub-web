@@ -130,7 +130,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
   }
 
   const routes = [
-    ['/download', 'download'], ['/results', 'results'], ['/collaboration', 'collaboration'],
+    ['/download', 'download'], ['/research/humanstudy-bench', 'results'], ['/collaboration', 'collaboration'],
     ['/contribute', 'contribute'], ['/benchmark', 'benchmark'], ['/citation', 'citation'],
     ['/access', 'access'], ['/auth/confirm', 'confirm'], ['/auth/reset', 'recovery'],
     ['/auth/reset?mode=change', 'change-password'], ['/pipeline', 'workspace-choice'],
@@ -257,7 +257,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
   assert.equal(await question.evaluate(element => element.closest('details').open), true);
   assert.ok(await page.locator('main img[src="/desktop/study-and-paper.webp"]').evaluate(image => image.complete && image.naturalWidth > 0));
   assert.ok(await page.locator('main a[href^="https://github.com/HumanStudy-Hub/humanstudy-desktop/releases"]').count() > 0);
-  await visit('/results');
+  await visit('/research/humanstudy-bench');
   const filter = page.locator('main select').first();
   await filter.selectOption({ index: 1 });
   const rows = page.locator('tbody > tr');
