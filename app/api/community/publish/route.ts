@@ -43,5 +43,5 @@ export async function POST(request: Request) {
 
   const result = await publishContribution({ userId: user.id, zip, body });
   if (!result.ok) return fail(result.status, result.error, result.message);
-  return NextResponse.json({ id: result.id, prUrl: result.prUrl, status: result.status });
+  return NextResponse.json({ id: result.id, prUrl: result.prUrl, status: result.status, kind: result.kind });
 }

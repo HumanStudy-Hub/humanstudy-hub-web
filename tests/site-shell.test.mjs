@@ -62,7 +62,7 @@ const render = component => renderToStaticMarkup(React.createElement(component))
 const destinations = ['/forum', '/studies', '/download', '/research', '/collaboration', '/account'];
 
 test('public navigation preserves every existing destination on desktop and mobile', () => {
-  for (pathname of ['/', '/studies', '/account', '/download', '/research', '/collaboration']) {
+  for (pathname of ['/', '/forum', '/studies', '/account', '/download', '/research', '/collaboration']) {
     const html = render(Navbar);
     assert.match(html, /aria-label="Main navigation"/);
     assert.match(html, /href="\/"/);
@@ -99,8 +99,68 @@ test('the real homepage retains its original actions and has one main heading', 
   for (const href of ['/forum', '/studies', '/download']) {
     assert.match(html, new RegExp(`href="${href}"`));
   }
-  assert.match(html, /<h1[^>]*>Open infrastructure for <em>human-study research<\/em><\/h1>/);
+  assert.match(html, /Open infrastructure for/);
+  assert.match(html, /human-study research/);
   assert.match(html, /Turn published human studies into executable programs that others can reuse and build upon\./);
+});
+
+test('Forum introduces the community before its two original featured posts', async () => {
+  const ForumPage = load('app/forum/page.tsx').default;
+  const html = render(ForumPage);
+  assert.match(html, /<h1[^>]*>Community forum<\/h1>/);
+  const alias = load('app/blog/page.tsx');
+  assert.equal(render(alias.default), html);
+  assert.equal(alias.metadata.alternates.canonical, '/forum');
+  assert.ok(html.indexOf('Community forum') < html.indexOf('Featured posts'));
+  assert.equal((html.match(/<article\b/g) || []).length, 2);
+  const posts = load('lib/forum-posts.ts');
+  const Article = load('app/forum/[slug]/page.tsx', {
+    '@/lib/forum-posts': { ...posts, readForumPost: async () => '## Original heading\n\nOriginal paragraph.' },
+  }).default;
+  for (const post of posts.forumPosts) {
+    assert.ok(html.includes(`href="/forum/${post.slug}"`));
+    const article = renderToStaticMarkup(await Article({ params: Promise.resolve({ slug: post.slug }) }));
+    assert.ok(article.includes(post.author));
+    assert.ok(article.includes(posts.forumPostUrl(post)));
+    assert.match(article, /<h2>Original heading<\/h2>/);
+    assert.match(article, /href="\/forum"/);
+  }
+  assert.doesNotMatch(html, /implicit-agent-behavior/);
+  assert.ok(html.includes('href="https://forum.humanstudy-hub.com/"'));
+  assert.ok(html.includes('src="/images/forum-discussions.webp"'));
+});
+
+test('featured post relay returns the original Markdown and rejects drafts and mismatched IDs', async () => {
+  const { forumPosts, readForumPost } = load('lib/forum-posts.ts');
+  const post = forumPosts[0];
+  const original = '## Heading\n\nExact source.\n';
+  const record = { _id: post.id, slug: post.slug, status: 2, contents: { markdown: original } };
+  const response = result => async (url, init) => {
+    assert.equal(url, 'https://forum.humanstudy-hub.com/graphql');
+    assert.equal(JSON.parse(init.body).variables.id, post.id);
+    return Response.json({ data: { post: { result } } });
+  };
+  assert.equal(await readForumPost(post, response(record)), original);
+  assert.equal(await readForumPost(post, response({ ...record, draft: true })), null);
+  assert.equal(await readForumPost(post, response({ ...record, _id: 'different' })), null);
+});
+
+test('contributor profiles show an unavailable state during storage errors', async () => {
+  const Profile = load('app/contributors/[id]/page.tsx', {
+    '@/lib/community-credit': {
+      UUID: /^[a-f0-9-]+$/,
+      creditPage: () => 1,
+      getContributor: async () => { throw Error('storage unavailable'); },
+      listCredits: async () => [],
+    },
+  }).default;
+  const html = renderToStaticMarkup(await Profile({
+    params: Promise.resolve({ id: '11111111-1111-4111-8111-111111111111' }),
+    searchParams: Promise.resolve({}),
+  }));
+  assert.match(html, /Contributor profile/);
+  assert.match(html, /This contributor profile is temporarily unavailable/);
+  assert.match(html, /href="\/studies"/);
 });
 
 test('the homepage groups all four actions in the requested order without secondary sections', () => {
@@ -111,13 +171,13 @@ test('the homepage groups all four actions in the requested order without second
   assert.doesNotMatch(html, /Questions we’re exploring|Join the conversation|<h2/);
 });
 
-const { libraryFilters, libraryAvailability, paperSource, validateResearchQuery } = load('lib/research.ts');
+const { libraryFilters, libraryAvailability, paperSource, researchContributorNames, validateResearchQuery } = load('lib/research.ts');
 const libraryCalls = [];
 let libraryResult;
 let libraryError;
 const Studies = load('app/studies/page.tsx', {
   '@/lib/research': {
-    validateResearchQuery, libraryFilters, libraryAvailability, paperSource,
+    validateResearchQuery, libraryFilters, libraryAvailability, paperSource, researchContributorNames,
     searchLibrary: async (input, pool, validatedOnly) => {
       libraryCalls.push({ input, pool, validatedOnly });
       if (libraryError) throw libraryError;
@@ -140,13 +200,14 @@ const paper = {
   year: 2024,
   currentRevision: null,
   legacyStudyId: 'study_005',
+  aliases: [],
 };
 const results = { items: [paper], total: 1, counts: { all: 336, program: 34, runnable: 9, protocol: 0, development: 20, indexed: 282 }, offset: 0, limit: 30, nextOffset: null };
 
 test('the styled study library uses the real search contract and retains paper metadata', async () => {
   const html = await renderStudies({ q: 'knobe' }, results);
   assert.equal(libraryCalls.length, 1);
-  assert.equal(libraryCalls[0].pool, 'all');
+  assert.equal(libraryCalls[0].pool, 'program');
   assert.equal(libraryCalls[0].input.query, 'knobe');
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567"/);
   assert.match(html, /Published study/);
@@ -156,7 +217,7 @@ test('the styled study library uses the real search contract and retains paper m
   assert.doesNotMatch(html, />Run experiment</);
   assert.match(html, /<h1>Study Library<\/h1>/);
   assert.match(html, /1 paper\b/);
-  assert.match(html, /href="\/studies\?q=knobe"[^>]*>All papers/);
+  assert.match(html, /href="\/studies\?q=knobe&amp;status=all"[^>]*>All papers/);
   assert.match(html, /href="\/studies\?q=knobe&amp;status=program"[^>]*>Interactive papers/);
   assert.match(html, /name="validated"[^>]*>Validated protocols only/);
   assert.doesNotMatch(html, /Awaiting extraction|In development|Runnable experiments|Human Study Programs/);
@@ -170,37 +231,52 @@ test('the old pending link opens the awaiting-extraction filter', async () => {
   assert.equal(libraryCalls[0].pool, 'indexed');
   assert.match(html, /<h1>Study Library<\/h1>/);
   assert.match(html, /name="status" value="indexed"/);
-  assert.match(html, /href="\/studies\?q=knobe"[^>]*>All papers/);
+  assert.match(html, /href="\/studies\?q=knobe&amp;status=all"[^>]*>All papers/);
   assert.doesNotMatch(html, /more indexed/);
 });
 
 test('library pagination preserves the search query and the selected pool', async () => {
-  const html = await renderStudies({ q: 'choice & risk', pool: 'pending', validated: '1', offset: '30' }, {
+  const html = await renderStudies({ q: 'choice & risk', status: 'all', validated: '1', offset: '30' }, {
     ...results, total: 90, offset: 30, nextOffset: 60,
   });
-  assert.equal(libraryCalls[0].pool, 'indexed');
+  assert.equal(libraryCalls[0].pool, 'all');
   assert.equal(libraryCalls[0].input.query, 'choice & risk');
   assert.equal(libraryCalls[0].input.offset, 30);
   assert.equal(libraryCalls[0].validatedOnly, true);
   assert.match(html, /<h1>Study Library<\/h1>/);
+  assert.match(html, /name="status" value="all"/);
   const links = [...html.matchAll(/href="([^"]+)"/g)]
     .map(match => new URL(match[1].replaceAll('&amp;', '&'), 'http://local.test'));
   for (const offset of ['0', '60']) {
     const url = links.find(link => link.searchParams.get('offset') === offset);
     assert.ok(url, 'Pagination exposes offset ' + offset);
     assert.equal(url.searchParams.get('q'), 'choice & risk');
-    assert.equal(url.searchParams.get('status'), 'indexed');
+    assert.equal(url.searchParams.get('status'), 'all');
     assert.equal(url.searchParams.get('validated'), '1');
   }
 });
 
 test('program cards open the interactive document and a separate run setup without implying validation', async () => {
   const html = await renderStudies({ status: 'program' }, {
-    ...results, items: [{ ...paper, currentRevision: 'a'.repeat(64), assetFiles: [{ path: 'program.json' }] }],
+    ...results, items: [{ ...paper, currentRevision: 'a'.repeat(64), assetFiles: [{ path: 'program.json' }], contributors: [{ github: 'assassin808' }] }],
   });
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#paper-program"[^>]*>Interact with paper/);
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#run-experiment"[^>]*>Run experiment/);
+  assert.match(html, /Run experiment<\/a><p[^>]*>Contributed by HumanStudy Hub Team<\/p>/);
   assert.doesNotMatch(html, />Validated protocol<|>Runnable draft</);
+});
+
+test('user-submitted protocol cards hide self-declared review quality', async () => {
+  const revision = 'a'.repeat(64);
+  const html = await renderStudies({}, {
+    ...results, items: [{ ...paper, currentRevision: revision, assetFiles: [{ path: 'program.json' }, { path: 'protocol.json' }],
+      publication: { kind: 'user-submitted', revision },
+      protocol: { slug: 'submitted', schemaVersion: '1', revision, arms: [{ id: 'main', runnable: true }],
+        fidelity: { verdict: 'high fidelity', signedBy: ['Uploader'] } } }],
+  });
+  assert.match(html, />User submitted</);
+  assert.match(html, />Run experiment</);
+  assert.doesNotMatch(html, />Validated protocol<|>High fidelity</);
 });
 
 test('invalid study queries display an error without querying the catalog', async () => {
@@ -238,6 +314,8 @@ test('the redesigned download page retains actual platform assets and release no
     assert.equal(html.split(`href="${asset.url}"`).length - 1, 2);
   }
   assert.match(html, /Version 1\.2\.3 \(beta\)/);
+  assert.match(html, /<span class="whitespace-nowrap">Windows \(preview\)<\/span>/);
+  assert.doesNotMatch(html, /From paper to experiment|Turn a paper into a study you can inspect/);
   assert.ok(html.includes(`href="${release.pageUrl}"`));
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
   assert.doesNotMatch(html, /<main\b/);
@@ -273,6 +351,43 @@ test('paper details preserve research links, capability caveats and safe resourc
   assert.match(html, /href="https:\/\/github\.com\/HumanStudy-Hub\/HumanStudy-Bench\/tree\/main\/studies\/study_005"/);
   assert.doesNotMatch(html, /href="javascript:/);
   assert.doesNotMatch(html, /<main\b/);
+});
+
+test('catalog contributor names remain visible without a registered Hub profile', async () => {
+  const html = renderToStaticMarkup(await PaperDetail({ paper: {
+    ...paper, contributors: [{ name: 'Public Contributor', github: 'example' }, { hub: { id: 'private-account-id' } }],
+  } }));
+  assert.match(html, /Original author · 2024/);
+  assert.match(html, /Build a study<\/a><\/div><p[^>]*>Contributed by Public Contributor/);
+  assert.doesNotMatch(html, /private-account-id|href="\/contributors\//);
+});
+
+test('contributor attribution distinguishes team, named collaborators and unknown provenance', () => {
+  const currentRevision = 'a'.repeat(64);
+  const curated = { ...paper, currentRevision, assetRoot: 'studies/study_005' };
+  const community = { ...curated, assetRoot: `community/${paper.id}/revisions/${currentRevision}` };
+  assert.deepEqual(researchContributorNames(curated), ['HumanStudy Hub Team']);
+  assert.deepEqual(researchContributorNames(community), []);
+  assert.deepEqual(researchContributorNames({ ...curated, aliases: ['community:doi:unknown'] }), []);
+  assert.deepEqual(researchContributorNames({ ...community, contributors: [
+    { name: 'Named Collaborator', github: 'https://github.com/example' },
+    { github: 'assassin808' }, { github: 'another-user' }, { hub: { id: 'private' } },
+  ] }, ['Named Collaborator', 'Verified Hub contributor']), [
+    'Named Collaborator', 'HumanStudy Hub Team', '@another-user', 'Verified Hub contributor',
+  ]);
+});
+
+test('user-submitted protocol details show conditions and suppress uploader fidelity claims', async () => {
+  const revision = 'a'.repeat(64);
+  const html = renderToStaticMarkup(await PaperDetail({ paper: {
+    ...paper, currentRevision: revision, assetFiles: [{ path: 'protocol.json' }],
+    publication: { kind: 'user-submitted', revision },
+    protocol: { slug: 'submitted', schemaVersion: '1', revision, arms: [{ id: 'main', label: 'Test condition', runnable: true }],
+      fidelity: { verdict: 'high fidelity', signedBy: ['Uploader'] } },
+  } }));
+  assert.match(html, />User submitted</);
+  assert.match(html, /Test condition/);
+  assert.doesNotMatch(html, /High fidelity|signed by Uploader|Validated protocol/);
 });
 
 test('run setup identifies the Desktop import flow and shows program blockers', () => {

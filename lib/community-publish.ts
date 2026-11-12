@@ -5,13 +5,16 @@ import { createHash, randomUUID } from "node:crypto";
 import { Octokit } from "@octokit/rest";
 import {
   BOT_LOGIN, MAX_PUBLISHES_PER_HOUR, decryptToken,
-  makePaperKey, readContributionZip, signHub,
+  makePaperKey, matchesContributionManifest, readContributionZip, signHub,
 } from "./community";
+import { checkPairedContribution } from "./community-paired";
+import { CONTRIBUTION_PROTOCOL } from "./community-archive";
 import { countRecentContributions, getIdentity, insertContribution } from "./community-store";
 
 const REPO = process.env.COMMUNITY_REPO || "HumanStudy-Hub/HumanStudy-Bench";
 
 export type PublishBody = {
+  publicReviewed?: unknown;
   contributor?: { name?: unknown; affiliation?: unknown; orcid?: unknown };
   includesPdf?: unknown;
   paperMeta?: { doi?: unknown; title?: unknown; year?: unknown; firstAuthor?: unknown; authors?: unknown; venue?: unknown };
@@ -21,7 +24,7 @@ export type PublishBody = {
   paperId?: unknown;
 };
 export type PublishResult =
-  | { ok: true; id: string; prUrl: string; status: "pr_open" }
+  | { ok: true; id: string; prUrl: string; status: "pr_open"; kind?: "protocol" }
   | { ok: false; status: number; error: string; message: string };
 
 const bad = (status: number, error: string, message: string): PublishResult => ({ ok: false, status, error, message });
@@ -91,6 +94,25 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
     return bad(400, "invalid_zip", "CONTRIBUTION.json in the zip is not valid JSON.");
   }
 
+  if (!matchesContributionManifest(read.files, clientMeta.files)) {
+    return bad(400, "invalid_zip", "The file list in CONTRIBUTION.json does not match the ZIP. Export the study again and review its files.");
+  }
+
+  const paired = read.files.some(file => file.name === CONTRIBUTION_PROTOCOL);
+  if (paired !== (clientMeta.kind === "protocol") ||
+      (paired && (clientMeta.schemaVersion !== 2 || !Array.isArray(clientMeta.files)))) {
+    return bad(400, "invalid_zip", "Export a paired protocol ZIP with its exact file list.");
+  }
+  if (paired && body.publicReviewed !== true) {
+    return bad(400, "public_review_required", "Review the public files and confirm before submitting.");
+  }
+  if (paired && ((body.baseRevision != null && body.baseRevision !== clientMeta.baseRevision) ||
+      (body.paperId != null && body.paperId !== clientMeta.paperId))) {
+    return bad(400, "invalid_zip", "The requested paper identity or source revision differs from the paired ZIP.");
+  }
+  const pair = paired ? checkPairedContribution(read.files, clientMeta.paper, body.paperMeta) : null;
+  if (pair && "error" in pair) return bad(400, "invalid_zip", pair.error);
+
   // 4. Who is the author: the user's own GitHub account, or the Hub bot.
   let userToken: string | null = null, login = "";
   try {
@@ -113,13 +135,15 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
   try {
     // 5. A proposal is an immutable submission, not another visible version of the paper.
     const upstream = await api.rest.repos.get({ owner, repo });
-    const defaultBranch = upstream.data.default_branch;
+    const baseBranch = process.env.VERCEL_ENV === "preview" ? "dev" : upstream.data.default_branch;
     const id = randomUUID();
     const folder = id;
     const branch = `community/${id}`;
     const root = `community/${paperDir}/proposals/${id}`;
     const authors = Array.isArray(body.paperMeta?.authors) ? body.paperMeta.authors.filter((a): a is string => typeof a === "string" && !!a.trim()) : [];
-    const paper = { title, authors: authors.length ? authors : [firstAuthor], year,
+    const paper = { title: pair && "title" in pair ? pair.title : title,
+      authors: pair && "authors" in pair ? pair.authors : authors.length ? authors : [firstAuthor],
+      year: pair && "year" in pair ? pair.year : year,
       ...(doi && paperKey.startsWith("doi:") ? { doi: paperKey.slice(4) } : {}),
       ...(str(body.paperMeta?.venue, 300) ? { venue: str(body.paperMeta?.venue, 300) } : {}) };
     const suppliedBase = body.baseRevision ?? clientMeta.baseRevision ?? null;
@@ -130,6 +154,11 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
     const checks = clientMeta.checks as Record<string, unknown> | undefined;
     const contribution: Record<string, unknown> = {
       schemaVersion: 2,
+      ...(pair && "version" in pair ? {
+        kind: "protocol", studyVersion: pair.version,
+        files: (clientMeta.files as { path: string; bytes: number; sha256: string }[])
+          .map(({ path, bytes, sha256 }) => ({ path, bytes, sha256 })),
+      } : {}),
       paperKey,
       paper,
       paperId,
@@ -147,7 +176,7 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
       includesPdf,
       appVersion: typeof clientMeta.appVersion === "string" && clientMeta.appVersion ? clientMeta.appVersion.slice(0, 50) : "unknown",
       createdAt: new Date().toISOString().replace(/\.\d+Z$/, "Z"),
-      checks: {
+      checks: paired ? { schema: false, package: null, simulation: null } : {
         schema: typeof checks?.schema === "boolean" ? checks.schema : true,
         package: typeof checks?.package === "boolean" ? checks.package : null,
         simulation: typeof checks?.simulation === "boolean" ? checks.simulation : null,
@@ -158,7 +187,7 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
     files.push({ path: `${root}/CONTRIBUTION.json`, content: Buffer.from(JSON.stringify(contribution, null, 2) + "\n") });
 
     // 6. Where the branch lives: the user's fork, or the repository itself for the bot.
-    const baseRef = await api.rest.git.getRef({ owner, repo, ref: `heads/${defaultBranch}` });
+    const baseRef = await api.rest.git.getRef({ owner, repo, ref: `heads/${baseBranch}` });
     const baseSha = baseRef.data.object.sha;
     const baseCommit = await api.rest.git.getCommit({ owner, repo, commit_sha: baseSha });
     let target = { owner, repo };
@@ -197,6 +226,7 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
       `- Paper key: \`${paperKey}\``,
       asUser ? `- Author: @${login}` : `- Submitted through the Hub bot (@${BOT_LOGIN}) with a signed Hub id.`,
       "",
+      ...(paired ? ["**User submitted.** This paired draft is open for maintainer review. A public proposal does not enable running or award a Validated protocol badge."] : []),
       "The community maintainer validates this proposal, reviews source fidelity and integrates compatible changes into the paper's single recommended version. Conflicts retain the previous recommendation for review.",
     ].join("\n");
     const prTitle = `Community: ${title} (${year}) — ${name}`;
@@ -206,7 +236,7 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
       pr = open.data[0];
       await api.rest.pulls.update({ owner, repo, pull_number: pr.number, title: prTitle, body: prBody });
     } else {
-      pr = (await api.rest.pulls.create({ owner, repo, title: prTitle, head, base: defaultBranch, body: prBody })).data;
+      pr = (await api.rest.pulls.create({ owner, repo, title: prTitle, head, base: baseBranch, body: prBody })).data;
     }
 
     // 9. Remember it.
@@ -215,7 +245,7 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
     } catch {
       return bad(500, "record_failed", `The pull request is open (${pr.html_url}) but the Hub could not record it. Do not publish again; contact the maintainers if it does not show under My contributions.`);
     }
-    return { ok: true, id, prUrl: pr.html_url, status: "pr_open" };
+    return { ok: true, id, prUrl: pr.html_url, status: "pr_open", ...(paired ? { kind: "protocol" as const } : {}) };
   } catch (error) {
     const { status, text } = describe(error);
     if (status === 401 || (status === 403 && asUser)) {

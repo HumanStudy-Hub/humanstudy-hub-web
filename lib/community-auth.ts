@@ -7,7 +7,7 @@ import { assertSameOrigin } from "./studio/http";
 export async function requireHubUser(request: Request): Promise<{ id: string; email: string | null } | NextResponse> {
   if (!bearer(request)) {
     try {
-      assertSameOrigin(request);
+      if (request.method !== "GET" && request.method !== "HEAD") assertSameOrigin(request);
       const { user } = await requireStudioUser();
       return { id: user.id, email: user.email ?? null };
     } catch { return fail(401, "not_signed_in", "Sign in to HumanStudy Hub to contribute."); }

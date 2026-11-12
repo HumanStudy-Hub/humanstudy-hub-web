@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getStudies, type StudyEntry } from "@/lib/studies";
+import { creditPage } from "@/lib/community-credit";
 import { getResearchPaper } from "@/lib/research";
 import ResearchPaperDetail from "@/components/ResearchPaperDetail";
 import styles from "@/components/folio-page.module.css";
@@ -13,15 +14,16 @@ export async function generateStaticParams() {
 }
 
 export default async function StudyDetailPage({
-  params,
+  params, searchParams,
 }: {
   params: Promise<{ studyId: string }>;
+  searchParams: Promise<{ creditPage?: string }>;
 }) {
   const { studyId } = await params;
   if (/^paper_[a-f0-9]{24}$/.test(studyId)) {
     const paper = await getResearchPaper(studyId);
     if (!paper) notFound();
-    return <ResearchPaperDetail paper={paper} />;
+    return <ResearchPaperDetail paper={paper} contributionPage={creditPage((await searchParams).creditPage)} />;
   }
   const studies: StudyEntry[] = await getStudies();
 

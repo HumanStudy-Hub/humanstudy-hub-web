@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { bearer, desktopConfigured, mintDesktopKey, promoMatches } from "@/lib/desktop-access";
 
+import { grantHostedInvitation } from "@/lib/hosted-model-quota";
+
 export const runtime = "nodejs";
 
 /** Exchanges a signed-in Supabase session plus the promo code for a desktop key. */
@@ -15,6 +17,7 @@ export async function POST(request: Request) {
   if (!user?.id) return NextResponse.json({ error: "not_signed_in" }, { status: 401 });
   const body = (await request.json().catch(() => ({}))) as { code?: unknown };
   if (!promoMatches(body.code)) return NextResponse.json({ error: "invalid_code" }, { status: 403 });
+  if (!(await grantHostedInvitation(user.id))) return NextResponse.json({ error: "hosted_allowance_unavailable" }, { status: 503 });
   const { key, expiresAt } = mintDesktopKey(user.id);
   return NextResponse.json({ key, expiresAt, email: user.email ?? null }, { headers: { "Cache-Control": "no-store" } });
 }

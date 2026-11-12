@@ -3,7 +3,7 @@ import { COOKIE_NAME, isGatedApi, isGatedPage } from "./lib/access";
 import { isUnlocked } from "./lib/access-edge";
 
 // The access gate. Free (read-only) browsing passes through untouched; the
-// Build Study, Playground, and Contribute areas require an unlocked session:
+// Build Study, Playground, and legacy contribution APIs require an unlocked session:
 //   pages   -> redirect to /access?next=<path>
 //   APIs    -> 401 JSON
 export default async function proxy(request: NextRequest) {
@@ -40,7 +40,6 @@ export const config = {
     // action pages
     "/pipeline/:path*",
     "/playground/:path*",
-    "/contribute/:path*",
     // action APIs
     "/api/pipeline/:path*",
     "/api/playground/:path*",

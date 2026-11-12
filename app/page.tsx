@@ -5,7 +5,7 @@ import styles from "./page.module.css";
 
 const actions = [
   { href: "/download", label: "Get the desktop app" },
-  { href: "/forum", label: "Join the forum" },
+  { href: "/forum", label: "Open the forum" },
   { href: "/collaboration", label: "Work with us" },
   { href: "/studies", label: "Explore studies" },
 ] as const;
@@ -22,7 +22,7 @@ export default function Home() {
         </p>
         <nav className={styles.actions} aria-label="Explore HumanStudy Hub">
           {actions.map((action) => (
-            <Link href={action.href} prefetch={action.href === "/forum" ? false : undefined} className={styles.textLink} key={action.href}>
+            <Link href={action.href} className={styles.textLink} key={action.href}>
               {action.label} <ArrowRight />
             </Link>
           ))}

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url), ts = require('typescript'), AdmZip = require('adm-zip');
 function load(file, deps = {}) {
@@ -9,7 +10,11 @@ function load(file, deps = {}) {
 }
 const access = { ACCESS_SECRET: 'test-secret' };
 const admZip = { default: AdmZip };
-const lib = load('lib/community.ts', { './access': access, 'adm-zip': admZip });
+const archive = load('lib/community-archive.ts');
+const communityDeps = { 'adm-zip': admZip, './community-archive': archive };
+const lib = load('lib/community.ts', { './access': access, ...communityDeps });
+const pairedModule = load('lib/community-paired.ts', { './community-archive': archive, './community': lib });
+const pairedDeps = { './community-archive': archive, './community-paired': pairedModule };
 
 // Same cases as HumanStudy-Bench tests/test_community.py.
 test('paper keys match scripts/community.py', () => {
@@ -51,7 +56,7 @@ test('hub signatures round trip and reject forgeries', () => {
   assert.equal(lib.verifyHub('user-2', sig), false);
   assert.equal(lib.verifyHub('user-1', sig.slice(0, -2) + 'xx'), false);
   assert.equal(lib.verifyHub('user-1', undefined), false);
-  const other = load('lib/community.ts', { './access': { ACCESS_SECRET: 'other' }, 'adm-zip': admZip });
+  const other = load('lib/community.ts', { './access': { ACCESS_SECRET: 'other' }, ...communityDeps });
   assert.equal(other.verifyHub('user-1', sig), false);
 });
 
@@ -61,7 +66,7 @@ test('github tokens are sealed and only open with the same secret', () => {
   assert.equal(lib.decryptToken(sealed), 'gho_secret');
   assert.notEqual(lib.encryptToken('gho_secret'), sealed);
   assert.equal(lib.decryptToken(sealed.slice(0, -2) + 'AA'), null);
-  const other = load('lib/community.ts', { './access': { ACCESS_SECRET: 'other' }, 'adm-zip': admZip });
+  const other = load('lib/community.ts', { './access': { ACCESS_SECRET: 'other' }, ...communityDeps });
   assert.equal(other.decryptToken(sealed), null);
 });
 
@@ -87,6 +92,27 @@ test('zip validation explains each problem', () => {
   has(lib.validateContributionZip([...good, f('package/paper.pdf')]), /is a PDF/);
   assert.deepEqual(lib.validateContributionZip([...good, f('package/paper.pdf')], { includesPdf: true }), []);
   assert.deepEqual(lib.validateContributionZip([...good, f('__MACOSX/x'), f('.DS_Store')]), []);
+});
+
+test('private sources and raw runs are rejected while derived reports stay eligible', () => {
+  const privatePaths = [
+    'sources/Private/attachment.txt',
+    'sources/RESEARCHER/data.csv',
+    'sources/quarantine/source.txt',
+    'sources/ｐｒｉｖａｔｅ/file.txt',
+    'artifacts/archive/runs/result.json',
+    'artifacts/simulations/20260101/results.html',
+    'artifacts/records.jsonl',
+    'artifacts/participant-responses.csv',
+    'artifacts/notes.annotations.json',
+    'sources/another-archive.zip',
+    'package/fixture/human-data/table.csv',
+  ];
+  for (const path of privatePaths) {
+    assert.ok(lib.validateContributionZip([...good, f(path)]).some(error => /private project file or raw record/.test(error)), path);
+  }
+  assert.deepEqual(lib.validateContributionZip([...good, f('artifacts/simulations/20260101/summary.md')]), []);
+  assert.match(lib.validateContributionZip([...good, f('sources/Paper.txt'), f('sources/paper.txt')])[0], /more than once/);
 });
 
 test('readContributionZip rejects garbage and reads real zips', () => {
@@ -144,13 +170,13 @@ function setup({ identity = null, recent = 0, existingDir = null } = {}) {
   process.env.GITHUB_TOKEN = 'bot-token';
   const Fake = fakeOctokit({ existingDir, userLogin: identity?.login });
   const inserted = [];
-  const community = load('lib/community.ts', { './access': access, 'adm-zip': admZip });
+  const community = load('lib/community.ts', { './access': access, ...communityDeps });
   const store = {
     countRecentContributions: async () => recent,
     getIdentity: async () => identity && { ...identity, token_encrypted: community.encryptToken(identity.token) },
     insertContribution: async (row) => { inserted.push(row); },
   };
-  const publish = load('lib/community-publish.ts', { '@octokit/rest': { Octokit: Fake }, './community': community, './community-store': store });
+  const publish = load('lib/community-publish.ts', { '@octokit/rest': { Octokit: Fake }, './community': community, ...pairedDeps, './community-store': store });
   return { Fake, inserted, publish: publish.publishContribution };
 }
 
@@ -203,11 +229,27 @@ test('without a connected GitHub account the bot opens the PR with a signed Hub 
   assert.equal(call(Fake, 'git.updateRef').length, 0, 'immutable proposals are never force-pushed');
   const pr = call(Fake, 'pulls.create')[0];
   assert.equal(pr.head, `HumanStudy-Hub:community/${r.id}`);
+  assert.equal(pr.base, 'main');
   assert.equal(pr.title, 'Community: Intentional action and side effects (2003) — Ada Lovelace');
   assert.match(pr.body, /Ada Lovelace/);
   assert.match(pr.body, /HumanStudy Hub/);
   assert.equal(inserted.length, 1);
   assert.deepEqual([inserted[0].owner_id, inserted[0].status, inserted[0].pr_number, inserted[0].folder], [userId, 'pr_open', 42, r.id]);
+});
+
+test('a Vercel preview opens the contribution against Bench dev', async () => {
+  const previous = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = 'preview';
+  try {
+    const { Fake, publish } = setup();
+    const result = await publish({ userId, zip: zipOf(), body: body() });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(call(Fake, 'git.getRef')[0].ref, 'heads/dev');
+    assert.equal(call(Fake, 'pulls.create')[0].base, 'dev');
+  } finally {
+    if (previous === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = previous;
+  }
 });
 
 test('with a connected GitHub account the PR comes from the user\'s fork', async () => {
@@ -254,12 +296,171 @@ test('publish refuses bad input, big zips, PDFs and the sixth publish in an hour
   assert.equal(limited.Fake.calls.length, 0);
 });
 
+test('publish validates actual paths and the exact optional manifest before writing to GitHub', async () => {
+  const { Fake, publish } = setup();
+  const files = { 'program.json': '{"nodes":[]}', 'artifacts/simulations/example/report.md': 'Public derived report' };
+  const manifest = Object.entries(files).map(([path, text]) => ({
+    path, bytes: Buffer.byteLength(text), sha256: createHash('sha256').update(text).digest('hex'),
+  }));
+  function archiveOf(manifest, extra = {}) {
+    const zip = new AdmZip();
+    zip.addFile('CONTRIBUTION.json', Buffer.from(JSON.stringify({ files: manifest })));
+    for (const [path, text] of Object.entries({ ...files, ...extra })) zip.addFile(path, Buffer.from(text));
+    return zip.toBuffer();
+  }
+
+  for (const zip of [
+    archiveOf(manifest, { 'sources/quarantine/item.txt': 'Private attachment' }),
+    archiveOf(manifest, { 'program.json': '{"nodes": [ ]}' }),
+    archiveOf(manifest, { 'artifacts/other/report.md': 'Unlisted' }),
+  ]) {
+    const result = await publish({ userId, zip, body: body() });
+    assert.equal(result.error, 'invalid_zip');
+    assert.equal(Fake.calls.length, 0);
+  }
+  const valid = await publish({ userId, zip: archiveOf(manifest), body: body() });
+  assert.equal(valid.ok, true);
+  assert.ok(call(Fake, 'git.createTree')[0].tree.some(entry => entry.path.endsWith('/report.md')));
+});
+
+const pairedHash = bytes => createHash('sha256').update(bytes).digest('hex');
+
+function pairedZip(options = {}) {
+  const sourcePath = 'sources/open/stimuli.txt';
+  const source = Buffer.from('Public fixture stimulus');
+  const protocol = {
+    schema_version: '1', id: 'fixture',
+    meta: { sources: { stimulus: { file: sourcePath, distribution: {
+      tier: 'hosted', licence: 'CC0-1.0', attribution: 'Fixture Author', sha256: pairedHash(source),
+    } } } },
+    arms: [{id: 'missing', runnable: false, why: 'The task material is missing.'}],
+    distribution: {format: 'hsenv-projection/1', hsenv: '0.8.1', strict: true, placeholder: '░', held: {}, attribution: []},
+  };
+  options.protocol?.(protocol);
+  const protocolBytes = Buffer.from(JSON.stringify(protocol));
+  const program = {
+    schemaVersion: 2, intent: 'reconstruct', source:{title:'Intentional action and side effects',authors:'Joshua Knobe'}, evidence:[], issues: [{ title: 'Missing task material' }],
+    extensions: { scholarly: { profile: 'scholarly-v1', protocol: { path: 'protocol.json', id: 'fixture', sha256: pairedHash(protocolBytes) } } },
+  };
+  options.program?.(program);
+  const study = { schema_version: '1', id: 'fixture', title:'Intentional action and side effects', authors:['Joshua Knobe'], year:2003, doi:'10.1111/1468-0017.00215', version: '2.3.1', quality: 'draft',
+    protocol: { path: 'protocol.json', sha256: 'b'.repeat(64), schema_version: '1' } };
+  options.study?.(study);
+  const sourceManifest = { schemaVersion: 1, files: [{ path: sourcePath, bytes: source.length,
+    sha256: pairedHash(source), license: 'CC0-1.0', attribution: 'Fixture Author' }] };
+  options.sources?.(sourceManifest);
+  const payload = {
+    'program.json': Buffer.from(JSON.stringify(program)), 'study.json': Buffer.from(JSON.stringify(study)),
+    'protocol.json': protocolBytes, 'sources/SOURCE.json': Buffer.from(JSON.stringify(sourceManifest)),
+    [sourcePath]: source, 'artifacts/simulations/fixture/report.md': Buffer.from('Shareable finished report'),
+    ...options.extra,
+  };
+  const files = Object.entries(payload).map(([path, bytes]) => ({ path, bytes: bytes.length, sha256: pairedHash(bytes) }));
+  const metadata = { schemaVersion: 2, kind: 'protocol', paper:{...body().paperMeta,authors:['Joshua Knobe']}, baseRevision: 'c'.repeat(64), files,
+    checks: { schema: true, package: true, simulation: true } };
+  options.metadata?.(metadata);
+  const zip = new AdmZip();
+  for (const [path, bytes] of Object.entries(payload)) zip.addFile(path, bytes);
+  zip.addFile('CONTRIBUTION.json', Buffer.from(JSON.stringify(metadata)));
+  return { zip: zip.toBuffer(), payload, files };
+}
+
+test('paired submission opens a public review proposal with the exact verified payload and original metadata', async () => {
+  const { Fake, publish } = setup();
+  const fixture = pairedZip();
+  const result = await publish({ userId, zip: fixture.zip, body: body({ publicReviewed: true, paperMeta:{...body().paperMeta,authors:['Joshua Knobe']} }) });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.kind, 'protocol');
+  const tree = call(Fake,'git.createTree')[0].tree;
+  const blobs = call(Fake,'git.createBlob');
+  for (const [path, bytes] of Object.entries(fixture.payload)) {
+    const index = tree.findIndex(file => file.path.endsWith('/' + path));
+    assert.ok(index >= 0, path);
+    assert.deepEqual(Buffer.from(blobs[index].content,'base64'), bytes);
+  }
+  const metadata = committedJson(Fake,'CONTRIBUTION.json');
+  assert.deepEqual(metadata.files, fixture.files);
+  assert.equal(metadata.kind, 'protocol');
+  assert.equal(metadata.studyVersion, '2.3.1');
+  assert.equal(metadata.baseRevision, 'c'.repeat(64));
+  assert.equal(metadata.paper.authors[0], 'Joshua Knobe');
+  assert.equal(metadata.contributor.name, 'Ada Lovelace');
+  assert.deepEqual(metadata.checks, { schema:false,package:null,simulation:null });
+  assert.match(call(Fake,'pulls.create')[0].body, /User submitted.*maintainer review/);
+  assert.ok(tree.every(file => file.path.includes('/proposals/')));
+});
+
+test('paired consent, source policy, exact binding and held material are enforced before GitHub writes', async () => {
+  const { Fake, publish } = setup();
+  const submit = (options, reviewed = true) => publish({
+    userId, zip: pairedZip(options).zip, body: body({ publicReviewed: reviewed, paperMeta:{...body().paperMeta,authors:['Joshua Knobe']} }),
+  });
+  assert.equal((await submit({}, false)).error, 'public_review_required');
+  assert.equal((await publish({ userId, zip: pairedZip().zip, body: body({
+    publicReviewed: true, baseRevision:'f'.repeat(64), paperMeta: {...body().paperMeta, authors:['Joshua Knobe']},
+  }) })).error, 'invalid_zip');
+  assert.equal((await publish({ userId, zip: pairedZip().zip, body: body({
+    publicReviewed: true, paperMeta: {...body().paperMeta, authors:['Impostor'],title:'Another paper'},
+  }) })).error, 'invalid_zip');
+  for (const options of [
+    { metadata: meta => delete meta.files },
+    { metadata: meta => {meta.files[0].sha256 = 'f'.repeat(64)} },
+    { extra: {'sources/quarantine/secret.txt':Buffer.from('Private')} },
+    { extra: {'sources/open/unlicensed.txt':Buffer.from('Unlisted')} },
+    { extra: {'artifacts/simulations/fixture/records.jsonl':Buffer.from('{}')} },
+    { extra: {'review/fidelity-review-supplied.md':Buffer.from('Reviewer')} },
+    { protocol: protocol => {protocol.distribution.held = { field: {source:'stimulus'} }} },
+    { protocol: protocol => {protocol.distribution.rehydrated = true} },
+    { protocol: protocol => {protocol.data = { item: '░░░' }} },
+    { protocol: protocol => {protocol.meta.sources.stimulus.distribution.tier = 'user'} },
+    { protocol: protocol => {protocol.meta.sources.stimulus.distribution.sha256 = 'f'.repeat(64)} },
+    { program: program => {program.extensions.scholarly.protocol.sha256 = 'f'.repeat(64)} },
+    { program: program => {program.evidence = [{path:'sources/open/missing.txt'}]} },
+    { protocol: protocol => {protocol.meta.sources = {}} },
+    { study: study => {study.quality = 'high_fidelity'; study.fidelity = {signed_by:'Uploader'}} },
+    { sources: manifest => {manifest.files[0].license = 'CC-BY-NC-4.0'} },
+  ]) assert.equal((await submit(options)).error, 'invalid_zip');
+  assert.equal(Fake.calls.length, 0);
+});
+
+test('Desktop paired export passes Web validation and reaches the public proposal writer byte-for-byte', {
+  skip: !process.env.HUMANSTUDY_DESKTOP_PAIRED_ZIP,
+}, async () => {
+  const { Fake, publish } = setup();
+  const zip = fs.readFileSync(process.env.HUMANSTUDY_DESKTOP_PAIRED_ZIP);
+  const original = lib.readContributionZip(zip);
+  assert.deepEqual(original.errors, []);
+  const metadata = JSON.parse(original.files.find(file => file.name === 'CONTRIBUTION.json').data.toString());
+  const result = await publish({ userId, zip, body: body({
+    publicReviewed: true, paperMeta: metadata.paper,
+  }) });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.kind, 'protocol');
+  const tree = call(Fake,'git.createTree')[0].tree;
+  const blobs = call(Fake,'git.createBlob');
+  assert.equal(tree.length, original.files.length);
+  const pathPattern = new RegExp('/proposals/' + result.id + '/');
+  for (const file of original.files.filter(file => file.name !== 'CONTRIBUTION.json')) {
+    const index = tree.findIndex(entry => entry.path.split(pathPattern)[1] === file.name);
+    assert.ok(index >= 0, file.name);
+    assert.deepEqual(Buffer.from(blobs[index].content, 'base64'), file.data);
+    assert.doesNotMatch(file.data.toString(), /PRIVATE-CANARY|private annotation|Private raw participant row/i);
+  }
+  assert.ok(!tree.some(file => /\/(?:private|runs|researcher)\//i.test(file.path)));
+  const published = committedJson(Fake, 'CONTRIBUTION.json');
+  assert.equal(published.studyVersion, '1.2.3');
+  assert.equal(published.paper.authors[0], 'A. Example');
+  assert.equal(published.contributor.name, 'Ada Lovelace');
+  assert.equal(published.checks.schema, false);
+  assert.match(call(Fake,'pulls.create')[0].body, /User submitted/);
+});
+
 test('a rejected GitHub token gives a plain-language error', async () => {
   process.env.GITHUB_TOKEN = 'bot-token';
-  const community = load('lib/community.ts', { './access': access, 'adm-zip': admZip });
+  const community = load('lib/community.ts', { './access': access, ...communityDeps });
   const rejecting = class { constructor() { this.rest = { repos: { get: async () => { const e = new Error('Bad credentials'); e.status = 401; throw e; } } }; } };
   const mod = load('lib/community-publish.ts', {
-    '@octokit/rest': { Octokit: rejecting }, './community': community,
+    '@octokit/rest': { Octokit: rejecting }, './community': community, ...pairedDeps,
     './community-store': { countRecentContributions: async () => 0, getIdentity: async () => ({ login: 'Ada', token_encrypted: community.encryptToken('gho') }), insertContribution: async () => {} },
   });
   const r = await mod.publishContribution({ userId, zip: zipOf(), body: body() });
@@ -281,6 +482,7 @@ test('webhook signatures and status changes', () => {
   assert.deepEqual(hook.statusChangeFor('pull_request', pr(true)), { match: { prNumber: 7 }, status: 'merged', error: null });
   assert.equal(hook.statusChangeFor('pull_request', pr(false)).status, 'rejected');
   assert.equal(hook.statusChangeFor('pull_request', pr(true, 'feature/x')), null);
+  assert.equal(hook.statusChangeFor('pull_request', { ...pr(false), action: 'labeled', label: { name: 'community:needs-review' } }), null);
   const run = hook.statusChangeFor('workflow_run', { action: 'completed', workflow_run: { conclusion: 'failure', head_branch: 'community/x--hub-1', pull_requests: [], name: 'Validate' } });
   assert.deepEqual(run.match, { branch: 'community/x--hub-1' }); assert.equal(run.status, 'checks_failed');
   assert.equal(hook.statusChangeFor('check_suite', { action: 'completed', check_suite: { conclusion: 'success', head_branch: 'community/x', pull_requests: [] } }), null);
