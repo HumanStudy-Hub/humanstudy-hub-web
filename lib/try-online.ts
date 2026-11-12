@@ -27,6 +27,7 @@ export class TryError extends Error {
 
 const BUSY = () => new TryError(503, "busy", "Too many people are using HumanStudy Hub online right now. Please try again in a few minutes.");
 const FAILED = () => new TryError(502, "start_failed", "HumanStudy Hub could not start. Please try again.");
+const ACCOUNT_MISMATCH = () => new TryError(409, "workspace_account_mismatch", "This workspace has a different account signed in. Sign out there before reopening.");
 
 const hmac = (message: string) => createHmac("sha256", tokenSecret()).update(message).digest("hex");
 const deploymentScope = () => {
@@ -114,7 +115,7 @@ function assertCurrentBuild(payload: unknown, config: Settings) {
   }
 }
 
-/** POST to the app with the user's token. Null: the app did not accept the token (or did not answer). */
+/** POST to the app with the user's token. Null means there was no response. */
 async function app(base: string, token: string, path: string, body: unknown, deadline: AbortSignal): Promise<Response | null> {
   try {
     const r = await fetch(`${base}${path}`, {
@@ -125,7 +126,7 @@ async function app(base: string, token: string, path: string, body: unknown, dea
       redirect: "error",
       signal: operationSignal(8000, deadline),
     });
-    return r.ok ? r : null;
+    return r;
   } catch {
     return null;
   }
@@ -346,10 +347,11 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
       if (probe.exitCode !== 0) throw new TryError(502, "model_auth_failed", "The workspace could not reach the dev model service.");
     }
     const account = await app(base, token, "/ipc/account:status", { args: [] }, deadline);
-    const state = await account?.json().catch(() => null) as { value?: { signedIn?: boolean; email?: string } } | null;
+    if (!account?.ok) throw FAILED();
+    const state = await account.json().catch(() => null) as { value?: { signedIn?: boolean; email?: string } } | null;
     if (typeof state?.value?.signedIn !== "boolean") throw FAILED();
     if (state.value.signedIn && state.value.email?.toLowerCase() !== user.email.toLowerCase()) {
-      throw new TryError(409, "workspace_account_mismatch", "This workspace has a different account signed in. Sign out there before reopening.");
+      throw ACCOUNT_MISMATCH();
     }
     // A stored email does not prove the sandbox's Supabase session still works.
     // Each explicit launcher handoff receives its own fresh, verified session.
@@ -358,7 +360,8 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
     const seed: Record<string, unknown> = { session };
     if (!isDevPreview() || managedDev) seed.desktopKey = mintDesktopKey(user.id);
     const seeded = await app(base, token, "/__seed", seed, deadline);
-    if (!(await seeded?.json().catch(() => null))?.ok) throw FAILED();
+    if (seeded?.status === 409) throw ACCOUNT_MISMATCH();
+    if (!seeded?.ok || !(await seeded.json().catch(() => null))?.ok) throw FAILED();
 
     if (!(await finish(config, name, lease, false, sandbox.expiresAt))) {
       cancelled = true;
