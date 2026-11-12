@@ -15,11 +15,10 @@ export default function Home() {
     <div className={styles.home}>
       <section className={styles.opening} aria-labelledby="home-title">
         <h1 id="home-title" className={styles.title}>
-          <span>Read the paper.</span>
-          <em>Run the experiment.</em>
+          Open infrastructure for <em>human-study research</em>
         </h1>
         <p className={styles.introduction}>
-          Explore the evidence, prepare an experiment, and see what is missing.
+          Turn published human studies into executable programs that others can reuse and build upon.
         </p>
         <nav className={styles.actions} aria-label="Explore HumanStudy Hub">
           {actions.map((action) => (

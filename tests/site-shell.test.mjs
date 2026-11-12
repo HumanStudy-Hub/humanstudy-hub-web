@@ -59,10 +59,10 @@ const Navbar = load('components/Navbar.tsx').default;
 const Footer = load('components/Footer.tsx').default;
 const Home = load('app/page.tsx').default;
 const render = component => renderToStaticMarkup(React.createElement(component));
-const destinations = ['/forum', '/studies', '/download', '/results', '/collaboration', '/account'];
+const destinations = ['/forum', '/studies', '/download', '/research', '/collaboration', '/account'];
 
 test('public navigation preserves every existing destination on desktop and mobile', () => {
-  for (pathname of ['/', '/studies', '/account', '/download', '/results', '/collaboration']) {
+  for (pathname of ['/', '/studies', '/account', '/download', '/research', '/collaboration']) {
     const html = render(Navbar);
     assert.match(html, /aria-label="Main navigation"/);
     assert.match(html, /href="\/"/);
@@ -99,9 +99,8 @@ test('the real homepage retains its original actions and has one main heading', 
   for (const href of ['/forum', '/studies', '/download']) {
     assert.match(html, new RegExp(`href="${href}"`));
   }
-  assert.match(html, /Read the paper\./);
-  assert.match(html, /Run the experiment\./);
-  assert.match(html, /Explore the evidence, prepare an experiment, and see what is missing\./);
+  assert.match(html, /<h1[^>]*>Open infrastructure for <em>human-study research<\/em><\/h1>/);
+  assert.match(html, /Turn published human studies into executable programs that others can reuse and build upon\./);
 });
 
 test('the homepage groups all four actions in the requested order without secondary sections', () => {

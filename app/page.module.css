@@ -10,17 +10,14 @@
 }
 
 .title {
-  margin: 0;
+  max-width: 14em;
+  margin: 0 auto;
   font-family: var(--site-font-serif);
-  font-size: clamp(40px, 6.2vw, 80px);
+  font-size: clamp(40px, 5.6vw, 72px);
+  text-wrap: balance;
   font-weight: 400;
   line-height: 1.05;
   letter-spacing: -0.035em;
-}
-
-.title span,
-.title em {
-  display: block;
 }
 
 .title em {
@@ -28,11 +25,13 @@
 }
 
 .introduction {
-  margin: 28px auto 24px;
+  max-width: 34em;
+  margin: 28px auto 32px;
   color: var(--site-muted);
   font-family: var(--site-font-serif);
-  font-size: clamp(16px, 1.65vw, 21px);
+  font-size: clamp(18px, 1.8vw, 22px);
   line-height: 1.6;
+  text-wrap: balance;
 }
 
 .actions {
@@ -76,12 +75,6 @@
   height: auto;
 }
 
-@media (min-width: 768px) {
-  .introduction {
-    white-space: nowrap;
-  }
-}
-
 @media (max-width: 640px) {
   .home {
     padding-bottom: 32px;
@@ -92,13 +85,12 @@
   }
 
   .title {
-    font-size: clamp(36px, 10vw, 56px);
-    line-height: 1.1;
+    font-size: clamp(34px, 9.5vw, 48px);
+    line-height: 1.12;
   }
 
-  .introduction {
-    margin-block: 24px 20px;
-    font-size: 19px;
+    .introduction {
+    margin-block: 20px 24px;
   }
 
   .actions {
