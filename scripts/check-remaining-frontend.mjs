@@ -359,10 +359,19 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
   await page.waitForURL(origin + '/studies');
   checked('Mocked invitation-code failure and success with the existing library destination');
 
+  // The browser is signed in through the existing auth fixture; history must use
+  // that same fixture instead of falling through to an unconfigured live API.
+  await page.route(origin + '/api/community/mine{,?*}', async route => {
+    assert.equal(route.request().method(), 'GET');
+    const pageNumber = Number(new URL(route.request().url()).searchParams.get('page') || 1);
+    return route.fulfill({ json: { contributions: [], github: null, page: pageNumber, hasMore: false } });
+  });
   await visit('/contribute');
+  await page.getByRole('region', { name: 'My contributions', exact: true }).getByText('No submissions on this page.', { exact: true }).waitFor();
   const upload = page.getByLabel('Community contribution ZIP', { exact: true });
   await upload.setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('Preview only') });
-  await page.locator('main').getByRole('alert').waitFor();
+  await page.getByRole('alert').filter({ hasText: 'Choose a community ZIP no larger than 40 MB.' }).waitFor();
+  assert.equal(await page.getByRole('region', { name: 'My contributions', exact: true }).getByRole('alert').count(), 0);
   assert.ok(await page.getByRole('button', { name: 'Contribute', exact: true }).isDisabled());
   const zip = new (require('adm-zip'))();
   zip.addFile('CONTRIBUTION.json', Buffer.from(JSON.stringify({
