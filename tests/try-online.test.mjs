@@ -325,6 +325,7 @@ test('hosted bodyless Stop and JSON cancellation both preserve owner-scoped beha
   const route = load('app/api/try/route.ts', {
     'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
     '@/lib/desktop-access': {},
+    '@/lib/hosted-model-quota': {},
     '@/lib/studio/auth': { requireStudioUser: async () => ({ user }) },
     '@/lib/studio/http': {
       assertSameOrigin: request => assert.equal(request.headers.get('origin'), 'https://dev.example.test'),
@@ -372,4 +373,33 @@ test('ordinary dev workspace retains public account configuration without a host
   await lib.launchTryOnline(user, attempt);
   assert.equal(calls.find(([name]) => name === 'start')[1].HUMANSTUDY_SERVER, undefined);
   assert.equal(calls.find(([name]) => name === '/__seed')[1].desktopKey, undefined);
+});
+
+test('Online invitation grants only after verified code and before workspace launch', async () => {
+  const calls = [];
+  let allow = false, existingInvite = false;
+  const route = load('app/api/try/route.ts', {
+    'next/server': { NextResponse: { json: Response.json } },
+    'next/headers': { cookies: async () => ({ get: () => existingInvite ? { value: 'verified-owner-cookie' } : undefined, set: () => calls.push(['cookie']) }) },
+    '@/lib/desktop-access': { promoMatches: code => code === 'valid-code' },
+    '@/lib/hosted-model-quota': { grantHostedInvitation: async id => { calls.push(['grant', id]); return allow; } },
+    '@/lib/studio/auth': { requireStudioUser: async () => ({ user }) },
+    '@/lib/studio/http': { assertSameOrigin() {}, readJsonBody: request => request.json(), isUuid: value => value === attempt },
+    '@/lib/try-online': {
+      hasAccess: (id, cookie) => id === user.id && cookie === 'verified-owner-cookie', accessCookieFor: () => 'fixture-cookie',
+      launchTryOnline: async (account, id) => { calls.push(['launch', account.id, id]); return { url: 'https://workspace.test' }; },
+    },
+    '@/lib/try-online-config': { tryConfigured: () => true },
+  });
+  const request = code => new Request('https://hub.test/api/try', { method: 'POST', body: JSON.stringify({ code, attempt, user_id: 'other' }) });
+  assert.equal((await route.POST(request('wrong-code'))).status, 403);
+  assert.deepEqual(calls, []);
+  assert.equal((await route.POST(request('valid-code'))).status, 503);
+  assert.deepEqual(calls, [['grant', user.id]]);
+  allow = true;
+  assert.equal((await route.POST(request('valid-code'))).status, 200);
+  assert.deepEqual(calls.slice(1), [['grant', user.id], ['cookie'], ['launch', user.id, attempt]]);
+  existingInvite = true;
+  assert.equal((await route.POST(request(undefined))).status, 200);
+  assert.deepEqual(calls.slice(-2), [['grant', user.id], ['launch', user.id, attempt]], 'a verified existing owner cookie preserves access without redeeming again');
 });
