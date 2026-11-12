@@ -91,7 +91,7 @@ function fixture(t, options = {}) {
       assert.deepEqual(data, { type: 'magiclink', token_hash: 'fixture-hash' });
       return Response.json({ access_token: 'workspace-access', refresh_token: 'workspace-refresh', user: { id: options.seedUser ?? user.id } });
     }
-    if (path === '/__seed') return Response.json({ ok: !options.seedFails });
+    if (path === '/__seed') return options.seedConflict ? Response.json({ ok: false }, { status: 409 }) : Response.json({ ok: !options.seedFails });
     throw Error('Unexpected fetch path ' + path);
   });
   const config = load('lib/try-online-config.ts');
@@ -157,6 +157,13 @@ test('auth verification failure leaves an existing workspace running without iss
   await assert.rejects(lib.launchTryOnline(user, attempt), { code: 'sign_in_failed' });
   assert.ok(calls.some(([name]) => name === '/auth/v1/verify'));
   assert.ok(!calls.some(([name]) => name === '/__seed'));
+  assert.ok(!calls.includes('stop'));
+});
+
+test('an account switch during mint is refused by the workspace and returns no browser access', async t => {
+  const { calls, lib } = fixture(t, { seedConflict: true });
+  await assert.rejects(lib.launchTryOnline(user, attempt), { code: 'workspace_account_mismatch' });
+  assert.ok(calls.some(([name]) => name === '/__seed'));
   assert.ok(!calls.includes('stop'));
 });
 
