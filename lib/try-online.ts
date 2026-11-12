@@ -241,6 +241,36 @@ export async function stopTryOnline(userId: string, attempt?: string): Promise<{
   }
 }
 
+/** Inspect the already-running server without resuming or restarting its provider session. */
+async function runningWithDevHub(sandbox: Sandbox, origin: string, deadline: AbortSignal): Promise<boolean> {
+  const probe = `
+    const fs = require("node:fs");
+    const [server, origin] = process.argv.slice(1);
+    let matches = 0;
+    let valid = false;
+    for (const pid of fs.readdirSync("/proc")) {
+      if (!/^\\d+$/.test(pid)) continue;
+      try {
+        const args = fs.readFileSync("/proc/" + pid + "/cmdline", "utf8").split("\\0");
+        if (args[1] !== server || !/(?:^|\\/)node$/.test(args[0])) continue;
+        matches++;
+        const env = fs.readFileSync("/proc/" + pid + "/environ", "utf8").split("\\0");
+        valid = env.includes("HUMANSTUDY_SERVER=" + origin) && env.includes("NODE_USE_SYSTEM_CA=1");
+      } catch { /* Processes may exit during enumeration. */ }
+    }
+    if (matches !== 1 || !valid) process.exitCode = 1;
+  `;
+  try {
+    const result = await sandbox.currentSession().runCommand({
+      cmd: "node", args: ["-e", probe, `${HS}/app/server.cjs`, origin],
+      signal: operationSignal(5000, deadline),
+    });
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Starts or reopens one private, persistent workspace. A missing prior snapshot is never replaced automatically. */
 export async function launchTryOnline(user: { id: string; email?: string | null }, attempt: string = randomUUID()): Promise<{ url: string; resumed: boolean }> {
   const config = configuration();
@@ -278,6 +308,9 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
         signal: operationSignal(25_000, deadline),
       });
     } else if (networkPolicy) {
+      if (running(sandbox) && (sandbox.status !== "running" || !(await runningWithDevHub(sandbox, hubOrigin, deadline)))) {
+        throw new TryError(409, "workspace_restart_required", "Stop this workspace and resume it to connect to dev models. Your current session is still running.");
+      }
       // The provider applies policy outside the guest. This also resumes stopped workspaces.
       started = sandbox.status !== "running";
       await sandbox.updateNetworkPolicy(networkPolicy, { signal: operationSignal(25_000, deadline) });

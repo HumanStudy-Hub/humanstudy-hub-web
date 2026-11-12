@@ -46,6 +46,12 @@ function fixture(t, options = {}) {
     expiresAt: new Date('2030-01-01T01:00:00Z'),
     domain: () => 'https://workspace.vercel.run',
     async runCommand(input) { calls.push([input.cmd === 'node' ? 'probe' : 'start', input.env]); this.status = 'running'; return { exitCode: 0 }; },
+    currentSession() {
+      return { runCommand: async input => {
+        calls.push(['inspect-runtime', input.args.at(-1)]);
+        return { exitCode: options.runtimeMatches ? 0 : 1 };
+      } };
+    },
     async updateNetworkPolicy(policy) { calls.push(['policy', policy]); this.status = 'running'; },
     async stop() { calls.push('stop'); this.status = 'stopped'; },
   };
@@ -240,4 +246,20 @@ test('hosted bodyless Stop and JSON cancellation both preserve owner-scoped beha
   });
   assert.equal((await route.DELETE(json)).status, 200);
   assert.deepEqual(calls, [[user.id, undefined], [user.id, attempt]]);
+});
+
+test('existing managed workspace with an old origin requires explicit stop and resume', async t => {
+  const hubOrigin = 'https://example-dev.vercel.app';
+  const { calls, lib } = fixture(t, { managedDev: true, hubOrigin, networkPolicy: 'allow-all' });
+  await assert.rejects(lib.launchTryOnline(user, attempt), { code: 'workspace_restart_required' });
+  assert.ok(calls.some(call => Array.isArray(call) && call[0] === 'inspect-runtime'));
+  assert.ok(!calls.some(call => call === 'stop' || (Array.isArray(call) && ['start', 'policy', '/__seed'].includes(call[0]))));
+});
+
+test('existing managed workspace at the correct origin refreshes policy without restarting', async t => {
+  const hubOrigin = 'https://example-dev.vercel.app';
+  const { calls, lib } = fixture(t, { managedDev: true, hubOrigin, runtimeMatches: true, networkPolicy: 'allow-all' });
+  assert.equal((await lib.launchTryOnline(user, attempt)).resumed, true);
+  assert.ok(calls.some(call => Array.isArray(call) && call[0] === 'policy'));
+  assert.ok(!calls.some(call => call === 'stop' || (Array.isArray(call) && call[0] === 'start')));
 });
