@@ -852,7 +852,7 @@ export default function PlaygroundStudio({ studies }: { studies: StudyOption[] }
               <p className="text-sm font-semibold text-cyan-950">A run is not a benchmark score</p>
               <p className="mt-1 text-xs leading-5 text-cyan-900">
                 One study at this size is an experiment, not evidence about a model. The{" "}
-                <Link href="/results" className="font-semibold underline">leaderboard</Link> reports full runs across every study.
+                <Link href="/research/humanstudy-bench#leaderboard" className="font-semibold underline">leaderboard</Link> reports full runs across every study.
               </p>
             </div>
           </aside>
