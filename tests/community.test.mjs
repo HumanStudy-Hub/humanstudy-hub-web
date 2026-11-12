@@ -13,6 +13,8 @@ const admZip = { default: AdmZip };
 const archive = load('lib/community-archive.ts');
 const communityDeps = { 'adm-zip': admZip, './community-archive': archive };
 const lib = load('lib/community.ts', { './access': access, ...communityDeps });
+const pairedModule = load('lib/community-paired.ts', { './community-archive': archive, './community': lib });
+const pairedDeps = { './community-archive': archive, './community-paired': pairedModule };
 
 // Same cases as HumanStudy-Bench tests/test_community.py.
 test('paper keys match scripts/community.py', () => {
@@ -174,7 +176,7 @@ function setup({ identity = null, recent = 0, existingDir = null } = {}) {
     getIdentity: async () => identity && { ...identity, token_encrypted: community.encryptToken(identity.token) },
     insertContribution: async (row) => { inserted.push(row); },
   };
-  const publish = load('lib/community-publish.ts', { '@octokit/rest': { Octokit: Fake }, './community': community, './community-store': store });
+  const publish = load('lib/community-publish.ts', { '@octokit/rest': { Octokit: Fake }, './community': community, ...pairedDeps, './community-store': store });
   return { Fake, inserted, publish: publish.publishContribution };
 }
 
@@ -305,12 +307,144 @@ test('publish validates actual paths and the exact optional manifest before writ
   assert.ok(call(Fake, 'git.createTree')[0].tree.some(entry => entry.path.endsWith('/report.md')));
 });
 
+const pairedHash = bytes => createHash('sha256').update(bytes).digest('hex');
+
+function pairedZip(options = {}) {
+  const sourcePath = 'sources/open/stimuli.txt';
+  const source = Buffer.from('Public fixture stimulus');
+  const protocol = {
+    schema_version: '1', id: 'fixture',
+    meta: { sources: { stimulus: { file: sourcePath, distribution: {
+      tier: 'hosted', licence: 'CC0-1.0', attribution: 'Fixture Author', sha256: pairedHash(source),
+    } } } },
+    arms: [{id: 'missing', runnable: false, why: 'The task material is missing.'}],
+    distribution: {format: 'hsenv-projection/1', hsenv: '0.8.1', strict: true, placeholder: '░', held: {}, attribution: []},
+  };
+  options.protocol?.(protocol);
+  const protocolBytes = Buffer.from(JSON.stringify(protocol));
+  const program = {
+    schemaVersion: 2, intent: 'reconstruct', source:{title:'Intentional action and side effects',authors:'Joshua Knobe'}, evidence:[], issues: [{ title: 'Missing task material' }],
+    extensions: { scholarly: { profile: 'scholarly-v1', protocol: { path: 'protocol.json', id: 'fixture', sha256: pairedHash(protocolBytes) } } },
+  };
+  options.program?.(program);
+  const study = { schema_version: '1', id: 'fixture', title:'Intentional action and side effects', authors:['Joshua Knobe'], year:2003, doi:'10.1111/1468-0017.00215', version: '2.3.1', quality: 'draft',
+    protocol: { path: 'protocol.json', sha256: 'b'.repeat(64), schema_version: '1' } };
+  options.study?.(study);
+  const sourceManifest = { schemaVersion: 1, files: [{ path: sourcePath, bytes: source.length,
+    sha256: pairedHash(source), license: 'CC0-1.0', attribution: 'Fixture Author' }] };
+  options.sources?.(sourceManifest);
+  const payload = {
+    'program.json': Buffer.from(JSON.stringify(program)), 'study.json': Buffer.from(JSON.stringify(study)),
+    'protocol.json': protocolBytes, 'sources/SOURCE.json': Buffer.from(JSON.stringify(sourceManifest)),
+    [sourcePath]: source, 'artifacts/simulations/fixture/report.md': Buffer.from('Shareable finished report'),
+    ...options.extra,
+  };
+  const files = Object.entries(payload).map(([path, bytes]) => ({ path, bytes: bytes.length, sha256: pairedHash(bytes) }));
+  const metadata = { schemaVersion: 2, kind: 'protocol', paper:{...body().paperMeta,authors:['Joshua Knobe']}, baseRevision: 'c'.repeat(64), files,
+    checks: { schema: true, package: true, simulation: true } };
+  options.metadata?.(metadata);
+  const zip = new AdmZip();
+  for (const [path, bytes] of Object.entries(payload)) zip.addFile(path, bytes);
+  zip.addFile('CONTRIBUTION.json', Buffer.from(JSON.stringify(metadata)));
+  return { zip: zip.toBuffer(), payload, files };
+}
+
+test('paired submission opens a public review proposal with the exact verified payload and original metadata', async () => {
+  const { Fake, publish } = setup();
+  const fixture = pairedZip();
+  const result = await publish({ userId, zip: fixture.zip, body: body({ publicReviewed: true, paperMeta:{...body().paperMeta,authors:['Joshua Knobe']} }) });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.kind, 'protocol');
+  const tree = call(Fake,'git.createTree')[0].tree;
+  const blobs = call(Fake,'git.createBlob');
+  for (const [path, bytes] of Object.entries(fixture.payload)) {
+    const index = tree.findIndex(file => file.path.endsWith('/' + path));
+    assert.ok(index >= 0, path);
+    assert.deepEqual(Buffer.from(blobs[index].content,'base64'), bytes);
+  }
+  const metadata = committedJson(Fake,'CONTRIBUTION.json');
+  assert.deepEqual(metadata.files, fixture.files);
+  assert.equal(metadata.kind, 'protocol');
+  assert.equal(metadata.studyVersion, '2.3.1');
+  assert.equal(metadata.baseRevision, 'c'.repeat(64));
+  assert.equal(metadata.paper.authors[0], 'Joshua Knobe');
+  assert.equal(metadata.contributor.name, 'Ada Lovelace');
+  assert.deepEqual(metadata.checks, { schema:false,package:null,simulation:null });
+  assert.match(call(Fake,'pulls.create')[0].body, /User submitted.*maintainer review/);
+  assert.ok(tree.every(file => file.path.includes('/proposals/')));
+});
+
+test('paired consent, source policy, exact binding and held material are enforced before GitHub writes', async () => {
+  const { Fake, publish } = setup();
+  const submit = (options, reviewed = true) => publish({
+    userId, zip: pairedZip(options).zip, body: body({ publicReviewed: reviewed, paperMeta:{...body().paperMeta,authors:['Joshua Knobe']} }),
+  });
+  assert.equal((await submit({}, false)).error, 'public_review_required');
+  assert.equal((await publish({ userId, zip: pairedZip().zip, body: body({
+    publicReviewed: true, baseRevision:'f'.repeat(64), paperMeta: {...body().paperMeta, authors:['Joshua Knobe']},
+  }) })).error, 'invalid_zip');
+  assert.equal((await publish({ userId, zip: pairedZip().zip, body: body({
+    publicReviewed: true, paperMeta: {...body().paperMeta, authors:['Impostor'],title:'Another paper'},
+  }) })).error, 'invalid_zip');
+  for (const options of [
+    { metadata: meta => delete meta.files },
+    { metadata: meta => {meta.files[0].sha256 = 'f'.repeat(64)} },
+    { extra: {'sources/quarantine/secret.txt':Buffer.from('Private')} },
+    { extra: {'sources/open/unlicensed.txt':Buffer.from('Unlisted')} },
+    { extra: {'artifacts/simulations/fixture/records.jsonl':Buffer.from('{}')} },
+    { extra: {'review/fidelity-review-supplied.md':Buffer.from('Reviewer')} },
+    { protocol: protocol => {protocol.distribution.held = { field: {source:'stimulus'} }} },
+    { protocol: protocol => {protocol.distribution.rehydrated = true} },
+    { protocol: protocol => {protocol.data = { item: '░░░' }} },
+    { protocol: protocol => {protocol.meta.sources.stimulus.distribution.tier = 'user'} },
+    { protocol: protocol => {protocol.meta.sources.stimulus.distribution.sha256 = 'f'.repeat(64)} },
+    { program: program => {program.extensions.scholarly.protocol.sha256 = 'f'.repeat(64)} },
+    { program: program => {program.evidence = [{path:'sources/open/missing.txt'}]} },
+    { protocol: protocol => {protocol.meta.sources = {}} },
+    { study: study => {study.quality = 'high_fidelity'; study.fidelity = {signed_by:'Uploader'}} },
+    { sources: manifest => {manifest.files[0].license = 'CC-BY-NC-4.0'} },
+  ]) assert.equal((await submit(options)).error, 'invalid_zip');
+  assert.equal(Fake.calls.length, 0);
+});
+
+test('Desktop paired export passes Web validation and reaches the public proposal writer byte-for-byte', {
+  skip: !process.env.HUMANSTUDY_DESKTOP_PAIRED_ZIP,
+}, async () => {
+  const { Fake, publish } = setup();
+  const zip = fs.readFileSync(process.env.HUMANSTUDY_DESKTOP_PAIRED_ZIP);
+  const original = lib.readContributionZip(zip);
+  assert.deepEqual(original.errors, []);
+  const metadata = JSON.parse(original.files.find(file => file.name === 'CONTRIBUTION.json').data.toString());
+  const result = await publish({ userId, zip, body: body({
+    publicReviewed: true, paperMeta: metadata.paper,
+  }) });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.kind, 'protocol');
+  const tree = call(Fake,'git.createTree')[0].tree;
+  const blobs = call(Fake,'git.createBlob');
+  assert.equal(tree.length, original.files.length);
+  const pathPattern = new RegExp('/proposals/' + result.id + '/');
+  for (const file of original.files.filter(file => file.name !== 'CONTRIBUTION.json')) {
+    const index = tree.findIndex(entry => entry.path.split(pathPattern)[1] === file.name);
+    assert.ok(index >= 0, file.name);
+    assert.deepEqual(Buffer.from(blobs[index].content, 'base64'), file.data);
+    assert.doesNotMatch(file.data.toString(), /PRIVATE-CANARY|private annotation|Private raw participant row/i);
+  }
+  assert.ok(!tree.some(file => /\/(?:private|runs|researcher)\//i.test(file.path)));
+  const published = committedJson(Fake, 'CONTRIBUTION.json');
+  assert.equal(published.studyVersion, '1.2.3');
+  assert.equal(published.paper.authors[0], 'A. Example');
+  assert.equal(published.contributor.name, 'Ada Lovelace');
+  assert.equal(published.checks.schema, false);
+  assert.match(call(Fake,'pulls.create')[0].body, /User submitted/);
+});
+
 test('a rejected GitHub token gives a plain-language error', async () => {
   process.env.GITHUB_TOKEN = 'bot-token';
   const community = load('lib/community.ts', { './access': access, ...communityDeps });
   const rejecting = class { constructor() { this.rest = { repos: { get: async () => { const e = new Error('Bad credentials'); e.status = 401; throw e; } } }; } };
   const mod = load('lib/community-publish.ts', {
-    '@octokit/rest': { Octokit: rejecting }, './community': community,
+    '@octokit/rest': { Octokit: rejecting }, './community': community, ...pairedDeps,
     './community-store': { countRecentContributions: async () => 0, getIdentity: async () => ({ login: 'Ada', token_encrypted: community.encryptToken('gho') }), insertContribution: async () => {} },
   });
   const r = await mod.publishContribution({ userId, zip: zipOf(), body: body() });
