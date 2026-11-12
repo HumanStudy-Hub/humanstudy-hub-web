@@ -108,6 +108,9 @@ test('Forum introduces the community before its two original featured posts', as
   const ForumPage = load('app/forum/page.tsx').default;
   const html = render(ForumPage);
   assert.match(html, /<h1[^>]*>Community forum<\/h1>/);
+  const alias = load('app/blog/page.tsx');
+  assert.equal(render(alias.default), html);
+  assert.equal(alias.metadata.alternates.canonical, '/forum');
   assert.ok(html.indexOf('Community forum') < html.indexOf('Featured posts'));
   assert.equal((html.match(/<article\b/g) || []).length, 2);
   const posts = load('lib/forum-posts.ts');

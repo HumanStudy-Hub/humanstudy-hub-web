@@ -1,5 +1,2 @@
-import { redirect } from "next/navigation";
-
-export default function BlogRedirect() {
-  redirect("/forum");
-}
+// Old clients may retain the former permanent /forum → /blog redirect.
+export { default, metadata } from "../forum/page";
