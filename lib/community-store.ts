@@ -96,3 +96,13 @@ export async function findOwnedContribution(id: string, ownerId: string): Promis
   const rows = await communityRest<ContributionRow[]>(`contributions?select=*&id=${eq(id)}&owner_id=${eq(ownerId)}&limit=1`);
   return rows[0] ?? null;
 }
+
+export async function refreshOwnedContributionStatus(row: ContributionRow, status: ContributionStatus): Promise<ContributionStatus> {
+  if (status === row.status) return status;
+  const rows = await communityRest<Pick<ContributionRow, "status">[]>(
+    `contributions?select=status&id=${eq(row.id)}&owner_id=${eq(row.owner_id)}&updated_at=${eq(row.updated_at)}`,
+    { method: "PATCH", body: JSON.stringify({ status, error: null, updated_at: new Date().toISOString() }) },
+    "return=representation",
+  );
+  return rows[0]?.status ?? (await findOwnedContribution(row.id, row.owner_id))?.status ?? row.status;
+}

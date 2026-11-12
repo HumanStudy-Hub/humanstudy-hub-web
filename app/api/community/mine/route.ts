@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { fail, requireHubUser } from "@/lib/community-auth";
-import { reconcileCommunityCredit, UUID } from "@/lib/community-credit";
-import { CONTRIBUTIONS_PAGE_SIZE, findOwnedContribution, getIdentity, listMine } from "@/lib/community-store";
+import { readCommunitySubmissionStatus, reconcileCommunityCredit, UUID } from "@/lib/community-credit";
+import { CONTRIBUTIONS_PAGE_SIZE, findOwnedContribution, getIdentity, listMine, refreshOwnedContributionStatus } from "@/lib/community-store";
 
 export const runtime = "nodejs";
 
@@ -37,7 +37,9 @@ export async function POST(request: Request) {
     const row = await findOwnedContribution(body.id, user.id);
     if (!row) return fail(404, "unknown_submission", "That contribution is unavailable.");
     const credit = await reconcileCommunityCredit(row);
-    return NextResponse.json({ status: row.status, contributorId: credit?.contributor_id ?? null },
+    const latest = credit ? "merged" : await readCommunitySubmissionStatus(row);
+    const status = await refreshOwnedContributionStatus(row, latest);
+    return NextResponse.json({ status, contributorId: credit?.contributor_id ?? null },
       { headers: { "Cache-Control": "no-store" } });
   } catch {
     return fail(503, "credit_unavailable", "Contribution status is temporarily unavailable.");

@@ -229,11 +229,27 @@ test('without a connected GitHub account the bot opens the PR with a signed Hub 
   assert.equal(call(Fake, 'git.updateRef').length, 0, 'immutable proposals are never force-pushed');
   const pr = call(Fake, 'pulls.create')[0];
   assert.equal(pr.head, `HumanStudy-Hub:community/${r.id}`);
+  assert.equal(pr.base, 'main');
   assert.equal(pr.title, 'Community: Intentional action and side effects (2003) — Ada Lovelace');
   assert.match(pr.body, /Ada Lovelace/);
   assert.match(pr.body, /HumanStudy Hub/);
   assert.equal(inserted.length, 1);
   assert.deepEqual([inserted[0].owner_id, inserted[0].status, inserted[0].pr_number, inserted[0].folder], [userId, 'pr_open', 42, r.id]);
+});
+
+test('a Vercel preview opens the contribution against Bench dev', async () => {
+  const previous = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = 'preview';
+  try {
+    const { Fake, publish } = setup();
+    const result = await publish({ userId, zip: zipOf(), body: body() });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(call(Fake, 'git.getRef')[0].ref, 'heads/dev');
+    assert.equal(call(Fake, 'pulls.create')[0].base, 'dev');
+  } finally {
+    if (previous === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = previous;
+  }
 });
 
 test('with a connected GitHub account the PR comes from the user\'s fork', async () => {

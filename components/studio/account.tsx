@@ -83,6 +83,7 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
                 <Link className={s.back} href={accountPath(returnTo, '/auth/reset?mode=change')}>Change password</Link>
                 <Link className={s.back} href="https://forum.humanstudy-hub.com/">Forum</Link>
                 <Link className={s.back} href="/build/projects">Your projects</Link>
+                <Link className={s.back} href="/contribute#my-contributions">My contributions</Link>
               </nav>
             )}
             <button className={s.button} disabled={busy} onClick={() => void signout()}>

@@ -107,12 +107,12 @@ export default function ContributeUploadForm() {
     }
   }
   if(!checked)return <p className="text-sm text-[var(--site-muted)]">Checking sign-in…</p>;
-  if(!user)return <p className="text-sm text-[var(--foreground)]"><Link href="/build/projects" className="font-semibold text-[var(--site-accent)] underline">Sign in to HumanStudy Hub</Link> to contribute. A GitHub account is optional.</p>;
+  if(!user)return <p className="text-sm text-[var(--foreground)]"><Link href="/account" className="font-semibold text-[var(--site-accent)] underline">Sign in to HumanStudy Hub</Link> to contribute. A GitHub account is optional.</p>;
   if (submitted) return <><div className="space-y-2 text-sm leading-6">
     <p role="status"><strong>User submitted.</strong>{" "}
       {creditStatus?.contributorId
         ? <Link href={`/contributors/${creditStatus.contributorId}`} className="text-[var(--site-accent)] underline">View your public contribution credit</Link>
-        : creditStatus?.status === "merged" ? "Public credit is pending verification."
+        : creditStatus?.status === "merged" ? "Public credit is pending publication and verification."
         : creditStatus?.status === "rejected" ? "The submission was closed."
         : creditStatus?.status === "changes_requested" ? "A reviewer requested changes."
         : creditStatus?.status === "checks_failed" ? "The submission checks need maintainer attention."

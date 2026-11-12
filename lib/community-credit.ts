@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { communityRest, storeConfigured, type ContributionRow } from "./community-store";
+import { communityRest, storeConfigured, type ContributionRow, type ContributionStatus } from "./community-store";
 import type { ResearchIndex } from "./research";
 
 export const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -59,6 +59,20 @@ async function publicJson<T>(url: string): Promise<T | null> {
 
 type Review = { status?: string; proposalId?: string; paperKey?: string; revision?: string; headCommit?: string };
 type Proposal = { proposalId?: string; paperKey?: string; contributor?: { name?: string } };
+
+export async function readCommunitySubmissionStatus(row: ContributionRow): Promise<ContributionStatus> {
+  if (row.branch !== `community/${row.id}` || !row.pr_number || !Number.isSafeInteger(row.pr_number) || row.pr_number < 1) return row.status;
+  const repo = process.env.COMMUNITY_REPO || BENCH;
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("Community repository is invalid.");
+  const pull = await publicJson<{
+    state?: string; merged?: boolean; head?: { ref?: string }; labels?: { name?: string }[];
+  }>(`https://api.github.com/repos/${repo}/pulls/${row.pr_number}`);
+  if (!pull || pull.head?.ref !== row.branch) throw new Error("The submission could not be verified on GitHub.");
+  if (pull.merged || pull.labels?.some(label => label.name === "community:accepted")) return "merged";
+  if (pull.state === "closed") return "rejected";
+  if (pull.state === "open") return "pr_open";
+  return row.status;
+}
 
 /** Derives public credit from the exact accepted Hub proposal on the published Bench revision. */
 export async function verifyCommunityCredit(row: Pick<ContributionRow, "id" | "paper_key" | "pr_number" | "branch">) {
