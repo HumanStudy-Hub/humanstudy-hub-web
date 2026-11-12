@@ -296,10 +296,10 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
   await page.screenshot({ path: path.join(output, 'projects-dark.png'), fullPage: true });
   await settings.getByRole('combobox', { name: /^Appearance/ }).selectOption('light');
   await settings.getByRole('combobox', { name: /^Density/ }).selectOption('compact');
-  assert.equal(await page.locator('[data-density]').first().getAttribute('data-density'), 'compact');
+  await page.waitForFunction(() => document.querySelector('[data-density]')?.getAttribute('data-density') === 'compact');
   await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
   await visit('/build/projects');
-  assert.equal(await page.locator('[data-density]').first().getAttribute('data-density'), 'compact');
+  await page.waitForFunction(() => document.querySelector('[data-density]')?.getAttribute('data-density') === 'compact');
   checked('Workspace preferences, dark appearance and density persistence');
 
   await visit('/build/' + workspaceId);
