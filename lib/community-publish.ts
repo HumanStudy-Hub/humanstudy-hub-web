@@ -135,7 +135,7 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
   try {
     // 5. A proposal is an immutable submission, not another visible version of the paper.
     const upstream = await api.rest.repos.get({ owner, repo });
-    const defaultBranch = upstream.data.default_branch;
+    const baseBranch = process.env.VERCEL_ENV === "preview" ? "dev" : upstream.data.default_branch;
     const id = randomUUID();
     const folder = id;
     const branch = `community/${id}`;
@@ -187,7 +187,7 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
     files.push({ path: `${root}/CONTRIBUTION.json`, content: Buffer.from(JSON.stringify(contribution, null, 2) + "\n") });
 
     // 6. Where the branch lives: the user's fork, or the repository itself for the bot.
-    const baseRef = await api.rest.git.getRef({ owner, repo, ref: `heads/${defaultBranch}` });
+    const baseRef = await api.rest.git.getRef({ owner, repo, ref: `heads/${baseBranch}` });
     const baseSha = baseRef.data.object.sha;
     const baseCommit = await api.rest.git.getCommit({ owner, repo, commit_sha: baseSha });
     let target = { owner, repo };
@@ -236,7 +236,7 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
       pr = open.data[0];
       await api.rest.pulls.update({ owner, repo, pull_number: pr.number, title: prTitle, body: prBody });
     } else {
-      pr = (await api.rest.pulls.create({ owner, repo, title: prTitle, head, base: defaultBranch, body: prBody })).data;
+      pr = (await api.rest.pulls.create({ owner, repo, title: prTitle, head, base: baseBranch, body: prBody })).data;
     }
 
     // 9. Remember it.

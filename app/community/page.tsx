@@ -21,6 +21,7 @@ export default async function CommunityLeaderboard({ searchParams }: { searchPar
     <header className={styles.heading}>
       <h1>Community leaderboard</h1>
       <p className={styles.lede}>Top 50 study contributions or contributors, ranked by helpful votes.</p>
+      <Link href="/contribute" className="mt-4 inline-block text-sm font-semibold text-[var(--site-accent)] underline">Contribute a study</Link>
     </header>
     <nav aria-label="Leaderboard views" className="flex flex-wrap gap-5 text-sm">
       <Link href="/community" aria-current={!people ? "page" : undefined} className="text-[var(--site-accent)] underline">Study contributions</Link>

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { communityRest, storeConfigured, type ContributionRow } from "./community-store";
+import { communityRest, storeConfigured, type ContributionRow, type ContributionStatus } from "./community-store";
 import type { ResearchIndex } from "./research";
 
 export const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -49,8 +49,9 @@ export async function setHelpful(id: string, revision: string, account: string, 
 }
 
 async function publicJson<T>(url: string): Promise<T | null> {
+  const token = new URL(url).origin === "https://api.github.com" ? process.env.GITHUB_TOKEN : undefined;
   const response = await fetch(url, {
-    cache: "no-store", headers: { Accept: "application/json" }, signal: AbortSignal.timeout(5000),
+    cache: "no-store", redirect: "error", headers: { Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, signal: AbortSignal.timeout(5000),
   });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error("Bench evidence is temporarily unavailable.");
@@ -59,6 +60,49 @@ async function publicJson<T>(url: string): Promise<T | null> {
 
 type Review = { status?: string; proposalId?: string; paperKey?: string; revision?: string; headCommit?: string };
 type Proposal = { proposalId?: string; paperKey?: string; contributor?: { name?: string } };
+type PullReview = { user?: { id?: number }; state: string };
+const decisionStates = new Set(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"]);
+const failingChecks = new Set(["failure", "timed_out", "cancelled", "startup_failure", "action_required"]);
+
+async function hasRequestedChanges(pullUrl: string): Promise<boolean> {
+  const decisions = new Map<number, string>();
+  for (let page = 1; page <= 5; page++) {
+    // GitHub returns reviews in chronological order. Comments do not replace a decision.
+    const reviews = await publicJson<PullReview[]>(`${pullUrl}/reviews?per_page=100&page=${page}`);
+    if (!Array.isArray(reviews)) break;
+    for (const { user, state } of reviews) {
+      if (user?.id && decisionStates.has(state)) decisions.set(user.id, state);
+    }
+    if (reviews.length < 100) return [...decisions.values()].includes("CHANGES_REQUESTED");
+  }
+  throw new Error("The submission's review history is incomplete.");
+}
+
+export async function readCommunitySubmissionStatus(row: ContributionRow): Promise<ContributionStatus> {
+  if (row.branch !== `community/${row.id}` || !row.pr_number || !Number.isSafeInteger(row.pr_number) || row.pr_number < 1) return row.status;
+  const repo = process.env.COMMUNITY_REPO || BENCH;
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error("Community repository is invalid.");
+  const repoUrl = `https://api.github.com/repos/${repo}`;
+  const pullUrl = `${repoUrl}/pulls/${row.pr_number}`;
+  const pull = await publicJson<{
+    state?: string; merged?: boolean; head?: { ref?: string; sha?: string }; labels?: { name?: string }[];
+  }>(pullUrl);
+  if (!pull || pull.head?.ref !== row.branch) throw new Error("The submission could not be verified on GitHub.");
+  if (pull.merged || pull.labels?.some(label => label.name === "community:accepted")) return "merged";
+  if (pull.state === "closed") return "rejected";
+  const sha = pull.head.sha;
+  if (pull.state !== "open" || !sha || !COMMIT.test(sha)) throw new Error("The submission's current commit is unavailable.");
+  const [changesRequested, checks, status] = await Promise.all([
+    hasRequestedChanges(pullUrl),
+    publicJson<{ total_count: number; check_runs: { conclusion?: string; head_sha?: string }[] }>(`${repoUrl}/commits/${sha}/check-runs?filter=latest&per_page=100`),
+    publicJson<{ state: string }>(`${repoUrl}/commits/${sha}/status`),
+  ]);
+  if (changesRequested) return "changes_requested";
+  if (status?.state === "failure" || status?.state === "error" || checks?.check_runs.some(check =>
+    check.head_sha === sha && failingChecks.has(check.conclusion ?? ""))) return "checks_failed";
+  if (!status || !checks || checks.total_count > checks.check_runs.length) throw new Error("The submission's check status is incomplete.");
+  return "pr_open";
+}
 
 /** Derives public credit from the exact accepted Hub proposal on the published Bench revision. */
 export async function verifyCommunityCredit(row: Pick<ContributionRow, "id" | "paper_key" | "pr_number" | "branch">) {

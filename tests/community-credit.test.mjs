@@ -114,18 +114,54 @@ test('credit follows the accepted immutable revision even after a newer one beco
   } finally { globalThis.fetch = oldFetch; }
 });
 
+test('an owned submission recheck uses the current GitHub pull state', async () => {
+  const lib = load('lib/community-credit.ts', { './community-store': {} });
+  const branch = 'community/' + id;
+  const row = { id, branch, pr_number: 42, status: 'checks_failed' };
+  const oldFetch = globalThis.fetch;
+  let pull = { head: { ref: branch, sha: head }, state: 'open', labels: [{ name: 'community:needs-review' }] };
+  let reviews = [], checks = [];
+  try {
+    globalThis.fetch = async url => {
+      const path = new URL(url).pathname;
+      if (path.endsWith('/reviews')) return Response.json(reviews);
+      if (path.endsWith(`/commits/${head}/check-runs`)) return Response.json({total_count:checks.length,check_runs:checks});
+      if (path.endsWith(`/commits/${head}/status`)) return Response.json({state:'success'});
+      if (path.endsWith('/pulls/42')) return Response.json(pull);
+      throw new Error(`Unexpected path ${path}`);
+    };
+    assert.equal(await lib.readCommunitySubmissionStatus(row), 'pr_open');
+    reviews = [{user:{id:123},state:'CHANGES_REQUESTED'},{user:{id:123},state:'COMMENTED'}];
+    assert.equal(await lib.readCommunitySubmissionStatus(row), 'changes_requested');
+    reviews.push({user:{id:123},state:'APPROVED'});
+    assert.equal(await lib.readCommunitySubmissionStatus({ ...row, status: 'changes_requested' }), 'pr_open');
+    checks = [{head_sha:head,conclusion:'failure'}];
+    assert.equal(await lib.readCommunitySubmissionStatus(row), 'checks_failed');
+    checks = [{head_sha:commit,conclusion:'failure'}];
+    assert.equal(await lib.readCommunitySubmissionStatus(row), 'pr_open');
+    pull = { ...pull, state: 'closed' };
+    assert.equal(await lib.readCommunitySubmissionStatus(row), 'rejected');
+    pull = { ...pull, merged: true };
+    assert.equal(await lib.readCommunitySubmissionStatus(row), 'merged');
+    pull = { ...pull, head: { ref: 'another-branch' } };
+    await assert.rejects(lib.readCommunitySubmissionStatus(row), /could not be verified/);
+  } finally { globalThis.fetch = oldFetch; }
+});
+
 
 test('owned history pagination and receipt recheck cannot access another user', async () => {
   const { NextResponse } = require('next/server');
-  let pageSeen, ownerSeen, reconciled = 0;
-  const row = {id,paper_key:paperKey,status:'merged',owner_id:owner,created_at:'2026-11-11T00:00:00Z'};
+  let pageSeen, ownerSeen, refreshed, reconciled = 0;
+  const row = {id,paper_key:paperKey,status:'pr_open',owner_id:owner,created_at:'2026-11-11T00:00:00Z'};
   const auth = {requireHubUser:async () => ({id:owner}),fail:(status,error,message)=>NextResponse.json({error,message},{status})};
   const route = load('app/api/community/mine/route.ts', {
     '@/lib/community-auth':auth,
-    '@/lib/community-credit':{UUID:/^[a-f0-9-]{36}$/,reconcileCommunityCredit:async () => {reconciled++;return {contributor_id:other};}},
+    '@/lib/community-credit':{UUID:/^[a-f0-9-]{36}$/,reconcileCommunityCredit:async () => {reconciled++;return null;},
+      readCommunitySubmissionStatus:async () => 'merged'},
     '@/lib/community-store':{CONTRIBUTIONS_PAGE_SIZE:25,getIdentity:async()=>null,
       listMine:async (account,page) => {ownerSeen=account;pageSeen=page;return Array.from({length:26},()=>row);},
-      findOwnedContribution:async (submission,account)=>submission===id&&account===owner?row:null},
+      findOwnedContribution:async (submission,account)=>submission===id&&account===owner?row:null,
+      refreshOwnedContributionStatus:async (record,status)=>{refreshed=record;return status;}},
   });
   const response=await route.GET(new Request('https://hub.test/api/community/mine?page=2&owner_id='+voter));
   const result=await response.json();
@@ -134,7 +170,8 @@ test('owned history pagination and receipt recheck cannot access another user', 
   assert.equal((await route.GET(new Request('https://hub.test/api/community/mine?page=-1'))).status,400);
   const post=body=>route.POST(new Request('https://hub.test/api/community/mine',{method:'POST',body:JSON.stringify(body)}));
   assert.equal((await post({id:voter})).status,404);assert.equal(reconciled,0);
-  assert.deepEqual(await (await post({id})).json(),{status:'merged',contributorId:other});assert.equal(reconciled,1);
+  assert.deepEqual(await (await post({id})).json(),{status:'merged',contributorId:null});assert.equal(reconciled,1);
+  assert.equal(refreshed,row);
 });
 
 test('cookie-authenticated reads work without Origin but writes retain origin protection', async () => {

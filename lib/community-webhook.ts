@@ -24,7 +24,6 @@ export function statusChangeFor(event: string, p: Payload): StatusChange | null 
     const accepted = Array.isArray(pr.labels) && pr.labels.some((label: { name?: string }) => label.name === "community:accepted");
     if (p.action === "closed") return { match, status: pr.merged || accepted ? "merged" : "rejected", error: null };
     if (p.action === "labeled" && p.label?.name === "community:accepted") return { match, status: "merged", error: null };
-    if (p.action === "labeled" && p.label?.name === "community:needs-review") return { match, status: "changes_requested", error: "The source review needs a maintainer decision; the existing recommended version is unchanged." };
     if (p.action === "reopened" || p.action === "synchronize") return { match, status: "pr_open", error: null };
     return null;
   }

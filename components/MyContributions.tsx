@@ -7,7 +7,7 @@ export type Submission = { id: string; paperKey: string; status: string; prUrl: 
 type Receipt = { status: string; contributorId: string | null };
 const labels: Record<string, string> = {
   queued: "Queued for submission", pr_open: "Review pending", checks_failed: "Checks need attention",
-  changes_requested: "Changes requested", merged: "Merged · public credit pending verification", rejected: "Closed",
+  changes_requested: "Changes requested", merged: "Merged · public credit pending publication and verification", rejected: "Closed",
 };
 
 export default function MyContributions({ previewRows }: { previewRows?: Submission[] } = {}) {
@@ -68,7 +68,7 @@ export default function MyContributions({ previewRows }: { previewRows?: Submiss
   }
 
   return <section aria-labelledby="my-contributions" className="mt-10 border-t border-[var(--site-line)] pt-6 text-sm">
-    <h2 id="my-contributions" className="text-lg font-semibold">My contributions</h2>
+    <h2 id="my-contributions" className="scroll-mt-24 text-lg font-semibold">My contributions</h2>
     {error && <p role="alert" className="mt-3">{error} <button type="button" onClick={() => load(page)} className="underline">Retry</button></p>}
     {loading ? <p role="status" className="mt-3">Loading contributions…</p> : !error && rows.length === 0 ? <p className="mt-3">No submissions on this page.</p> : null}
     {!loading && <ul className="divide-y divide-[var(--site-line)]">
