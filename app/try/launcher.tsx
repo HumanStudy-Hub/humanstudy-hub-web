@@ -18,18 +18,21 @@ export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: 
   const [message, setMessage] = useState("");
   const stopRequested = useRef(false);
   const activeAttempt = useRef<string | null>(null);
+  const actionRevision = useRef(0);
 
   async function checkStatus(signal?: AbortSignal) {
+    const revision = actionRevision.current;
     try {
       const response = await fetch("/api/try", { cache: "no-store", signal });
       if (response.status === 401) return;
       const data = await response.json() as Reply;
+      if (revision !== actionRevision.current || signal?.aborted) return;
       if (!response.ok || !data.status) throw Error(data.message || "Could not check your workspace status.");
       setWorkspace(data.status);
       if (data.status !== "running") setUrl("");
-      if (data.status === "stopped") setPhase(current => current === "cancelling" ? "idle" : current);
+      if (data.status === "stopped" || data.status === "new") setPhase(current => current === "cancelling" ? "idle" : current);
     } catch (error) {
-      if (!signal?.aborted) setMessage(error instanceof Error ? error.message : "Could not check your workspace status.");
+      if (revision === actionRevision.current && !signal?.aborted) setMessage(error instanceof Error ? error.message : "Could not check your workspace status.");
     }
   }
 
@@ -40,6 +43,7 @@ export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: 
   }, []);
 
   async function start() {
+    actionRevision.current++;
     setPhase("starting");
     setMessage("");
     stopRequested.current = false;
@@ -79,6 +83,7 @@ export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: 
   }
 
   async function stop() {
+    actionRevision.current++;
     stopRequested.current = true;
     setPhase("stopping");
     setUrl("");
@@ -128,8 +133,8 @@ export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: 
           </label>}
           <button className={styles.button} disabled={codeRequired && !code.trim()}>{action}</button>
         </form>}
-        {(phase === "starting" || (!busy && (workspace === "running" || workspace === "transition"))) &&
-          <button type="button" className="mr-4 underline" onClick={() => void stop()}>{phase === "starting" ? "Cancel startup" : "Stop workspace"}</button>}
+        {(phase === "starting" || phase === "cancelling" || (!busy && (workspace === "running" || workspace === "transition"))) &&
+          <button type="button" className="mr-4 underline" onClick={() => void stop()}>{phase === "starting" ? "Cancel startup" : phase === "cancelling" ? "Retry stop" : "Stop workspace"}</button>}
         {(!busy || phase === "cancelling") && <button type="button" className="mr-4 underline" onClick={() => { setMessage(""); void checkStatus(); }}>Check status</button>}
         <Link href="/download" className="underline">Desktop app</Link>
       </div>
