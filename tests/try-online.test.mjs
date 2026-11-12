@@ -41,24 +41,47 @@ function fixture(t, options = {}) {
     }
   }
   let exists = !options.fresh;
+  let stopFailed = false;
   const sandbox = {
     status: options.stopped ? 'stopped' : 'running',
+    currentSnapshotId: 'snap_previous',
     expiresAt: new Date('2030-01-01T01:00:00Z'),
     domain: () => 'https://workspace.vercel.run',
     async runCommand(input) { calls.push([input.cmd === 'node' ? 'probe' : 'start', input.env]); this.status = 'running'; return { exitCode: 0 }; },
     currentSession() {
-      return { runCommand: async input => {
+      return { sessionId: 'fixture-session', runCommand: async input => {
         calls.push(['inspect-runtime', input.args.at(-1)]);
         return { exitCode: options.runtimeMatches ? 0 : 1 };
       } };
     },
     async updateNetworkPolicy(policy) { calls.push(['policy', policy]); this.status = 'running'; },
-    async stop() { calls.push('stop'); this.status = 'stopped'; },
+    async stop() {
+      calls.push('stop');
+      if (options.stopReadback) { stopFailed = true; throw new Error('fixture provider stop timed out'); }
+      this.status = 'stopped';
+    },
   };
   const Sandbox = {
     async get(input) {
       calls.push(['get', input.name, input.resume]);
       if (!exists) throw new APIError(404);
+      if (stopFailed) {
+        if (options.stopReadback === 'unreachable') throw new Error('fixture provider readback failed');
+        if (options.stopReadback === 'missing') throw new APIError(404);
+        return { ...sandbox, status: options.stopReadback === 'running' ? 'running' : 'stopped',
+          currentSnapshotId: options.stopReadback === 'old-snapshot' ? 'snap_previous' : 'snap_saved',
+          currentSession: () => ({ sessionId: options.stopReadback === 'different-session' ? 'another-session' : 'fixture-session' }),
+          listSnapshots: async () => {
+            calls.push('list-snapshots');
+            if (options.stopReadback === 'snapshot-unreachable') throw new Error('fixture snapshot list unavailable');
+            return { snapshots: [{
+              id: options.stopReadback === 'snapshot-missing' ? 'snap_different' : 'snap_saved',
+              sourceSessionId: options.stopReadback === 'snapshot-other-source' ? 'another-session' : 'fixture-session',
+              status: options.stopReadback === 'snapshot-failed' ? 'failed' : 'created',
+            }] };
+          },
+        };
+      }
       return sandbox;
     },
     async create(input) { calls.push(['create', input.networkPolicy]); exists = true; return sandbox; },
@@ -144,6 +167,26 @@ test('an existing matching workspace reopens without restarting', async t => {
   assert.ok(calls.includes('stop'));
   assert.equal(calls.at(-1)[1].release_slot, true);
 });
+
+test('Stop readback releases only when the exact session stopped and saved a new snapshot', async t => {
+  const { calls, lib } = fixture(t, { stopReadback: 'saved' });
+  assert.deepEqual(await lib.stopTryOnline(user.id), { pending: false });
+  const reads = calls.filter(([name]) => name === 'get');
+  assert.equal(reads.length, 2);
+  assert.deepEqual(reads[0], reads[1], 'readback does not resume the workspace');
+  assert.ok(calls.includes('list-snapshots'));
+  assert.equal(calls.at(-1)[1].release_slot, true);
+});
+
+for (const stopReadback of ['running', 'unreachable', 'missing', 'old-snapshot', 'different-session',
+  'snapshot-failed', 'snapshot-missing', 'snapshot-other-source', 'snapshot-unreachable']) {
+  test('Stop retains its slot without confirmed saved state: ' + stopReadback, async t => {
+    const { calls, lib } = fixture(t, { stopReadback });
+    await assert.rejects(lib.stopTryOnline(user.id), { code: 'stop_failed' });
+    assert.equal(calls.at(-1)[1].release_slot, false);
+    assert.equal(calls.filter(([name]) => name === 'get').length, 2);
+  });
+}
 
 test('reopen refuses a foreign account and never seeds an unverified owner', async t => {
   const wrong = fixture(t, { storedEmail: 'someone-else@example.test' });

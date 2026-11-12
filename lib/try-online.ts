@@ -221,6 +221,16 @@ async function stopRunning(sandbox: Sandbox) {
   if (running(sandbox)) await sandbox.stop({ signal: AbortSignal.timeout(15_000) });
 }
 
+async function savedStop(name: string, attempted: { sessionId: string; snapshotId?: string }): Promise<boolean> {
+  const signal = AbortSignal.timeout(8000);
+  const actual = await existing(name, signal);
+  const snapshotId = actual?.currentSnapshotId;
+  if (actual?.status !== "stopped" || actual.currentSession().sessionId !== attempted.sessionId
+    || !snapshotId || snapshotId === attempted.snapshotId) return false;
+  const { snapshots } = await actual.listSnapshots({ limit: 3, sortOrder: "desc", signal });
+  return snapshots.some(snapshot => snapshot.id === snapshotId && snapshot.sourceSessionId === attempted.sessionId && snapshot.status === "created");
+}
+
 /** Stops the current session while retaining its workspace. A stop during launch records cancellation. */
 export async function stopTryOnline(userId: string, attempt?: string): Promise<{ pending: boolean; ignored?: boolean }> {
   const config = configuration(), name = sandboxName(userId);
@@ -229,13 +239,22 @@ export async function stopTryOnline(userId: string, attempt?: string): Promise<{
   if (lease === "ignored") return { pending: false, ignored: true };
   if (!lease) throw BUSY();
   let release = false;
+  let prior: { sessionId: string; snapshotId?: string } | undefined;
   try {
     const sandbox = await existing(name);
+    if (sandbox && running(sandbox)) {
+      prior = { sessionId: sandbox.currentSession().sessionId, snapshotId: sandbox.currentSnapshotId };
+    }
     if (sandbox) await stopRunning(sandbox);
     release = true;
     return { pending: false };
   } catch (error) {
     if (error instanceof TryError) throw error;
+    // The provider can finish saving after our stop request times out.
+    if (prior && await savedStop(name, prior).catch(() => false)) {
+      release = true;
+      return { pending: false };
+    }
     throw new TryError(502, "stop_failed", "Could not stop the workspace. Please try again.");
   } finally {
     await finish(config, name, lease, release).catch(() => false);
