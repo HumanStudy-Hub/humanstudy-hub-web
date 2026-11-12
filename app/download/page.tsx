@@ -86,7 +86,7 @@ function Downloads({ release, tryOnline }: { release: DesktopRelease; tryOnline:
             href="/try"
             className="inline-flex items-center gap-2 border border-[var(--site-line)] bg-[var(--background)] px-4 py-2.5 text-sm font-semibold text-[var(--foreground)] hover:border-[var(--site-accent)] hover:text-[var(--site-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--site-accent)]"
           >
-            Try online (beta)
+            Open in browser
           </Link>
         )}
       </div>
@@ -126,7 +126,7 @@ function Shot({ src, alt, width, height, priority }: { src: string; alt: string;
 const faq: [string, React.ReactNode][] = [
   [
     "Who can use the app?",
-    <>The app is in beta. Anyone can create a HumanStudy-Hub account, and signing in to the app also needs an invitation code from the team.</>,
+    <>Access is by invitation. Create a HumanStudy Hub account and sign in with an invitation code from the team.</>,
   ],
   [
     "Do I need an API key or a model subscription?",
@@ -152,7 +152,7 @@ const faq: [string, React.ReactNode][] = [
   ],
   [
     "Can I use it without installing anything?",
-    <>Yes: “Try online (beta)” opens the same app in your browser. It runs in a workspace of your own in the cloud, which keeps your projects between visits. It needs your HumanStudy-Hub account and an invitation code. A session lasts up to 45 minutes; open it again to continue where you left off.</>,
+    <>Yes: “Open in browser” opens the same app in your browser. It runs in a workspace of your own in the cloud, which keeps your projects between visits. It needs your HumanStudy-Hub account and an invitation code. The launcher shows the session limit. You can resume your workspace later.</>,
   ],
   [
     "Is there a Windows version?",
@@ -179,7 +179,7 @@ export default async function DownloadPage() {
             {description}
           </p>
           <div className="mt-8">
-            <Downloads release={release} tryOnline={tryListed()} />
+            <Downloads release={release} tryOnline={tryListed() || process.env.VERCEL_ENV === "preview"} />
           </div>
         </div>
 
@@ -202,7 +202,7 @@ export default async function DownloadPage() {
           <div>
             <h2 className="font-serif text-2xl font-bold sm:text-3xl">Getting access</h2>
             <p className="mt-4 text-base leading-7 text-[var(--foreground)]">
-              The app is in beta by invitation. You need a HumanStudy-Hub account and an invitation code.
+              Access is by invitation. You need a HumanStudy Hub account and an invitation code.
             </p>
             <ol className="mt-6 space-y-5">
               {[
@@ -256,7 +256,7 @@ export default async function DownloadPage() {
           ))}
         </div>
         <div className="mt-12">
-          <Downloads release={release} tryOnline={tryListed()} />
+          <Downloads release={release} tryOnline={tryListed() || process.env.VERCEL_ENV === "preview"} />
         </div>
       </section>
     </div>
