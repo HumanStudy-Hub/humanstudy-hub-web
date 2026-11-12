@@ -8,16 +8,13 @@
 //
 // Who may start one: a signed-in user who has entered an invitation code (the rule of /api/desktop/key),
 // remembered per user in a signed cookie. At most TRY_MAX_RUNNING sandboxes run at once.
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { Sandbox } from "@vercel/sandbox";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { APIError, Sandbox } from "@vercel/sandbox";
 import { mintDesktopKey } from "./desktop-access";
-import { tokenSecret, tryConfigured } from "./try-online-config";
+import { tokenSecret, tryServiceKey, trySettings } from "./try-online-config";
 
 const PORT = 3000;
 const HS = "/vercel/sandbox/hs";
-/** Session length; Hobby allows at most 45 minutes. A stopped session resumes on the next visit. */
-const SESSION_MS = Number(process.env.TRY_SESSION_MINUTES || 45) * 60_000;
-const MAX_RUNNING = Number(process.env.TRY_MAX_RUNNING || 6);
 const TAG = { app: "try-online" };
 
 export const TRY_ACCESS_COOKIE = "hs_try";
@@ -31,20 +28,24 @@ const BUSY = () => new TryError(503, "busy", "Too many people are using HumanStu
 const FAILED = () => new TryError(502, "start_failed", "HumanStudy Hub could not start. Please try again.");
 
 const hmac = (message: string) => createHmac("sha256", tokenSecret()).update(message).digest("hex");
-const sandboxName = (userId: string) => `try-${userId}`;
-/** The secret that admits the browser to this user's sandbox. Stable, so a second tab does not restart it. */
-const sandboxToken = (userId: string) => hmac(`try-online:v1:${userId}`);
+const deploymentScope = () => {
+  if (process.env.VERCEL_ENV === "production") return "";
+  const branch = process.env.VERCEL_GIT_COMMIT_REF || "local";
+  return "preview-" + createHash("sha256").update(branch).digest("hex").slice(0, 12) + "-";
+};
+const sandboxName = (userId: string) => `try-${deploymentScope()}${userId}`;
+const sandboxToken = (userId: string) => hmac(`try-online:v1:${deploymentScope()}${userId}`);
 
 /** Signed, per-user proof that this user entered an invitation code: `<expiry>.<mac>`. */
 export function accessCookieFor(userId: string, now = Date.now()): string {
   const exp = now + TRY_ACCESS_DAYS * 86_400_000;
-  return `${exp}.${hmac(`try-access:v1:${userId}:${exp}`)}`;
+  return `${exp}.${hmac(`try-access:v1:${deploymentScope()}${userId}:${exp}`)}`;
 }
 export function hasAccess(userId: string, cookie: string | undefined, now = Date.now()): boolean {
   if (!cookie || !tokenSecret()) return false;
-  const [exp, mac] = cookie.split(".");
-  if (!exp || !mac || !(Number(exp) > now)) return false;
-  const expected = Buffer.from(hmac(`try-access:v1:${userId}:${exp}`));
+  const [exp, mac, extra] = cookie.split(".");
+  if (!exp || !mac || extra !== undefined || !/^\d+$/.test(exp) || !(Number(exp) > now)) return false;
+  const expected = Buffer.from(hmac(`try-access:v1:${deploymentScope()}${userId}:${exp}`));
   const given = Buffer.from(mac);
   return expected.length === given.length && timingSafeEqual(expected, given);
 }
@@ -56,18 +57,19 @@ function credentials(): { token: string; teamId: string; projectId: string } | R
 }
 
 /** A Supabase session of the sandbox's own, so the app's token refreshes never sign the website out. */
-async function sessionFor(email: string): Promise<{ accessToken: string; refreshToken: string; expiresAt: number; email: string } | null> {
+async function sessionFor(userId: string, email: string, deadline: AbortSignal): Promise<{ accessToken: string; refreshToken: string; expiresAt: number; email: string } | null> {
   // A key of its own name, so enabling one-click sign-in for /try does not also switch on the other
   // service-role features (community store, research sync and its crons) in an environment.
-  const url = process.env.SUPABASE_URL, anon = process.env.SUPABASE_PUBLISHABLE_KEY;
-  const service = process.env.TRY_SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const url = trySettings()?.supabaseOrigin, anon = process.env.SUPABASE_PUBLISHABLE_KEY;
+  const service = tryServiceKey();
   if (!url || !service || !anon) return null;
   const link = await fetch(`${url}/auth/v1/admin/generate_link`, {
     method: "POST",
     headers: { apikey: service, Authorization: `Bearer ${service}`, "Content-Type": "application/json" },
     body: JSON.stringify({ type: "magiclink", email }),
     cache: "no-store",
-    signal: AbortSignal.timeout(10_000),
+    signal: operationSignal(10_000, deadline),
+    redirect: "error",
   });
   if (!link.ok) return null;
   const linkJson = (await link.json()) as { hashed_token?: string; properties?: { hashed_token?: string } };
@@ -78,33 +80,49 @@ async function sessionFor(email: string): Promise<{ accessToken: string; refresh
     headers: { apikey: anon, "Content-Type": "application/json" },
     body: JSON.stringify({ type: "magiclink", token_hash: tokenHash }),
     cache: "no-store",
-    signal: AbortSignal.timeout(10_000),
+    signal: operationSignal(10_000, deadline),
+    redirect: "error",
   });
   if (!verify.ok) return null;
-  const s = (await verify.json()) as { access_token?: string; refresh_token?: string; expires_at?: number; expires_in?: number };
-  if (!s.access_token || !s.refresh_token) return null;
+  const s = (await verify.json()) as { access_token?: string; refresh_token?: string; expires_at?: number; expires_in?: number; user?: { id?: string } };
+  if (!s.access_token || !s.refresh_token || s.user?.id !== userId) return null;
   const expiresAt = typeof s.expires_at === "number" ? s.expires_at * 1000 : Date.now() + (s.expires_in || 3600) * 1000;
   return { accessToken: s.access_token, refreshToken: s.refresh_token, expiresAt, email };
 }
 
-async function healthy(base: string): Promise<boolean> {
+function operationSignal(ms: number, deadline?: AbortSignal) {
+  const timeout = AbortSignal.timeout(ms);
+  return deadline ? AbortSignal.any([timeout, deadline]) : timeout;
+}
+
+async function health(base: string, deadline: AbortSignal): Promise<unknown> {
   try {
-    const r = await fetch(`${base}/healthz`, { cache: "no-store", signal: AbortSignal.timeout(4_000) });
-    return r.ok;
+    const r = await fetch(`${base}/healthz`, { cache: "no-store", redirect: "error", signal: operationSignal(4000, deadline) });
+    return r.ok ? await r.json() : null;
   } catch {
-    return false;
+    return null;
+  }
+}
+
+function assertCurrentBuild(payload: unknown, config: Settings) {
+  const value = payload as { ready?: boolean; build?: { version?: string; gitsha?: string; packhash?: string; dirty?: boolean } } | null;
+  if (!value?.ready) throw FAILED();
+  if (value.build?.version !== config.build.version || value.build?.gitsha !== config.build.gitsha
+    || value.build?.packhash !== config.build.packhash || value.build?.dirty !== false) {
+    throw new TryError(502, "build_mismatch", "This workspace is running a different build. Stop it and resume to load the current build.");
   }
 }
 
 /** POST to the app with the user's token. Null: the app did not accept the token (or did not answer). */
-async function app(base: string, token: string, path: string, body: unknown): Promise<Response | null> {
+async function app(base: string, token: string, path: string, body: unknown, deadline: AbortSignal): Promise<Response | null> {
   try {
     const r = await fetch(`${base}${path}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       cache: "no-store",
-      signal: AbortSignal.timeout(8_000),
+      redirect: "error",
+      signal: operationSignal(8000, deadline),
     });
     return r.ok ? r : null;
   } catch {
@@ -112,70 +130,205 @@ async function app(base: string, token: string, path: string, body: unknown): Pr
   }
 }
 
-/** Refuses a new session when the plan's concurrent sandboxes are nearly used up. */
-async function roomFor(name: string): Promise<boolean> {
+type Settings = NonNullable<ReturnType<typeof trySettings>>;
+type WorkspaceStatus = "new" | "running" | "stopped" | "transition";
+
+function configuration(): Settings {
+  const config = trySettings();
+  if (!config) throw new TryError(503, "not_configured", "Online workspaces are unavailable on this deployment.");
+  return config;
+}
+
+async function leaseRpc<T>(config: Settings, rpc: string, body: Record<string, unknown>): Promise<T> {
+  const service = tryServiceKey();
   try {
-    const all = await (await Sandbox.list({ ...credentials(), tags: TAG })).toArray();
-    const running = all.filter((s) => s.status === "pending" || s.status === "running");
-    return running.some((s) => s.name === name) || running.length < MAX_RUNNING;
-  } catch {
-    return true; // the create call reports a real limit itself
+    const response = await fetch(`${config.supabaseOrigin}/rest/v1/rpc/${rpc}`, {
+      method: "POST", headers: { apikey: service, Authorization: `Bearer ${service}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok) return await response.json() as T;
+  } catch { /* Database admission must succeed before a provider launch. */ }
+  throw new TryError(503, "admission_unavailable", "Online workspace availability could not be checked. Please try again.");
+}
+
+function claim(config: Settings, workspace_name: string, request_stop: boolean, attempt_id?: string) {
+  return leaseRpc<string | null>(config, "online_claim_workspace", {
+    workspace_name, request_stop, attempt_id: attempt_id ?? null, session_seconds: config.sessionMinutes * 60,
+  });
+}
+
+function finish(config: Settings, workspace_name: string, claim_id: string, release_slot: boolean, expiry?: Date) {
+  return leaseRpc<boolean>(config, "online_finish_workspace", {
+    workspace_name, claim_id, release_slot, provider_expiry: expiry?.toISOString() ?? null,
+  });
+}
+
+function running(sandbox: Sandbox) {
+  return sandbox.status === "running" || sandbox.status === "pending";
+}
+
+function transitioning(sandbox: Sandbox) {
+  return sandbox.status === "stopping" || sandbox.status === "snapshotting";
+}
+
+async function existing(name: string, deadline?: AbortSignal): Promise<Sandbox | null> {
+  try {
+    return await Sandbox.get({ ...credentials(), name, resume: false, signal: operationSignal(8000, deadline) });
+  } catch (error) {
+    if (error instanceof APIError && error.response.status === 404
+      && !/snapshot/i.test(JSON.stringify(error.json ?? error.message))) return null;
+    throw error;
   }
 }
 
-const busyError = (error: unknown) => /quota|limit|concurren|capacity|429/i.test(error instanceof Error ? error.message : String(error));
-
-/** Starts (or reuses) the user's sandbox, signs the app in as this user, and returns the address to open. */
-export async function launchTryOnline(user: { id: string; email?: string | null }): Promise<{ url: string; resumed: boolean }> {
-  if (!tryConfigured()) throw new TryError(503, "not_configured", "HumanStudy Hub online is not available yet.");
-  const name = sandboxName(user.id);
-  const token = sandboxToken(user.id);
-  if (!(await roomFor(name))) throw BUSY();
-  let base: string;
-  let resumed = true;
+/** Checking a workspace must not resume it. */
+export async function tryWorkspaceStatus(userId: string): Promise<WorkspaceStatus> {
+  configuration();
   try {
-    const sandbox = await Sandbox.getOrCreate({
-      ...credentials(),
-      name,
-      source: { type: "snapshot", snapshotId: process.env.TRY_SNAPSHOT_ID! },
-      ports: [PORT],
-      timeout: SESSION_MS,
-      resources: { vcpus: 2 },
-      persistent: true,
-      keepLastSnapshots: { count: 1, expiration: 0 },
-      tags: TAG,
-    });
-    // A stopped sandbox has no session yet, so no route: `domain()` throws until runCommand resumes it.
-    let current: string | null = null;
-    try { current = sandbox.domain(PORT); } catch { /* stopped */ }
-    // Running and accepting this token: reuse it (a second tab must not restart the app and its agent).
-    const reuse = current !== null && (await healthy(current)) && (await app(current, token, "/__seed", {})) !== null;
-    if (!reuse) {
-      resumed = false;
-      // TRY_APP_URL/TRY_APP_SHA256: a newer web build (a desktop release's humanstudy-web-<version>.tgz) that
-      // start.sh installs first, since each user's sandbox keeps the app it was created with.
-      const env: Record<string, string> = { HS_WEB_TOKEN: token };
-      if (process.env.TRY_APP_URL && process.env.TRY_APP_SHA256) Object.assign(env, { HS_APP_URL: process.env.TRY_APP_URL, HS_APP_SHA256: process.env.TRY_APP_SHA256 });
-      const started = await sandbox.runCommand({ cmd: "bash", args: [`${HS}/app/start.sh`], env });
-      if (started.exitCode !== 0) throw FAILED();
-    }
-    base = sandbox.domain(PORT);
+    const sandbox = await existing(sandboxName(userId));
+    if (!sandbox) return "new";
+    if (transitioning(sandbox) || sandbox.status === "pending") return "transition";
+    return running(sandbox) ? "running" : "stopped";
+  } catch {
+    throw new TryError(503, "status_unavailable", "Could not check your workspace status.");
+  }
+}
+
+/** A provider count also includes sessions that predate the database admission migration. */
+async function roomFor(name: string, maxRunning: number, deadline: AbortSignal): Promise<boolean> {
+  try {
+    const all = await (await Sandbox.list({ ...credentials(), tags: TAG, signal: operationSignal(8000, deadline) })).toArray();
+    const preview = name.startsWith("try-preview-");
+    const active = all.filter(s => Boolean(s.name?.startsWith("try-preview-")) === preview
+      && ["pending", "running", "stopping", "snapshotting"].includes(s.status));
+    return active.some(s => s.name === name) || active.length < maxRunning;
+  } catch {
+    return false;
+  }
+}
+
+function workspaceOrigin(sandbox: Sandbox) {
+  const url = new URL(sandbox.domain(PORT));
+  if (url.protocol !== "https:" || !url.hostname.endsWith(".vercel.run")
+    || url.username || url.password || url.port || url.pathname !== "/" || url.search || url.hash) throw FAILED();
+  return url.origin;
+}
+
+async function stopRunning(sandbox: Sandbox) {
+  if (transitioning(sandbox)) throw new TryError(409, "workspace_transition", "Your workspace is already stopping. Check again in a moment.");
+  if (running(sandbox)) await sandbox.stop({ signal: AbortSignal.timeout(15_000) });
+}
+
+/** Stops the current session while retaining its workspace. A stop during launch records cancellation. */
+export async function stopTryOnline(userId: string, attempt?: string): Promise<{ pending: boolean }> {
+  const config = configuration(), name = sandboxName(userId);
+  const lease = await claim(config, name, true, attempt);
+  if (lease === "cancelling") return { pending: true };
+  if (!lease) throw BUSY();
+  let release = false;
+  try {
+    const sandbox = await existing(name);
+    if (sandbox) await stopRunning(sandbox);
+    release = true;
+    return { pending: false };
   } catch (error) {
     if (error instanceof TryError) throw error;
-    console.error("try-online: sandbox", error);
-    throw busyError(error) ? BUSY() : FAILED();
+    throw new TryError(502, "stop_failed", "Could not stop the workspace. Please try again.");
+  } finally {
+    await finish(config, name, lease, release).catch(() => false);
   }
-  // Sign the app in: hosted model access (the user entered an invitation code to get here) and, when this
-  // server can mint one, a Supabase session of its own, only if the app has none (each is long-lived).
-  const seed: Record<string, unknown> = { desktopKey: mintDesktopKey(user.id) };
-  if (user.email) {
-    const status = await app(base, token, "/ipc/account:status", { args: [] });
-    const body = (await status?.json().catch(() => null)) as { value?: { signedIn?: boolean } } | null;
-    if (!body?.value?.signedIn) {
-      const session = await sessionFor(user.email).catch(() => null);
-      if (session) seed.session = session;
+}
+
+/** Starts or reopens one private, persistent workspace. A missing prior snapshot is never replaced automatically. */
+export async function launchTryOnline(user: { id: string; email?: string | null }, attempt: string = randomUUID()): Promise<{ url: string; resumed: boolean }> {
+  const config = configuration();
+  if (!user.email) throw new TryError(403, "email_required", "Sign in with an email address to open an online workspace.");
+  const name = sandboxName(user.id), token = sandboxToken(user.id);
+  const deadline = AbortSignal.timeout(85_000);
+  const lease = await claim(config, name, false, attempt);
+  if (lease === "cancelled") throw new TryError(409, "workspace_cancelled", "Startup was cancelled.");
+  if (!lease) throw BUSY();
+
+  let sandbox: Sandbox | null = null;
+  let started = false, cancelled = false, release = false;
+  try {
+    sandbox = await existing(name, deadline);
+    if (sandbox && transitioning(sandbox)) throw new TryError(409, "workspace_transition", "Your workspace is saving. Try again in a moment.");
+    if (!sandbox || !running(sandbox)) {
+      if (!(await roomFor(name, config.maxRunning, deadline))) {
+        release = true;
+        throw BUSY();
+      }
     }
+    const resumed = Boolean(sandbox);
+    if (!sandbox) {
+      // Reserve conservatively if create itself fails, since the provider may have accepted it.
+      started = true;
+      sandbox = await Sandbox.create({
+        ...credentials(), name, source: { type: "snapshot", snapshotId: config.snapshotId },
+        ports: [PORT], timeout: config.sessionMinutes * 60_000, resources: { vcpus: 2 },
+        persistent: true, keepLastSnapshots: { count: 1, expiration: 0 }, tags: TAG,
+        signal: operationSignal(25_000, deadline),
+      });
+    }
+    let base = !started && sandbox.status === "running" ? workspaceOrigin(sandbox) : null;
+    if (!base) {
+      started = true;
+      const env: Record<string, string> = { HS_WEB_TOKEN: token };
+      if (config.appUrl) Object.assign(env, { HS_APP_URL: config.appUrl, HS_APP_SHA256: config.appSha });
+      const command = await sandbox.runCommand({ cmd: "bash", args: [`${HS}/app/start.sh`], env, signal: operationSignal(28_000, deadline) });
+      if (command.exitCode !== 0) throw FAILED();
+      base = workspaceOrigin(sandbox);
+    }
+    let payload = await health(base, deadline);
+    if (started) {
+      for (let check = 0; check < 2 && !(payload as { ready?: boolean } | null)?.ready && !deadline.aborted; check++) {
+        await new Promise(resolve => setTimeout(resolve, 400));
+        payload = await health(base, deadline);
+      }
+    }
+    assertCurrentBuild(payload, config);
+
+    const account = await app(base, token, "/ipc/account:status", { args: [] }, deadline);
+    const state = await account?.json().catch(() => null) as { value?: { signedIn?: boolean; email?: string } } | null;
+    if (typeof state?.value?.signedIn !== "boolean") throw FAILED();
+    const seed: Record<string, unknown> = { desktopKey: mintDesktopKey(user.id) };
+    if (!state.value.signedIn || state.value.email?.toLowerCase() !== user.email.toLowerCase()) {
+      const session = await sessionFor(user.id, user.email, deadline).catch(() => null);
+      if (!session) throw new TryError(502, "sign_in_failed", "The workspace could not sign in. Please try again.");
+      seed.session = session;
+    }
+    const seeded = await app(base, token, "/__seed", seed, deadline);
+    if (!(await seeded?.json().catch(() => null))?.ok) throw FAILED();
+
+    if (!(await finish(config, name, lease, false, sandbox.expiresAt))) {
+      cancelled = true;
+      throw new TryError(409, "workspace_cancelled", "Startup was cancelled.");
+    }
+    const url = new URL("/", base);
+    url.searchParams.set("t", token);
+    return { url: url.href, resumed };
+  } catch (error) {
+    if (!started && !cancelled && !release) {
+      const completed = await finish(config, name, lease, false, sandbox?.expiresAt).catch(() => null);
+      cancelled = completed === false;
+    }
+    if (started || cancelled) {
+      // A timed-out create may have succeeded. Keep its reservation if we cannot confirm it stopped.
+      try {
+        const current = await existing(name);
+        if (current) {
+          await stopRunning(current);
+          release = true;
+        } else if (sandbox) {
+          release = true;
+        }
+      } catch { /* Keep the lease when provider state is uncertain. */ }
+    }
+    await finish(config, name, lease, release).catch(() => false);
+    if (cancelled && release) throw new TryError(409, "workspace_cancelled", "Startup was cancelled.");
+    if (error instanceof TryError) throw error;
+    if (error instanceof APIError && [409, 429].includes(error.response.status)) throw BUSY();
+    throw FAILED();
   }
-  await app(base, token, "/__seed", seed);
-  return { url: `${base}/?t=${token}`, resumed };
 }
