@@ -59,10 +59,10 @@ const Navbar = load('components/Navbar.tsx').default;
 const Footer = load('components/Footer.tsx').default;
 const Home = load('app/page.tsx').default;
 const render = component => renderToStaticMarkup(React.createElement(component));
-const destinations = ['/forum', '/studies', '/download', '/results', '/collaboration', '/account'];
+const destinations = ['/forum', '/studies', '/download', '/research', '/collaboration', '/account'];
 
 test('public navigation preserves every existing destination on desktop and mobile', () => {
-  for (pathname of ['/', '/forum', '/studies', '/account', '/download', '/results', '/collaboration']) {
+  for (pathname of ['/', '/forum', '/studies', '/account', '/download', '/research', '/collaboration']) {
     const html = render(Navbar);
     assert.match(html, /aria-label="Main navigation"/);
     assert.match(html, /href="\/"/);
@@ -99,9 +99,9 @@ test('the real homepage retains its original actions and has one main heading', 
   for (const href of ['/forum', '/studies', '/download']) {
     assert.match(html, new RegExp(`href="${href}"`));
   }
-  assert.match(html, /Explore research papers\./);
-  assert.match(html, /Run experiments with AI\./);
-  assert.match(html, /Reproduce study procedures with AI participants and explore new experiments\./);
+  assert.match(html, /Open infrastructure for/);
+  assert.match(html, /human-study research/);
+  assert.match(html, /Turn published human studies into executable programs that others can reuse and build upon\./);
 });
 
 test('Forum introduces the community before its two original featured posts', async () => {
@@ -171,13 +171,13 @@ test('the homepage groups all four actions in the requested order without second
   assert.doesNotMatch(html, /Questions we’re exploring|Join the conversation|<h2/);
 });
 
-const { libraryFilters, libraryAvailability, researchContributorNames, validateResearchQuery } = load('lib/research.ts');
+const { libraryFilters, libraryAvailability, paperSource, researchContributorNames, validateResearchQuery } = load('lib/research.ts');
 const libraryCalls = [];
 let libraryResult;
 let libraryError;
 const Studies = load('app/studies/page.tsx', {
   '@/lib/research': {
-    validateResearchQuery, libraryFilters, libraryAvailability, researchContributorNames,
+    validateResearchQuery, libraryFilters, libraryAvailability, paperSource, researchContributorNames,
     searchLibrary: async (input, pool, validatedOnly) => {
       libraryCalls.push({ input, pool, validatedOnly });
       if (libraryError) throw libraryError;

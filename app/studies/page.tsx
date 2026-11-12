@@ -1,6 +1,6 @@
 import Link from "next/link";
 import ArrowRight from "@/components/ArrowRight";
-import { libraryFilters, libraryAvailability, researchContributorNames, searchLibrary, validateResearchQuery, type LibraryFilter } from "@/lib/research";
+import { libraryFilters, libraryAvailability, paperSource, researchContributorNames, searchLibrary, validateResearchQuery, type LibraryFilter } from "@/lib/research";
 import ValidatedFilter from "./ValidatedFilter";
 import styles from "./page.module.css";
 
@@ -98,9 +98,9 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
                 <article key={paper.id} className={styles.study}>
                   <div>
                     <h2><Link href={href}>{paper.title}</Link></h2>
-                    {((paper.authors ?? []).length > 0 || paper.year) && (
+                    {((paper.authors ?? []).length > 0 || paper.year || paperSource(paper)) && (
                       <p className={styles.authors}>
-                        {[(paper.authors ?? []).join(", "), paper.year].filter(Boolean).join(" · ")}
+                        {[(paper.authors ?? []).join(", "), paper.year, paperSource(paper)].filter(Boolean).join(" · ")}
                       </p>
                     )}
                     {status.validated && <p className={styles.validated}>Validated protocol</p>}

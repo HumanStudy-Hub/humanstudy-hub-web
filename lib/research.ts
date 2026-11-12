@@ -223,6 +223,15 @@ export async function searchResearch(input: ResearchQuery) {
     nextOffset: offset + limit < result.total ? offset + limit : null };
 }
 
+/** The public collection an indexed paper came from, for the library card. */
+export function paperSource(paper: Pick<ResearchPaper, "aliases">): string | null {
+  const prefixes = new Set((paper.aliases ?? []).map(alias => alias.split(":")[0]));
+  if (prefixes.has("bench")) return "HumanStudy-Bench";
+  if (prefixes.has("psych201")) return "Psych-201";
+  if (prefixes.has("reanalysis")) return "Agentic Reproducibility";
+  return null;
+}
+
 export const libraryFilters = ["all", "program", "runnable", "protocol", "development", "indexed"] as const;
 export type LibraryFilter = (typeof libraryFilters)[number];
 

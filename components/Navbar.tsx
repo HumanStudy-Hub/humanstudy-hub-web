@@ -11,7 +11,7 @@ const links = [
   { name: "Forum", href: "/forum" },
   { name: "Study Library", href: "/studies" },
   { name: "Desktop app", href: "/download" },
-  { name: "Benchmark", href: "/results" },
+  { name: "Research", href: "/research" },
   { name: "Partnerships", href: "/collaboration" },
   { name: "Account", href: "/account" },
 ] as const;

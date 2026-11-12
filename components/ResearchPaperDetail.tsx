@@ -2,13 +2,18 @@ import Link from "next/link";
 import CreditPagination from "./CreditPagination";
 import { CREDIT_PAGE_SIZE, listCredits } from "@/lib/community-credit";
 import CommunityCreditList from "./CommunityCreditList";
-import { libraryAvailability, readProtocol, researchContributorNames, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
+import { libraryAvailability, paperSource, readProtocol, researchContributorNames, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
 import { getPublishedProgram, publishedAssetUrl } from "@/lib/published-program";
 import PublishedProgram from "./PublishedProgram";
 import RunExperiment from "./RunExperiment";
 import styles from "./folio-page.module.css";
 
 const label: Record<string, string> = { "original-paper": "Original paper", "original-data-link": "Original data", "transcription-code": "Transcription code", "metadata": "Source reference", "claim-metadata": "Claim and analysis metadata" };
+/** A source record links to its collection; name the link after it ("Psych-201") rather than the record type. */
+const resourceLabel = (resource: { kind: string; url?: string }) =>
+  resource.kind === "metadata" && /github\.com\/marcelbinz\/Psych-201\//.test(resource.url ?? "") ? "Psych-201"
+    : resource.kind === "claim-metadata" && /github\.com\/tobihol\/agentic-reproducibility\//.test(resource.url ?? "") ? "Agentic Reproducibility"
+    : label[resource.kind] || resource.kind;
 const safeUrl = (value?: string) => { try { const url = new URL(value || ""); return url.protocol === "https:" && !url.username && !url.password ? url.href : null; } catch { return null; } };
 
 type Part = { status?: string; reason?: string | null; detail?: string; what?: string };
@@ -89,7 +94,7 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
     <div>
       <Link href="/studies" className={styles.back}>← Study Library</Link>
       <h1>{paper.title}</h1>
-      <p className="mt-3 text-sm text-[var(--site-muted)]">{[authors.join(", "), paper.year].filter(Boolean).join(" · ")}</p>
+      <p className="mt-3 text-sm text-[var(--site-muted)]">{[authors.join(", "), paper.year, paperSource(paper)].filter(Boolean).join(" · ")}</p>
       <p className="mt-6 whitespace-pre-wrap leading-7 text-[var(--foreground)]">{paper.description}</p>
       {availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">
         {paper.developmentStage === "draft" ? "In development · protocol draft exists." : "In development · study materials are being prepared."}
@@ -134,7 +139,7 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
           {resources.map((resource, i) => {
             const url = safeUrl(resource.url);
             return <li key={`${resource.id}-${i}`}>
-              {url ? <a href={url} target="_blank" rel="noopener noreferrer" className="text-[var(--site-accent)] underline">{label[resource.kind] || resource.kind} ↗</a> : <span>{label[resource.kind] || resource.kind}</span>}
+              {url ? <a href={url} target="_blank" rel="noopener noreferrer" className="text-[var(--site-accent)] underline">{resourceLabel(resource)} ↗</a> : <span>{resourceLabel(resource)}</span>}
               <span className="ml-2 text-[var(--site-muted)]">{resource.access === "unverified" ? "Availability not checked" : resource.access}</span>
             </li>;
           })}

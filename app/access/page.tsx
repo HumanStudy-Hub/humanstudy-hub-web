@@ -91,8 +91,8 @@ function AccessForm() {
           Explore the Study Library
         </Link>{" "}
         or{" "}
-        <Link href="/results" className="font-semibold text-[var(--site-accent)] hover:underline">
-          view benchmark
+        <Link href="/research" className="font-semibold text-[var(--site-accent)] hover:underline">
+          read our research
         </Link>
         .
       </p>

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function LeaderboardPage() {
-  redirect("/results");
+  redirect("/research/humanstudy-bench#leaderboard");
 }

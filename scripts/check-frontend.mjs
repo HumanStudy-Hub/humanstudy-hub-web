@@ -34,7 +34,19 @@ const developmentLinks = development.papers.map(paper => {
   const id = existing?.id ?? 'paper_' + createHash('sha256').update(alias).digest('hex').slice(0, 24);
   return '/studies/' + id;
 }).sort();
-const interactivePaper = researchIndex.papers.find(paper => !developmentLinks.includes('/studies/' + paper.id));
+// Keep the browser fixture deterministic as the bundled catalog gains real packages.
+// This test deliberately exercises one interactive paper against indexed-only records.
+for (const paper of researchIndex.papers) {
+  delete paper.currentRevision;
+  delete paper.assetFiles;
+  delete paper.protocol;
+  delete paper.publication;
+}
+researchIndex.publications = {};
+const interactivePaper = researchIndex.papers.find(paper => paper.legacyStudyId === 'study_001');
+assert.ok(interactivePaper, 'The fixture requires the original team-contributed study.');
+interactivePaper.assetRoot = 'studies/study_001';
+interactivePaper.aliases = interactivePaper.aliases.filter(alias => !alias.startsWith('community:'));
 interactivePaper.currentRevision = 'a'.repeat(64);
 interactivePaper.contributors = [{ github: 'assassin808' }];
 interactivePaper.assetFiles = [{ path: 'program.json' }];
@@ -55,7 +67,7 @@ const fixtureServer = createServer((request, response) => {
 const report = { passed: false, views: [], checks: [], runtimeErrors: [], runtimeErrorDetails: [], blockedWrites: [], mockedAuthActions: [], checkedAt: new Date().toISOString() };
 const navigation = [
   ['Forum', '/forum'], ['Study Library', '/studies'], ['Desktop app', '/download'],
-  ['Benchmark', '/results'], ['Partnerships', '/collaboration'], ['Account', '/account'],
+  ['Research', '/research'], ['Partnerships', '/collaboration'], ['Account', '/account'],
 ];
 let server;
 let browser;
@@ -166,7 +178,7 @@ try {
     });
     assert.equal(await page.locator('main').count(), 1, 'The page has one main landmark.');
     assert.equal(await page.locator('h1').count(), 1);
-    assert.ok(await page.getByRole('heading', { name: 'Explore research papers. Run experiments with AI.' }).isVisible());
+    assert.ok(await page.getByRole('heading', { name: 'Open infrastructure for human-study research' }).isVisible());
     const layout = await page.evaluate(() => ({
       viewport: innerWidth,
       width: document.documentElement.scrollWidth,
