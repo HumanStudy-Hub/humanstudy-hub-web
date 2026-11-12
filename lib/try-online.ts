@@ -348,13 +348,15 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
     const account = await app(base, token, "/ipc/account:status", { args: [] }, deadline);
     const state = await account?.json().catch(() => null) as { value?: { signedIn?: boolean; email?: string } } | null;
     if (typeof state?.value?.signedIn !== "boolean") throw FAILED();
-    const seed: Record<string, unknown> = {};
-    if (!isDevPreview() || managedDev) seed.desktopKey = mintDesktopKey(user.id);
-    if (!state.value.signedIn || state.value.email?.toLowerCase() !== user.email.toLowerCase()) {
-      const session = await sessionFor(user.id, user.email, deadline).catch(() => null);
-      if (!session) throw new TryError(502, "sign_in_failed", "The workspace could not sign in. Please try again.");
-      seed.session = session;
+    if (state.value.signedIn && state.value.email?.toLowerCase() !== user.email.toLowerCase()) {
+      throw new TryError(409, "workspace_account_mismatch", "This workspace has a different account signed in. Sign out there before reopening.");
     }
+    // A stored email does not prove the sandbox's Supabase session still works.
+    // Each explicit launcher handoff receives its own fresh, verified session.
+    const session = await sessionFor(user.id, user.email, deadline).catch(() => null);
+    if (!session) throw new TryError(502, "sign_in_failed", "The workspace could not refresh its sign-in. Try opening it again.");
+    const seed: Record<string, unknown> = { session };
+    if (!isDevPreview() || managedDev) seed.desktopKey = mintDesktopKey(user.id);
     const seeded = await app(base, token, "/__seed", seed, deadline);
     if (!(await seeded?.json().catch(() => null))?.ok) throw FAILED();
 

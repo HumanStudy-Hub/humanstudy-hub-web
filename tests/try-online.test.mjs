@@ -69,7 +69,8 @@ function fixture(t, options = {}) {
     },
   };
   t.mock.method(globalThis, 'fetch', async (url, init) => {
-    const path = new URL(url).pathname;
+    const endpoint = new URL(url);
+    const path = endpoint.pathname;
     const data = init?.body ? JSON.parse(init.body) : undefined;
     calls.push([path, data]);
     if (path.endsWith('online_claim_workspace')) {
@@ -79,7 +80,17 @@ function fixture(t, options = {}) {
       return Response.json(options.cancelled ? Boolean(data.release_slot) : true);
     }
     if (path === '/healthz') return Response.json({ ready: true, build: options.build ?? build });
-    if (path === '/ipc/account:status') return Response.json({ value: { signedIn: true, email: user.email } });
+    if (path === '/ipc/account:status') return Response.json({ value: { signedIn: true, email: options.storedEmail ?? user.email } });
+    if (path === '/auth/v1/admin/generate_link') {
+      assert.equal(endpoint.origin, 'https://database.example.test');
+      assert.deepEqual(data, { type: 'magiclink', email: user.email });
+      return Response.json({ hashed_token: 'fixture-hash' });
+    }
+    if (path === '/auth/v1/verify') {
+      assert.equal(endpoint.origin, 'https://database.example.test');
+      assert.deepEqual(data, { type: 'magiclink', token_hash: 'fixture-hash' });
+      return Response.json({ access_token: 'workspace-access', refresh_token: 'workspace-refresh', user: { id: options.seedUser ?? user.id } });
+    }
     if (path === '/__seed') return Response.json({ ok: !options.seedFails });
     throw Error('Unexpected fetch path ' + path);
   });
@@ -125,9 +136,51 @@ test('an existing matching workspace reopens without restarting', async t => {
   assert.equal(result.resumed, true);
   assert.match(result.url, /^https:\/\/workspace\.vercel\.run\/\?t=[a-f0-9]{64}$/);
   assert.ok(!calls.some(([name]) => name === 'start'));
+  const seed = calls.find(([name]) => name === '/__seed')[1];
+  assert.equal(seed.session.accessToken, 'workspace-access');
+  assert.equal(seed.session.refreshToken, 'workspace-refresh');
+  assert.equal(seed.session.email, user.email);
   assert.deepEqual(await lib.stopTryOnline(user.id), { pending: false });
   assert.ok(calls.includes('stop'));
   assert.equal(calls.at(-1)[1].release_slot, true);
+});
+
+test('reopen refuses a foreign account and never seeds an unverified owner', async t => {
+  const wrong = fixture(t, { storedEmail: 'someone-else@example.test' });
+  await assert.rejects(wrong.lib.launchTryOnline(user, attempt), { code: 'workspace_account_mismatch' });
+  assert.ok(!wrong.calls.some(([name]) => ['/auth/v1/admin/generate_link', '/__seed'].includes(name)));
+  assert.ok(!wrong.calls.includes('stop'));
+});
+
+test('auth verification failure leaves an existing workspace running without issuing browser access', async t => {
+  const { calls, lib } = fixture(t, { seedUser: attempt });
+  await assert.rejects(lib.launchTryOnline(user, attempt), { code: 'sign_in_failed' });
+  assert.ok(calls.some(([name]) => name === '/auth/v1/verify'));
+  assert.ok(!calls.some(([name]) => name === '/__seed'));
+  assert.ok(!calls.includes('stop'));
+});
+
+test('ordinary Hub logout revokes only the current browser session', async () => {
+  const calls = [];
+  const route = load('app/api/studio/auth/route.ts', {
+    'next/server': { NextResponse: { json: body => Response.json(body) } },
+    '@/lib/studio/auth': {
+      requireStudioUser: async () => ({ accessToken: 'browser-access' }),
+      clearStudioSession: async () => { calls.push('clear-browser-cookies'); },
+    },
+    '@/lib/studio/http': {
+      studioConfig: () => ({}),
+      assertSameOrigin: () => undefined,
+      readJsonBody: request => request.json(),
+      studioFetch: async (...args) => { calls.push(args); return new Response(null, { status: 204 }); },
+      routeError: error => { throw error; },
+    },
+  });
+  const response = await route.POST(new Request('https://hub.example.test/api/studio/auth', {
+    method: 'POST', body: JSON.stringify({ action: 'signout' }),
+  }));
+  assert.deepEqual(await response.json(), { user: null });
+  assert.deepEqual(calls, [['/auth/v1/logout?scope=local', { method: 'POST', token: 'browser-access' }], 'clear-browser-cookies']);
 });
 
 test('startup seed failure stops new compute and releases its reservation', async t => {

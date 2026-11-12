@@ -47,7 +47,8 @@ export async function POST(request: Request) {
       try { currentToken = (await requireStudioUser()).accessToken; }
       catch (error) { if (!(error instanceof StudioError && error.status === 401)) throw error; }
       if (currentToken) {
-        const result = await studioFetch("/auth/v1/logout", { method: "POST", token: currentToken });
+        // Online workspaces and other devices use independent Supabase sessions.
+        const result = await studioFetch("/auth/v1/logout?scope=local", { method: "POST", token: currentToken });
         if (!result.ok && result.status !== 401 && result.status !== 403) throw new StudioError(502, "service_unavailable");
       }
       await clearStudioSession();
