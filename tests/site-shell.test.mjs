@@ -337,8 +337,8 @@ test('the published Overview preserves study scope, evidence, results and record
   const field = (id, value, options = {}) => ({
     id, label: id, value, origin: 'reported', state: 'confirmed', evidenceIds: [], ...options,
   });
-  const node = (kind, fields, studyIds = []) => ({
-    id: kind, kind, title: kind, fields, studyIds, evidenceIds: [],
+  const node = (kind, fields, studyIds = [], evidenceIds = []) => ({
+    id: kind, kind, title: kind, fields, studyIds, evidenceIds,
   });
   const study = id => ({ id, title: `Experiment ${id}` });
   const program = {
@@ -349,18 +349,21 @@ test('the published Overview preserves study scope, evidence, results and record
       node('hypothesis', [
         field('hypothesis', 'A shared prediction.', { evidenceIds: ['quote'] }),
         field('prediction', 'A scoped prediction.', { studyIds: ['B'] }),
-      ], ['A', 'B']),
+      ], ['A', 'B'], ['node-quote']),
       node('finding', [field('finding', 'The primary finding.')]),
       node('condition', [field('condition', 'A condition.')], ['A']),
       node('result', [field('result', 'An experiment result.')], ['A']),
       node('limitation', [field('limitation', null, { state: 'missing' })], ['A']),
     ],
-    evidence: [{ id: 'quote', locator: { page: 2 }, url: 'https://example.test/paper', quote: 'Original excerpt' }],
+    evidence: [
+      { id: 'quote', locator: { page: 2 }, url: 'https://example.test/paper', quote: 'Original excerpt' },
+      { id: 'node-quote', locator: { page: 3 }, url: 'https://example.test/paper', quote: 'Additional node-level excerpt' },
+    ],
     steps: [{ id: 'step', studyId: 'A', title: 'Present question', actorIds: [], inputIds: [], outputIds: [], visibleIds: [], children: [], next: [], evidenceIds: [] }],
   };
   const html = renderToStaticMarkup(React.createElement(PublishedProgram, { paper, program }));
   const [overview, experiments] = html.split('Experiments and analyses');
-  assert.match(overview, /Overview.*Research question and motivation.*What prompted the research.*Paper summary.*Hypotheses.*Applies to Experiment A, Experiment B.*A shared prediction.*Source evidence.*Original excerpt.*Main findings.*The primary finding/s);
+  assert.match(overview, /Overview.*Research question and motivation.*What prompted the research.*Paper summary.*Hypotheses.*Applies to Experiment A, Experiment B.*A shared prediction.*Source evidence.*Original excerpt.*Additional node-level excerpt.*Main findings.*The primary finding/s);
   assert.doesNotMatch(overview, /A scoped prediction/);
   assert.doesNotMatch(experiments, /A shared prediction/);
   assert.match(experiments, /Experiment A.*Experiment flow.*Present question.*Design and conditions.*A condition.*Reported results.*An experiment result.*Limitations.*Not reported in the available source.*Experiment B.*A scoped prediction.*Experiment C/s);
