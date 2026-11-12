@@ -32,7 +32,7 @@ export async function reserveHostedCompletion(account: string, model: string, am
   }, signal) === true ? id : null;
 }
 /** Internal only: caller must establish complete authoritative provider usage. Not exposed as an HTTP route.
- * Not wired to streaming forwarding yet: missing/uncertain usage retains its reservation. */
+ * The provider observer calls this only after verified complete usage; missing/uncertain usage retains its reservation. */
 export async function settleHostedCompletion(requestId: string, actualMicrousd: number): Promise<boolean> {
   const environment = hostedQuotaEnvironment();
   if (!environment || !Number.isSafeInteger(actualMicrousd) || actualMicrousd < 0) return false;
