@@ -7,7 +7,7 @@ import styles from "@/components/folio-page.module.css";
 
 type Workspace = "new" | "running" | "stopped" | "transition";
 type Phase = "idle" | "starting" | "stopping" | "cancelling";
-type Reply = { status?: Workspace; url?: string; error?: string; message?: string; pending?: boolean };
+type Reply = { status?: Workspace; url?: string; error?: string; message?: string; pending?: boolean; ignored?: boolean };
 
 export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: boolean; sessionMinutes: number }) {
   const [codeRequired, setCodeRequired] = useState(needsCode);
@@ -102,6 +102,11 @@ export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: 
       if (!response.ok) throw Error(data.message || "Could not stop the workspace. Please try again.");
       if (data.pending) {
         setPhase(activeAttempt.current || !attempt ? "cancelling" : "idle");
+        return;
+      }
+      if (data.ignored) {
+        setPhase("idle");
+        void checkStatus();
         return;
       }
       setWorkspace("stopped");

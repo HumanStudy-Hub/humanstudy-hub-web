@@ -33,11 +33,16 @@ test('the shared admission store protects capacity, cancellation, and stale comp
     assert.ok(stop);
     assert.equal(await finish(workspace(6), stop, true), true);
     const attempt = randomUUID();
-    const earlyStop = await claim(workspace(8), true, attempt);
-    assert.ok(earlyStop);
-    assert.equal(await finish(workspace(8), earlyStop, true), true);
+    assert.equal(await claim(workspace(8), true, attempt), 'ignored');
     assert.equal(await claim(workspace(8), false, attempt), 'cancelled');
-    assert.ok(await claim(workspace(8)));
+    const first = randomUUID(), second = randomUUID();
+    const firstLease = await claim(workspace(8), false, first);
+    assert.equal(await finish(workspace(8), firstLease), true);
+    const secondLease = await claim(workspace(8), false, second);
+    assert.equal(await finish(workspace(8), secondLease), true);
+    assert.equal(await claim(workspace(8), true, first), 'ignored');
+    assert.equal((await db.query('select attempt from public.online_workspace_leases where workspace = $1', [workspace(8)])).rows[0].attempt, second);
+    assert.ok(await claim(workspace(8), true));
   } finally {
     await db.close();
   }

@@ -126,7 +126,7 @@ function Shot({ src, alt, width, height, priority }: { src: string; alt: string;
 const faq: [string, React.ReactNode][] = [
   [
     "Who can use the app?",
-    <>The app is in beta. Anyone can create a HumanStudy-Hub account, and signing in to the app also needs an invitation code from the team.</>,
+    <>Access is by invitation. Create a HumanStudy Hub account and sign in with an invitation code from the team.</>,
   ],
   [
     "Do I need an API key or a model subscription?",
@@ -202,7 +202,7 @@ export default async function DownloadPage() {
           <div>
             <h2 className="font-serif text-2xl font-bold sm:text-3xl">Getting access</h2>
             <p className="mt-4 text-base leading-7 text-[var(--foreground)]">
-              The app is in beta by invitation. You need a HumanStudy-Hub account and an invitation code.
+              Access is by invitation. You need a HumanStudy Hub account and an invitation code.
             </p>
             <ol className="mt-6 space-y-5">
               {[

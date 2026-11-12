@@ -220,10 +220,11 @@ async function stopRunning(sandbox: Sandbox) {
 }
 
 /** Stops the current session while retaining its workspace. A stop during launch records cancellation. */
-export async function stopTryOnline(userId: string, attempt?: string): Promise<{ pending: boolean }> {
+export async function stopTryOnline(userId: string, attempt?: string): Promise<{ pending: boolean; ignored?: boolean }> {
   const config = configuration(), name = sandboxName(userId);
   const lease = await claim(config, name, true, attempt);
   if (lease === "cancelling") return { pending: true };
+  if (lease === "ignored") return { pending: false, ignored: true };
   if (!lease) throw BUSY();
   let release = false;
   try {

@@ -63,8 +63,12 @@ begin
   end if;
 
   select * into current_lease from public.online_workspace_leases where workspace = workspace_name;
+  if request_stop and attempt_id is not null and current_lease.attempt is distinct from attempt_id then
+    -- Keep the tombstone for out-of-order requests without stopping a newer session.
+    return 'ignored';
+  end if;
   if current_lease.operation_until > requested_at then
-    if request_stop and not current_lease.stopping and (attempt_id is null or current_lease.attempt = attempt_id) then
+    if request_stop and not current_lease.stopping then
       update public.online_workspace_leases set cancelled = true where workspace = workspace_name;
       return 'cancelling';
     end if;

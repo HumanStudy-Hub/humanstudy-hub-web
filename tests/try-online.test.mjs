@@ -133,6 +133,13 @@ test('a cancelled launch never returns a browser URL', async t => {
   assert.equal(calls.at(-1)[1].release_slot, true);
 });
 
+test('a delayed cancellation for a superseded attempt never calls the provider', async t => {
+  const { calls, lib } = fixture(t, { claim: 'ignored' });
+  assert.deepEqual(await lib.stopTryOnline(user.id, attempt), { pending: false, ignored: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][1].attempt_id, attempt);
+});
+
 test('a stale build on a running workspace is not advertised or restarted', async t => {
   const { calls, lib } = fixture(t, { build: { ...build, version: 'stale' } });
   await assert.rejects(lib.launchTryOnline(user, attempt), { code: 'build_mismatch' });
