@@ -46,6 +46,7 @@ researchIndex.publications = {};
 const interactivePaper = researchIndex.papers.find(paper => paper.legacyStudyId === 'study_001');
 assert.ok(interactivePaper, 'The fixture requires the original team-contributed study.');
 interactivePaper.assetRoot = 'studies/study_001';
+interactivePaper.aliases = interactivePaper.aliases.filter(alias => !alias.startsWith('community:'));
 interactivePaper.currentRevision = 'a'.repeat(64);
 interactivePaper.contributors = [{ github: 'assassin808' }];
 interactivePaper.assetFiles = [{ path: 'program.json' }];
