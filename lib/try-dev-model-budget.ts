@@ -5,6 +5,7 @@ const prices = new Map([
   ["anthropic/claude-haiku-5.5", { input: 1, output: 2.5 }],
   ["deepseek/deepseek-v4.1-flash-1017", { input: 0.6, output: 1.2 }],
 ]);
+export const BOUNDED_HOSTED_MODELS = [...prices.keys()];
 const MAX_INPUT_BYTES = 4_000_000;
 const MAX_OUTPUT_TOKENS = 32_768;
 const FORMAT_OVERHEAD_TOKENS = 4096;
