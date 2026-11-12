@@ -162,7 +162,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
     await noScriptContext.close();
   }
 
-  for (const route of ['/pipeline', '/contribute', '/playground']) {
+  for (const route of ['/pipeline', '/playground']) {
     const response = await fetch(origin + route, { redirect: 'manual' });
     await response.arrayBuffer();
     assert.equal(response.status, 307);
@@ -361,6 +361,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
 
   // The browser is signed in through the existing auth fixture; history must use
   // that same fixture instead of falling through to an unconfigured live API.
+  await page.context().clearCookies({ name: 'hs_unlock' });
   await page.route(origin + '/api/community/mine{,?*}', async route => {
     assert.equal(route.request().method(), 'GET');
     const pageNumber = Number(new URL(route.request().url()).searchParams.get('page') || 1);
@@ -398,7 +399,8 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
   await visit('/contribute');
   await page.getByRole('link', { name: 'Sign in to HumanStudy Hub', exact: true }).waitFor();
   assert.equal(await page.getByLabel('Community contribution ZIP', { exact: true }).count(), 0);
-  checked('Contribution file inventory, private file rejection and sign-in gate without uploading');
+  checked('Community submission and history use Hub sign-in without a promo cookie');
+  await page.context().addCookies([{ name: 'hs_unlock', value: cookie, url: origin, httpOnly: true, sameSite: 'Lax' }]);
   workspace.title = model.title;
   workspace.document.title = model.title;
   projects[0].title = model.title;
