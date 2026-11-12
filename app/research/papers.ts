@@ -17,7 +17,7 @@ export const papers: Paper[] = [
     arxiv: "arXiv 2611.11969",
     href: "https://arxiv.org/abs/2611.11969",
     summary:
-      "Reconstructs a human study from its paper as an executable program that researchers can inspect, modify, and run with silicon participants — to understand a published study, prototype a new one, or study agent behavior.",
+      "Reconstructs a human study from its paper as an executable program that researchers can review, adapt, and run with silicon participants — to understand a published study, prototype a new one, or study agent behavior.",
   },
   {
     slug: "humanstudy-bench",

@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 
 const sections = [
   {
@@ -61,6 +62,14 @@ const sections = [
 export default function ProgramArticle() {
   return (
     <div className="mt-20">
+      <aside className="mb-14 flex flex-wrap items-center justify-between gap-x-8 gap-y-4 rounded-[2px] bg-[var(--site-surface)] px-6 py-6 sm:px-8">
+        <p className="max-w-[62ch] font-[family-name:var(--site-font-serif)] text-[18px] leading-[1.6]">
+          Build Study is available in the HumanStudy-Hub app, as an upgraded version with a more capable study agent.
+        </p>
+        <Link href="/download" className="inline-flex min-h-11 items-center border-b border-current text-sm text-[var(--site-accent)] hover:text-[var(--foreground)]">
+          Get the app →
+        </Link>
+      </aside>
       {sections.map((section) => (
         <section key={section.heading} className="border-t border-[var(--site-line)] py-14">
           <h2 className="!text-[28px] !leading-[1.25]">{section.heading}</h2>

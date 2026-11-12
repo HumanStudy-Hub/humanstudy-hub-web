@@ -125,7 +125,7 @@ function Shot({ src, alt, width, height, priority }: { src: string; alt: string;
 
 const workflow = [
   ["Read the research", "Open a paper to see its question, findings and individual experiments in a Human Study Program."],
-  ["Check the evidence", "Open a source next to the Program to inspect the original passage. The Program records gaps in the available materials."],
+  ["Check the evidence", "Open a source next to the Program to read the original passage. The Program records gaps in the available materials."],
   ["Prepare an experiment", "Choose an experiment to prepare its procedure and materials. Preview the participant view before a simulation."],
 ];
 
@@ -180,7 +180,7 @@ export default async function DownloadPage() {
     <div className={styles.page}>
       <section>
         <div className="max-w-4xl">
-          <h1>Turn a paper into a study you can inspect.</h1>
+          <h1>Turn a paper into a study you can run.</h1>
           <p className={styles.lede}>
             Explore the paper’s findings and experiments in a Human Study Program. Check the original sources,
             see what the paper leaves unstated, and prepare an experiment when the materials are available.
