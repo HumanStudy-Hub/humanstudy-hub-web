@@ -1,19 +1,19 @@
 import Link from "next/link";
 import ArrowRight from "@/components/ArrowRight";
-import { libraryFilters, libraryAvailability, searchLibrary, validateResearchQuery, type LibraryFilter } from "@/lib/research";
+import { libraryFilters, libraryAvailability, researchContributorNames, searchLibrary, validateResearchQuery, type LibraryFilter } from "@/lib/research";
 import ValidatedFilter from "./ValidatedFilter";
 import styles from "./page.module.css";
 
 type SearchParams = { q?: string; offset?: string; pool?: string; status?: string; validated?: string };
 const views = [
-  ["all", "All papers"],
   ["program", "Interactive papers"],
+  ["all", "All papers"],
 ] as const;
 
 export default async function StudiesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const filter = libraryFilters.find(key => key === params.status)
-    ?? (params.pool === "pending" ? "indexed" : "all");
+    ?? (params.pool === "pending" ? "indexed" : "program");
   const validatedOnly = params.validated === "1";
   const raw = new URLSearchParams();
   if (typeof params.q === "string") raw.set("q", params.q);
@@ -35,20 +35,21 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
   const link = (status: LibraryFilter, offset?: number) => {
     const query = new URLSearchParams();
     if (params.q) query.set("q", params.q);
-    if (status !== "all") query.set("status", status);
+    query.set("status", status);
     if (validatedOnly) query.set("validated", "1");
     if (offset !== undefined) query.set("offset", String(offset));
-    return query.size ? `/studies?${query}` : "/studies";
+    return `/studies?${query}`;
   };
 
   return (
     <div className={styles.page}>
       <header className={styles.heading}>
         <h1>Study Library</h1>
+        <Link href="/contribute" className="mt-3 inline-block text-sm text-[var(--site-accent)] underline">Contribute a study</Link>
       </header>
 
       <form id="study-search" action="/studies" className={styles.search} role="search">
-        {filter !== "all" && <input type="hidden" name="status" value={filter} />}
+        <input type="hidden" name="status" value={filter} />
         <label className={styles.searchField}>
           <svg
             width="20"
@@ -92,6 +93,7 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
               const status = libraryAvailability(paper);
               const href = `/studies/${paper.id}`;
               const label = status.program ? "Interact with paper" : "View paper";
+              const contributors = researchContributorNames(paper);
               return (
                 <article key={paper.id} className={styles.study}>
                   <div>
@@ -102,6 +104,7 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
                       </p>
                     )}
                     {status.validated && <p className={styles.validated}>Validated protocol</p>}
+                    {status.userSubmitted && <p className={styles.authors}>User submitted</p>}
                   </div>
                   <div className={styles.actions}>
                     <Link className={styles.primary} href={status.program ? `${href}#paper-program` : href} aria-label={`${label}: ${paper.title}`}>
@@ -110,6 +113,7 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
                     {(status.program || status.publicProtocol) && (
                       <Link href={`${href}#run-experiment`} aria-label={`Run experiment: ${paper.title}`}>Run experiment</Link>
                     )}
+                    {contributors.length > 0 && <p className={styles.attribution}>Contributed by {contributors.join(", ")}</p>}
                   </div>
                 </article>
               );

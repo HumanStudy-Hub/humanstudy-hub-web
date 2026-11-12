@@ -5,7 +5,7 @@ import styles from "./page.module.css";
 
 const actions = [
   { href: "/download", label: "Get the desktop app" },
-  { href: "/forum", label: "Join the forum" },
+  { href: "/forum", label: "Open the forum" },
   { href: "/collaboration", label: "Work with us" },
   { href: "/studies", label: "Explore studies" },
 ] as const;
@@ -15,15 +15,15 @@ export default function Home() {
     <div className={styles.home}>
       <section className={styles.opening} aria-labelledby="home-title">
         <h1 id="home-title" className={styles.title}>
-          <span>Read the paper.</span>
-          <em>Run the experiment.</em>
+          <span>Explore research papers.</span>
+          <em>Run experiments with AI.</em>
         </h1>
         <p className={styles.introduction}>
-          Explore the evidence, prepare an experiment, and see what is missing.
+          Reproduce study procedures with AI participants and explore new experiments.
         </p>
         <nav className={styles.actions} aria-label="Explore HumanStudy Hub">
           {actions.map((action) => (
-            <Link href={action.href} prefetch={action.href === "/forum" ? false : undefined} className={styles.textLink} key={action.href}>
+            <Link href={action.href} className={styles.textLink} key={action.href}>
               {action.label} <ArrowRight />
             </Link>
           ))}

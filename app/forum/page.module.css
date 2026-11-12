@@ -1,0 +1,85 @@
+.articles {
+  margin-top: 16px;
+  max-width: 72ch;
+}
+
+.article {
+  padding-block: 20px;
+}
+
+.article + .article {
+  border-top: 1px solid var(--site-line);
+}
+
+.article h3 {
+  font-size: clamp(23px, 3vw, 30px);
+}
+
+.article h3 a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.article h3 a:hover {
+  color: var(--site-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.article h3 a svg {
+  flex-shrink: 0;
+  color: var(--site-accent);
+}
+
+.byline {
+  margin-top: 8px;
+  color: var(--site-muted);
+  font-size: 14px;
+}
+
+.description {
+  margin-top: 12px;
+  color: var(--site-muted);
+  line-height: 1.6;
+}
+
+.forumHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.previewLink {
+  display: block;
+}
+
+.preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--site-line);
+}
+
+.articleBody {
+  max-width: 68ch;
+  overflow-wrap: anywhere;
+}
+
+.articleSources {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--site-line);
+  color: var(--site-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.articleSources a {
+  color: var(--site-accent);
+  text-decoration: underline;
+}

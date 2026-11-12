@@ -162,7 +162,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
     await noScriptContext.close();
   }
 
-  for (const route of ['/pipeline', '/contribute', '/playground']) {
+  for (const route of ['/pipeline', '/playground']) {
     const response = await fetch(origin + route, { redirect: 'manual' });
     await response.arrayBuffer();
     assert.equal(response.status, 307);
@@ -237,7 +237,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
 
     report.redirects = [];
     for (const [route, destination] of [
-      ['/dataset', '/studies'], ['/build', '/download'], ['/leaderboard', '/results'],
+      ['/dataset', '/studies'], ['/community', '/studies'], ['/build', '/download'], ['/leaderboard', '/results'],
       ['/build-preview', '/build/example'], ['/build/example', '/build/projects?sample=intentional-action'],
       ['/docs', '/docs/what_to_submit'],
     ]) {
@@ -296,10 +296,10 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
   await page.screenshot({ path: path.join(output, 'projects-dark.png'), fullPage: true });
   await settings.getByRole('combobox', { name: /^Appearance/ }).selectOption('light');
   await settings.getByRole('combobox', { name: /^Density/ }).selectOption('compact');
-  assert.equal(await page.locator('[data-density]').first().getAttribute('data-density'), 'compact');
+  await page.waitForFunction(() => document.querySelector('[data-density]')?.getAttribute('data-density') === 'compact');
   await settings.getByRole('button', { name: 'Close settings', exact: true }).click();
   await visit('/build/projects');
-  assert.equal(await page.locator('[data-density]').first().getAttribute('data-density'), 'compact');
+  await page.waitForFunction(() => document.querySelector('[data-density]')?.getAttribute('data-density') === 'compact');
   checked('Workspace preferences, dark appearance and density persistence');
 
   await visit('/build/' + workspaceId);
@@ -359,16 +359,48 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
   await page.waitForURL(origin + '/studies');
   checked('Mocked invitation-code failure and success with the existing library destination');
 
+  // The browser is signed in through the existing auth fixture; history must use
+  // that same fixture instead of falling through to an unconfigured live API.
+  await page.context().clearCookies({ name: 'hs_unlock' });
+  await page.route(origin + '/api/community/mine{,?*}', async route => {
+    assert.equal(route.request().method(), 'GET');
+    const pageNumber = Number(new URL(route.request().url()).searchParams.get('page') || 1);
+    return route.fulfill({ json: { contributions: [], github: null, page: pageNumber, hasMore: false } });
+  });
   await visit('/contribute');
+  await page.getByRole('region', { name: 'My contributions', exact: true }).getByText('No submissions on this page.', { exact: true }).waitFor();
   const upload = page.getByLabel('Community contribution ZIP', { exact: true });
   await upload.setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('Preview only') });
-  await page.locator('main').getByRole('alert').waitFor();
+  await page.getByRole('alert').filter({ hasText: 'Choose a community ZIP no larger than 40 MB.' }).waitFor();
+  assert.equal(await page.getByRole('region', { name: 'My contributions', exact: true }).getByRole('alert').count(), 0);
   assert.ok(await page.getByRole('button', { name: 'Contribute', exact: true }).isDisabled());
+  const zip = new (require('adm-zip'))();
+  zip.addFile('CONTRIBUTION.json', Buffer.from(JSON.stringify({
+    paper: { title: 'Framing experiment', firstAuthor: 'Original Researcher', year: 2025 },
+  })));
+  zip.addFile('program.json', Buffer.from('{}'));
+  zip.addFile('artifacts/simulations/example/report.md', Buffer.from('Public derived report'));
+  await upload.setInputFiles({ name: 'study.zip', mimeType: 'application/zip', buffer: zip.toBuffer() });
+  await page.getByText('Original paper authors: Original Researcher', { exact: false }).waitFor();
+  const inventory = page.locator('summary').filter({ hasText: 'Files to publish (2)' });
+  assert.equal(await inventory.evaluate(element => element.parentElement.open), false);
+  await inventory.click();
+  assert.ok(await page.getByText('artifacts/simulations/example/report.md', { exact: true }).isVisible());
+  await page.getByRole('textbox', { name: 'Your name', exact: true }).fill('Preview Contributor');
+  assert.ok(await page.getByRole('button', { name: 'Contribute', exact: true }).isEnabled());
+
+  zip.addFile('sources/private/item.txt', Buffer.from('Private attachment'));
+  await upload.setInputFiles({ name: 'private.zip', mimeType: 'application/zip', buffer: zip.toBuffer() });
+  const privateFileAlert = page.getByRole('alert').filter({ hasText: 'private project file or raw record' });
+  await privateFileAlert.waitFor();
+  assert.ok(await page.getByRole('button', { name: 'Contribute', exact: true }).isDisabled());
+
   setSignedIn(false);
   await visit('/contribute');
   await page.getByRole('link', { name: 'Sign in to HumanStudy Hub', exact: true }).waitFor();
   assert.equal(await page.getByLabel('Community contribution ZIP', { exact: true }).count(), 0);
-  checked('Contribution file validation and anonymous sign-in gate without uploading');
+  checked('Community submission and history use Hub sign-in without a promo cookie');
+  await page.context().addCookies([{ name: 'hs_unlock', value: cookie, url: origin, httpOnly: true, sameSite: 'Lax' }]);
   workspace.title = model.title;
   workspace.document.title = model.title;
   projects[0].title = model.title;

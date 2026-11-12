@@ -1,5 +1,8 @@
 import Link from "next/link";
-import { libraryAvailability, readProtocol, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
+import CreditPagination from "./CreditPagination";
+import { CREDIT_PAGE_SIZE, listCredits } from "@/lib/community-credit";
+import CommunityCreditList from "./CommunityCreditList";
+import { libraryAvailability, readProtocol, researchContributorNames, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
 import { getPublishedProgram, publishedAssetUrl } from "@/lib/published-program";
 import PublishedProgram from "./PublishedProgram";
 import RunExperiment from "./RunExperiment";
@@ -41,26 +44,16 @@ function Capabilities({ caps }: { caps: StudyCapabilities }) {
   </section>;
 }
 
-const PROTOCOL_NOTE: Record<string, string> = {
-  "high fidelity": "Its protocol was reviewed against the paper and rated high fidelity.",
-  "not high fidelity": "Its protocol was reviewed against the paper and not rated high fidelity.",
-  "": "A protocol exists for this study. It has not been reviewed against the paper yet.",
-};
-const QUALITY: Record<string, string> = { "high fidelity": "High fidelity", "not high fidelity": "Not high fidelity" };
-
-/** The v0.8 protocol summary from the catalog, as text: quality level, conditions, what cannot run. */
-function Protocol({ protocol }: { protocol: ResearchProtocol }) {
-  const verdict = protocol.fidelity.verdict;
-  const quality = verdict ? QUALITY[verdict] ?? verdict : "Not reviewed yet";
-  const signed = protocol.fidelity.signedBy.length ? `signed by ${protocol.fidelity.signedBy.join(", ")}` : null;
+/** Displays fidelity only for the independently reviewed published revision. */
+function Protocol({ protocol, validated }: { protocol: ResearchProtocol; validated: boolean }) {
   const runnable = protocol.arms.filter(a => a.runnable).length;
   return <section className="mt-10">
     <h2 className="text-lg font-semibold font-serif">Protocol</h2>
     <dl className="mt-3 divide-y divide-[var(--site-line)] text-sm">
-      <div className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[16rem_1fr]">
+      {validated && <div className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[16rem_1fr]">
         <dt className="text-[var(--foreground)]">Quality level</dt>
-        <dd className="text-[var(--site-muted)]"><span className="font-medium text-[var(--foreground)]">{quality}</span>{signed ? ` · ${signed}` : ""}</dd>
-      </div>
+        <dd className="text-[var(--site-muted)]"><span className="font-medium text-[var(--foreground)]">High fidelity</span> · signed by {protocol.fidelity.signedBy.join(", ")}</dd>
+      </div>}
       <div className="grid grid-cols-1 gap-1 py-2 sm:grid-cols-[16rem_1fr]">
         <dt className="text-[var(--foreground)]">Conditions</dt>
         <dd className="text-[var(--site-muted)]">{protocol.arms.length
@@ -79,14 +72,18 @@ function Protocol({ protocol }: { protocol: ResearchProtocol }) {
   </section>;
 }
 
-export default async function ResearchPaperDetail({ paper }: { paper: ResearchPaper }) {
+export default async function ResearchPaperDetail({ paper, contributionPage = 1 }: { paper: ResearchPaper; contributionPage?: number }) {
   // Catalog documents from different sources omit empty lists.
   const authors = paper.authors ?? [], resources = paper.resources ?? [];
   const repository = paper.assetRoot && /^(studies\/study_\d+|community\/[A-Za-z0-9_.-]+\/revisions\/[a-f0-9]{64})$/.test(paper.assetRoot)
     ? `https://github.com/HumanStudy-Hub/HumanStudy-Bench/tree/main/${paper.assetRoot}` : null;
   const protocol = readProtocol(paper);
   const availability = libraryAvailability(paper);
-  const program = await getPublishedProgram(paper);
+  const [program, credits] = await Promise.all([
+    getPublishedProgram(paper),
+    paper.currentRevision ? listCredits({ by: "paper", id: paper.id, revision: paper.currentRevision }, contributionPage).catch(() => []) : [],
+  ]);
+  const contributors = researchContributorNames(paper, credits.map(credit => credit.display_name));
   const programSource = program ? publishedAssetUrl(paper, program.source.filename) : null;
   return <div className={`${styles.page} ${styles.narrow}`}>
     <div>
@@ -97,16 +94,20 @@ export default async function ResearchPaperDetail({ paper }: { paper: ResearchPa
       {availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">
         {paper.developmentStage === "draft" ? "In development · protocol draft exists." : "In development · study materials are being prepared."}
       </p>}
-      {!program && !availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">{protocol ? PROTOCOL_NOTE[protocol.fidelity.verdict ?? ""] ?? PROTOCOL_NOTE[""] : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
+      {availability.userSubmitted && <p className="mt-3 text-sm text-[var(--site-muted)]">User submitted</p>}
+      {!program && !availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">{availability.publicProtocol ? "A published protocol is available for this study." : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
       <div className="mt-6 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
         {program && <a href="#paper-program">Interact with paper</a>}
         {(availability.program || availability.publicProtocol)
           ? <a href="#run-experiment">Run experiment</a>
           : <Link href="/pipeline">Build a study</Link>}
+      </div>
+      {contributors.length > 0 && <p className="mt-2 text-sm text-[var(--site-muted)]">Contributed by {contributors.join(", ")}</p>}
+      {(programSource || repository || protocol?.preview) && <div className="mt-4 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
         {programSource && <a href={programSource} target="_blank" rel="noreferrer">Original paper ↗</a>}
         {repository && <a href={repository} target="_blank" rel="noopener noreferrer">Research files ↗</a>}
         {protocol?.preview && <a href={protocol.preview} target="_blank" rel="noopener noreferrer">Participant view ↗</a>}
-      </div>
+      </div>}
       {(availability.program || availability.publicProtocol) && <RunExperiment
         paper={paper}
         program={program}
@@ -119,7 +120,13 @@ export default async function ResearchPaperDetail({ paper }: { paper: ResearchPa
           The published study document could not be loaded. Try refreshing the page.
         </p>
       )}
-      {protocol && <Protocol protocol={protocol} />}
+      {protocol && availability.publicProtocol && <Protocol protocol={protocol} validated={availability.validated} />}
+      {(credits.length > 0 || contributionPage > 1) && <section id="community-contributions" className="mt-10 scroll-mt-24">
+        <h2 className="text-lg font-semibold font-serif">Community contributions</h2>
+        <CommunityCreditList entries={credits.slice(0, CREDIT_PAGE_SIZE)} showPaper={false} allowVote />
+        <CreditPagination page={contributionPage} hasNext={credits.length > CREDIT_PAGE_SIZE}
+          base={`/studies/${paper.id}?creditPage=`} anchor="#community-contributions" />
+      </section>}
       {paper.studyCapabilities ? <Capabilities caps={paper.studyCapabilities as StudyCapabilities} /> : null}
       {resources.length > 0 && <section className="mt-10">
         <h2 className="text-lg font-semibold font-serif">Sources</h2>

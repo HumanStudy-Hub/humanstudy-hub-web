@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
+import { gzip, gunzip } from "node:zlib";
+import { unstable_cache } from "next/cache";
 import development from "../data/studies-in-development.json";
+
+type ResearchPublication = { kind: "user-submitted" | "maintainer-reviewed-protocol"; revision: string };
 
 export type ResearchPaper = {
   id: string; title: string; authors: string[]; year: number | null; description?: string;
@@ -12,6 +17,7 @@ export type ResearchPaper = {
   resources: { id: string; kind: string; url?: string; access: string; license?: string }[];
   /** v0.8 protocol summary (Bench catalog, B3). Absent on papers without a protocol.json revision. */
   protocol?: unknown;
+  publication?: ResearchPublication;
   developmentStage?: "draft" | "preparation";
   [key: string]: unknown;
 };
@@ -121,23 +127,45 @@ export function validateResearchQuery(input: URLSearchParams): ResearchQuery {
 }
 
 function asIndex(value: unknown): ResearchIndex {
-  const index = value as ResearchIndex;
+  const index = value as ResearchIndex & { publications?: Record<string, unknown> };
   if (index?.schemaVersion !== 1 || !/^[a-f0-9]{64}$/.test(index.snapshot) || !Array.isArray(index.papers)
       || !Array.isArray(index.taxonomy?.concepts)) throw new Error("Invalid research index.");
   const ids = new Set<string>();
-  for (const paper of index.papers) {
+  const papers = index.papers.map(paper => {
     if (!/^paper_[a-f0-9]{24}$/.test(paper.id) || !paper.title || !Array.isArray(paper.aliases) || ids.has(paper.id))
       throw new Error("Invalid or duplicate paper identity.");
     ids.add(paper.id);
-  }
-  return index;
+    // Paper records may contain contributor metadata. Only the catalog-level publication index is authoritative.
+    const record = index.publications?.[paper.id] as Partial<ResearchPublication> | undefined;
+    const revision = record?.revision;
+    const kind = record?.kind;
+    const publication = revision && /^[a-f0-9]{64}$/.test(revision) && revision === paper.currentRevision
+      && (kind === "user-submitted" || kind === "maintainer-reviewed-protocol")
+      ? { kind, revision } : undefined;
+    return { ...paper, publication };
+  });
+  return { ...index, papers };
 }
+
+const compressIndex = promisify(gzip);
+const decompressIndex = promisify(gunzip);
+
+// Next's fetch cache has a 2 MB entry limit. Cache the validated, losslessly compressed
+// snapshot instead; the exact URL argument is part of the cache key.
+const fetchCompressedIndex = unstable_cache(async (url: string): Promise<string> => {
+  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+  if (!response.ok) throw new Error(`Research index fetch failed (${response.status}).`);
+  const raw = await response.text();
+  asIndex(JSON.parse(raw));
+  return (await compressIndex(raw)).toString("base64");
+}, ["research-index-gzip-v1"], { revalidate: 60 });
 
 export async function getResearchIndex(): Promise<ResearchIndex> {
   const url = process.env.RESEARCH_INDEX_URL || "https://raw.githubusercontent.com/HumanStudy-Hub/HumanStudy-Bench/main/co_website/data/research_index.json";
   try {
-    const response = await fetch(url, { next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) });
-    if (response.ok) return asIndex(await response.json());
+    const cached = await fetchCompressedIndex(url);
+    const raw = await decompressIndex(Buffer.from(cached, "base64"));
+    return asIndex(JSON.parse(raw.toString("utf8")));
   } catch { /* A bundled snapshot keeps the catalog available while offline or during rollout. */ }
   return asIndex(JSON.parse(await fs.readFile(path.join(process.cwd(), "data/research_index.json"), "utf8")));
 }
@@ -198,6 +226,26 @@ export async function searchResearch(input: ResearchQuery) {
 export const libraryFilters = ["all", "program", "runnable", "protocol", "development", "indexed"] as const;
 export type LibraryFilter = (typeof libraryFilters)[number];
 
+export function researchContributorNames(paper: ResearchPaper, creditedNames: readonly string[] = []): string[] {
+  const catalogNames = Array.isArray(paper.contributors) ? paper.contributors.map(item => {
+    if (typeof item === "string") return item;
+    const handle = typeof item?.github === "string"
+      ? /^(?:https:\/\/github\.com\/|@)?([a-z\d][a-z\d-]{0,38})\/?$/i.exec(item.github.trim())?.[1]
+      : undefined;
+    if (handle?.toLowerCase() === "assassin808") return "HumanStudy Hub Team";
+    const name = typeof item?.name === "string" ? item.name.trim() : "";
+    return name || (handle ? `@${handle}` : "");
+  }) : [];
+  const names = [...new Set([...catalogNames, ...creditedNames].map(name => name.trim()).filter(Boolean))];
+  if (names.length) return names;
+
+  // The original twelve curated packages are Hub team reconstructions.
+  const id = paper.legacyStudyId;
+  return id && /^study_0(?:0[1-9]|1[0-2])$/.test(id) && paper.assetRoot === `studies/${id}` && paper.currentRevision
+    && !paper.publication && !paper.aliases.some(alias => alias.startsWith("community:"))
+    ? ["HumanStudy Hub Team"] : [];
+}
+
 export function libraryAvailability(paper: ResearchPaper) {
   const files = paper.assetFiles ?? [];
   const program = Boolean(paper.currentRevision && files.some(file => file.path === "program.json"));
@@ -208,10 +256,11 @@ export function libraryAvailability(paper: ResearchPaper) {
   const runnableDraft = program && paper.capabilities?.replayable === true && (run === "yes" || run === "partial")
     && files.some(file => /^package\/[^/]+\/task\/adapter\.py$/.test(file.path));
   const runnable = runnableDraft || Boolean(publicProtocol && protocol?.schemaRunnable && protocol.arms.some(arm => arm.runnable));
-  const validated = Boolean(publicProtocol && protocol?.schemaRunnable
+  const publication = paper.publication?.revision === paper.currentRevision ? paper.publication?.kind : undefined;
+  const validated = Boolean(publication === "maintainer-reviewed-protocol" && publicProtocol && protocol?.schemaRunnable
     && protocol.fidelity.verdict === "high fidelity" && protocol.fidelity.signedBy.length
     && protocol.arms.some(arm => arm.runnable));
-  return { program, runnable, publicProtocol, validated, inDevelopment: Boolean(paper.developmentStage && !publicProtocol) };
+  return { program, runnable, publicProtocol, validated, userSubmitted: publication === "user-submitted", inDevelopment: Boolean(paper.developmentStage && !publicProtocol) };
 }
 
 export function includeDevelopment(index: ResearchIndex): ResearchIndex {
