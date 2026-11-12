@@ -3,23 +3,25 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
-type Submission = { id: string; paperKey: string; status: string; prUrl: string | null; createdAt: string };
+export type Submission = { id: string; paperKey: string; status: string; prUrl: string | null; createdAt: string };
 type Receipt = { status: string; contributorId: string | null };
 const labels: Record<string, string> = {
   queued: "Queued for submission", pr_open: "Review pending", checks_failed: "Checks need attention",
   changes_requested: "Changes requested", merged: "Merged · public credit pending verification", rejected: "Closed",
 };
 
-export default function MyContributions() {
+export default function MyContributions({ previewRows }: { previewRows?: Submission[] } = {}) {
+  const preview = previewRows !== undefined;
   const [page, setPage] = useState(1);
   const [retry, setRetry] = useState(0);
-  const [rows, setRows] = useState<Submission[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState<Submission[]>(previewRows?.slice(0, 25) ?? []);
+  const [hasMore, setHasMore] = useState((previewRows?.length ?? 0) > 25);
+  const [loading, setLoading] = useState(!preview);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [receipts, setReceipts] = useState<Record<string, Receipt>>({});
   useEffect(() => {
+    if (preview) return;
     const controller = new AbortController();
     void fetch(`/api/community/mine?page=${page}`, { cache: "no-store", signal: controller.signal })
       .then(async response => {
@@ -31,9 +33,15 @@ export default function MyContributions() {
         if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Your contributions could not be loaded.");
       }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [page, retry]);
+  }, [page, retry, preview]);
 
   function load(nextPage: number) {
+    if (previewRows) {
+      setRows(previewRows.slice((nextPage - 1) * 25, nextPage * 25));
+      setHasMore(previewRows.length > nextPage * 25);
+      setPage(nextPage);
+      return;
+    }
     setLoading(true);
     setError("");
     setPage(nextPage);
@@ -41,6 +49,10 @@ export default function MyContributions() {
   }
   async function recheck(id: string) {
     if (busy) return;
+    if (preview) {
+      setReceipts(value => ({ ...value, [id]: { status: "merged", contributorId: "example" } }));
+      return;
+    }
     setBusy(id);
     setError("");
     try {
@@ -67,7 +79,7 @@ export default function MyContributions() {
           <p className="text-[var(--site-muted)]"><time dateTime={row.createdAt}>{row.createdAt.slice(0, 10)}</time> · <span role="status">{receipt?.contributorId ? "Public contribution credited" : labels[receipt?.status ?? row.status] ?? "Review pending"}</span></p>
           <div className="flex flex-wrap items-center gap-4 text-[var(--site-accent)]">
             {row.prUrl && <a href={row.prUrl} className="underline">View submission</a>}
-            {receipt?.contributorId ? <Link href={`/contributors/${receipt.contributorId}`} className="underline">View your public contribution credit</Link>
+            {receipt?.contributorId ? <Link href={preview ? "#contributor" : `/contributors/${receipt.contributorId}`} className="underline">View your public contribution credit</Link>
               : <button type="button" disabled={busy !== null} onClick={() => void recheck(row.id)} className="min-h-11 underline">{busy === row.id ? "Checking…" : "Check status"}</button>}
           </div>
         </li>;

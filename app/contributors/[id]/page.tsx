@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import CreditPagination from "@/components/CreditPagination";
+import ContributorSummary from "@/components/ContributorSummary";
 import CommunityCreditList from "@/components/CommunityCreditList";
 import styles from "@/components/folio-page.module.css";
 import { CREDIT_PAGE_SIZE, creditPage, getContributor, listCredits, UUID } from "@/lib/community-credit";
@@ -21,10 +22,7 @@ export default async function ContributorProfile({ params, searchParams }: { par
   if (!person) notFound();
   return <div className={styles.page}>
     <Link href="/community?view=contributors" className={styles.back}>← Contributors</Link>
-    <header className={styles.heading}>
-      <h1>{person.display_name}</h1>
-      <p className={styles.lede}>{person.helpful} helpful {person.helpful === 1 ? "vote" : "votes"} received · {person.contributions} accepted</p>
-    </header>
+    <ContributorSummary person={person} />
     <section className={styles.section}>
       <h2>Accepted contributions</h2>
       <CommunityCreditList entries={entries.slice(0, CREDIT_PAGE_SIZE)} allowVote />
