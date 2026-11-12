@@ -76,12 +76,6 @@
   height: auto;
 }
 
-@media (min-width: 768px) {
-  .introduction {
-    white-space: nowrap;
-  }
-}
-
 @media (max-width: 640px) {
   .home {
     padding-bottom: 32px;

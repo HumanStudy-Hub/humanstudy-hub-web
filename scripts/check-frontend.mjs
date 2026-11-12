@@ -54,7 +54,7 @@ const fixtureServer = createServer((request, response) => {
 });
 const report = { passed: false, views: [], checks: [], runtimeErrors: [], runtimeErrorDetails: [], blockedWrites: [], mockedAuthActions: [], checkedAt: new Date().toISOString() };
 const navigation = [
-  ['Blog', '/blog'], ['Study Library', '/studies'], ['Desktop app', '/download'],
+  ['Forum', '/forum'], ['Study Library', '/studies'], ['Desktop app', '/download'],
   ['Benchmark', '/results'], ['Partnerships', '/collaboration'], ['Account', '/account'],
 ];
 let server;
@@ -166,7 +166,7 @@ try {
     });
     assert.equal(await page.locator('main').count(), 1, 'The page has one main landmark.');
     assert.equal(await page.locator('h1').count(), 1);
-    assert.ok(await page.getByRole('heading', { name: 'Read the paper. Run the experiment.' }).isVisible());
+    assert.ok(await page.getByRole('heading', { name: 'Explore research papers. Run experiments with AI.' }).isVisible());
     const layout = await page.evaluate(() => ({
       viewport: innerWidth,
       width: document.documentElement.scrollWidth,
@@ -179,17 +179,9 @@ try {
     assert.equal(layout.background, 'rgb(243, 245, 239)');
     assert.ok(layout.fontsLoaded, 'Local fonts load.');
     const actions = page.getByRole('navigation', { name: 'Explore HumanStudy Hub', exact: true });
-    assert.deepEqual(await actions.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/download', '/blog', '/collaboration', '/studies']);
+    assert.deepEqual(await actions.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/download', '/forum', '/collaboration', '/studies']);
     assert.equal(await page.getByText('Questions we’re exploring.', { exact: true }).count(), 0);
     assert.equal(await page.getByText('Join the conversation.', { exact: true }).count(), 0);
-    if (width >= 768) {
-      const lines = await page.getByText('Explore the evidence, prepare an experiment, and see what is missing.', { exact: true }).evaluate(element => {
-        const range = document.createRange();
-        range.selectNodeContents(element);
-        return range.getClientRects().length;
-      });
-      assert.equal(lines, 1, 'The introduction stays on one line at ' + width);
-    }
 
     const nav = page.getByRole('navigation', { name: 'Main navigation', exact: true });
     if (width < 1024) await nav.locator('summary').click();
@@ -208,7 +200,7 @@ try {
     await page.screenshot({ path: path.join(output, `home-${width}.png`), fullPage: true });
     report.views.push({ page: '/', width, ...layout });
   }
-  report.checks.push('Responsive homepage, one-line desktop introduction, four grouped actions and all six navigation destinations');
+  report.checks.push('Responsive homepage, four grouped actions and all six navigation destinations');
 
   for (const width of [1280, 820, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -388,31 +380,31 @@ try {
 
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 1000 });
-    await visit('/blog');
-    await page.getByRole('heading', { name: 'Blog', exact: true }).waitFor();
+    await visit('/forum');
+    await page.getByRole('heading', { name: 'Community forum', exact: true }).waitFor();
     assert.equal(new URL(page.url()).origin, origin);
     assert.equal(await page.locator('[data-site-navigation], [data-site-footer]').count(), 2);
-    const links = page.getByRole('region', { name: 'Research articles' }).getByRole('link');
+    const links = page.getByRole('region', { name: 'Featured posts' }).getByRole('link');
     assert.deepEqual(await links.evaluateAll(items => items.map(item => item.getAttribute('href'))), [
-      '/blog/reproducible-human-studies',
-      '/blog/implicit-agent-behavior',
+      '/forum/making-human-studies-as-reproducible-as-open-source-code',
+      '/forum/beyond-human-likeness-preserving-the-human-trace',
     ]);
     const preview = page.getByRole('img', { name: /The HumanStudy Forum discussions page/ });
     await preview.evaluate(img => img.decode());
     assert.ok(await preview.isVisible());
     assert.equal(await preview.evaluate(img => img.closest('a')?.href), 'https://forum.humanstudy-hub.com/');
     assert.equal(await page.getByRole('link', { name: 'Open the forum', exact: true }).getAttribute('href'), 'https://forum.humanstudy-hub.com/');
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Blog stays within the viewport.');
-    await page.screenshot({ path: path.join(output, `blog-${width}.png`), fullPage: true });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Forum stays within the viewport.');
+    await page.screenshot({ path: path.join(output, `forum-${width}.png`), fullPage: true });
   }
-  for (const slug of ['reproducible-human-studies', 'implicit-agent-behavior']) {
-    await page.getByRole('region', { name: 'Research articles' }).locator(`a[href="/blog/${slug}"]`).click();
-    await page.waitForURL(origin + '/blog/' + slug);
-    assert.ok(await page.locator('main article section h2').count() > 0);
-    await page.getByRole('link', { name: '← Blog', exact: true }).click();
-    await page.waitForURL(origin + '/blog');
+  for (const slug of ['making-human-studies-as-reproducible-as-open-source-code', 'beyond-human-likeness-preserving-the-human-trace']) {
+    await page.getByRole('region', { name: 'Featured posts' }).locator(`a[href="/forum/${slug}"]`).click();
+    await page.waitForURL(origin + '/forum/' + slug);
+    assert.ok(await page.getByRole('link', { name: 'Original post and discussion on the HumanStudy Forum' }).isVisible());
+    await page.getByRole('link', { name: '← Forum', exact: true }).click();
+    await page.waitForURL(origin + '/forum');
   }
-  report.checks.push('Blog, same-site articles and public forum preview');
+  report.checks.push('Community-first Forum with two same-site featured posts');
 
   assert.deepEqual(report.runtimeErrors, []);
   assert.deepEqual(report.blockedWrites, []);

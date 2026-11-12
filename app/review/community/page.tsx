@@ -40,7 +40,7 @@ export default function CommunityReviewPage() {
     <section className={styles.section} aria-label="Explore real pages">
       <h2>Explore the rest of the site</h2>
       <div className="mt-4 flex flex-wrap gap-5 text-[var(--site-accent)] underline">
-        <Link href="/blog">Blog</Link><Link href="/studies">Study Library</Link><Link href="/contribute">Submit a study</Link>
+        <Link href="/forum">Forum</Link><Link href="/studies">Study Library</Link><Link href="/contribute">Submit a study</Link>
       </div>
       <p className="mt-3 text-sm text-[var(--site-muted)]">Sign in to HumanStudy Hub to submit a study.</p>
     </section>

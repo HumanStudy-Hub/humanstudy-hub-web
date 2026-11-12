@@ -59,10 +59,10 @@ const Navbar = load('components/Navbar.tsx').default;
 const Footer = load('components/Footer.tsx').default;
 const Home = load('app/page.tsx').default;
 const render = component => renderToStaticMarkup(React.createElement(component));
-const destinations = ['/blog', '/studies', '/download', '/results', '/collaboration', '/account'];
+const destinations = ['/forum', '/studies', '/download', '/results', '/collaboration', '/account'];
 
 test('public navigation preserves every existing destination on desktop and mobile', () => {
-  for (pathname of ['/', '/blog', '/studies', '/account', '/download', '/results', '/collaboration']) {
+  for (pathname of ['/', '/forum', '/studies', '/account', '/download', '/results', '/collaboration']) {
     const html = render(Navbar);
     assert.match(html, /aria-label="Main navigation"/);
     assert.match(html, /href="\/"/);
@@ -96,34 +96,53 @@ test('the real homepage retains its original actions and has one main heading', 
   const html = render(Home);
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
   assert.doesNotMatch(html, /<main\b/);
-  for (const href of ['/blog', '/studies', '/download']) {
+  for (const href of ['/forum', '/studies', '/download']) {
     assert.match(html, new RegExp(`href="${href}"`));
   }
-  assert.match(html, /Read the paper\./);
-  assert.match(html, /Run the experiment\./);
-  assert.match(html, /Explore the evidence, prepare an experiment, and see what is missing\./);
+  assert.match(html, /Explore research papers\./);
+  assert.match(html, /Run experiments with AI\./);
+  assert.match(html, /Reproduce study procedures with AI participants and explore new experiments\./);
 });
 
-test('Blog opens adapted articles in the site and keeps the public forum entry', async () => {
-  const BlogPage = load('app/blog/page.tsx').default;
-  const html = render(BlogPage);
-  assert.match(html, /<h1>Blog<\/h1>/);
+test('Forum introduces the community before its two original featured posts', async () => {
+  const ForumPage = load('app/forum/page.tsx').default;
+  const html = render(ForumPage);
+  assert.match(html, /<h1[^>]*>Community forum<\/h1>/);
+  const alias = load('app/blog/page.tsx');
+  assert.equal(render(alias.default), html);
+  assert.equal(alias.metadata.alternates.canonical, '/forum');
+  assert.ok(html.indexOf('Community forum') < html.indexOf('Featured posts'));
   assert.equal((html.match(/<article\b/g) || []).length, 2);
-  assert.equal((html.match(/HumanStudy Hub Team/g) || []).length, 2);
-  assert.match(html, /From papers to reusable experiments/);
-  assert.match(html, /Making agent behavior measurable/);
-  const Article = load('app/blog/[slug]/page.tsx').default;
-  for (const slug of ['reproducible-human-studies', 'implicit-agent-behavior']) {
-    assert.ok(html.includes(`href="/blog/${slug}"`));
-    const article = renderToStaticMarkup(await Article({ params: Promise.resolve({ slug }) }));
-    assert.match(article, /Xuan Liu/);
-    assert.match(article, /<h2>/);
-    assert.match(article, /href="\/blog"/);
+  const posts = load('lib/forum-posts.ts');
+  const Article = load('app/forum/[slug]/page.tsx', {
+    '@/lib/forum-posts': { ...posts, readForumPost: async () => '## Original heading\n\nOriginal paragraph.' },
+  }).default;
+  for (const post of posts.forumPosts) {
+    assert.ok(html.includes(`href="/forum/${post.slug}"`));
+    const article = renderToStaticMarkup(await Article({ params: Promise.resolve({ slug: post.slug }) }));
+    assert.ok(article.includes(post.author));
+    assert.ok(article.includes(posts.forumPostUrl(post)));
+    assert.match(article, /<h2>Original heading<\/h2>/);
+    assert.match(article, /href="\/forum"/);
   }
-  assert.doesNotMatch(html, /xuanl17\.github\.io/);
+  assert.doesNotMatch(html, /implicit-agent-behavior/);
   assert.ok(html.includes('href="https://forum.humanstudy-hub.com/"'));
   assert.ok(html.includes('src="/images/forum-discussions.webp"'));
-  assert.doesNotMatch(html, /<main\b/);
+});
+
+test('featured post relay returns the original Markdown and rejects drafts and mismatched IDs', async () => {
+  const { forumPosts, readForumPost } = load('lib/forum-posts.ts');
+  const post = forumPosts[0];
+  const original = '## Heading\n\nExact source.\n';
+  const record = { _id: post.id, slug: post.slug, status: 2, contents: { markdown: original } };
+  const response = result => async (url, init) => {
+    assert.equal(url, 'https://forum.humanstudy-hub.com/graphql');
+    assert.equal(JSON.parse(init.body).variables.id, post.id);
+    return Response.json({ data: { post: { result } } });
+  };
+  assert.equal(await readForumPost(post, response(record)), original);
+  assert.equal(await readForumPost(post, response({ ...record, draft: true })), null);
+  assert.equal(await readForumPost(post, response({ ...record, _id: 'different' })), null);
 });
 
 test('contributor profiles show an unavailable state during storage errors', async () => {
@@ -147,7 +166,7 @@ test('contributor profiles show an unavailable state during storage errors', asy
 test('the homepage groups all four actions in the requested order without secondary sections', () => {
   const html = render(Home);
   const links = [...html.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(links, ['/download', '/blog', '/collaboration', '/studies']);
+  assert.deepEqual(links, ['/download', '/forum', '/collaboration', '/studies']);
   assert.match(html, /aria-label="Explore HumanStudy Hub"/);
   assert.doesNotMatch(html, /Questions we’re exploring|Join the conversation|<h2/);
 });
@@ -295,6 +314,8 @@ test('the redesigned download page retains actual platform assets and release no
     assert.equal(html.split(`href="${asset.url}"`).length - 1, 2);
   }
   assert.match(html, /Version 1\.2\.3 \(beta\)/);
+  assert.match(html, /<span class="whitespace-nowrap">Windows \(preview\)<\/span>/);
+  assert.doesNotMatch(html, /From paper to experiment|Turn a paper into a study you can inspect/);
   assert.ok(html.includes(`href="${release.pageUrl}"`));
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
   assert.doesNotMatch(html, /<main\b/);
