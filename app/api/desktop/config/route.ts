@@ -1,3 +1,5 @@
+import { hostedQuotaEnvironment } from "@/lib/hosted-model-quota";
+import { BOUNDED_HOSTED_MODELS } from "@/lib/try-dev-model-budget";
 import { NextResponse } from "next/server";
 import { DESKTOP_DEFAULT_MODEL, DESKTOP_MODELS } from "@/lib/desktop-access";
 
@@ -7,5 +9,8 @@ export const runtime = "nodejs";
 export async function GET() {
   const supabaseUrl = process.env.SUPABASE_URL, supabaseKey = process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!supabaseUrl || !supabaseKey) return NextResponse.json({ error: "not_configured" }, { status: 503 });
-  return NextResponse.json({ supabaseUrl, supabaseKey, defaultModel: DESKTOP_DEFAULT_MODEL, models: DESKTOP_MODELS, ...(process.env.STUDIO_AUTH_ORIGIN ? { authOrigin: process.env.STUDIO_AUTH_ORIGIN } : {}) }, { headers: { "Cache-Control": "public, max-age=300" } });
+  const models = hostedQuotaEnvironment() ? DESKTOP_MODELS.filter(model => BOUNDED_HOSTED_MODELS.includes(model)) : DESKTOP_MODELS;
+  if (hostedQuotaEnvironment() && !models.includes(DESKTOP_DEFAULT_MODEL)) return NextResponse.json({ error: "Hosted default model needs an explicitly configured, reviewed price bound" }, { status: 503 });
+  const defaultModel = DESKTOP_DEFAULT_MODEL;
+  return NextResponse.json({ supabaseUrl, supabaseKey, defaultModel, models, ...(process.env.STUDIO_AUTH_ORIGIN ? { authOrigin: process.env.STUDIO_AUTH_ORIGIN } : {}) }, { headers: { "Cache-Control": "public, max-age=300" } });
 }
