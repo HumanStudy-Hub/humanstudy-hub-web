@@ -73,20 +73,22 @@ export default function PublishedProgram({ paper, program }: { paper: ResearchPa
       {renderEvidence(field.evidenceIds.length ? field.evidenceIds : fallbackEvidence)}
     </div>;
 
-  const renderNode = (node: ProgramNode, showScope: boolean) => (
-    <section key={node.id} className="mt-3">
+  const renderNode = (node: ProgramNode, showScope: boolean) => {
+    const sharedScope = showScope && node.studyIds.length > 1
+      && (!node.fields.length || node.summary || node.description || node.fields.every(field => !field.studyIds?.length));
+    return <section key={node.id} className="mt-3">
       <h5 className="text-sm font-semibold">{node.title}</h5>
-      {showScope && node.studyIds.length > 1 && (!node.fields.length || node.summary || node.description) && <p className="text-sm text-[var(--site-muted)]">Applies to {studyNames(node.studyIds)}</p>}
+      {sharedScope && <p className="text-sm text-[var(--site-muted)]">Applies to {studyNames(node.studyIds)}</p>}
       {node.summary && <p className="mt-1 text-sm">{node.summary}</p>}
       {node.description && node.description !== node.summary && <p className="mt-1 whitespace-pre-wrap text-sm">{node.description}</p>}
       {node.fields.map(field => {
         const ids = field.studyIds?.length ? field.studyIds : node.studyIds;
         return renderField(field, node.evidenceIds, node.fields.length !== 1 || field.label.trim() !== node.title.trim(),
-          showScope && ids.length > 1 ? studyNames(ids) : undefined);
+          showScope && ids.length > 1 && (!sharedScope || field.studyIds?.length) ? studyNames(ids) : undefined);
       })}
       {!node.fields.length && renderEvidence(node.evidenceIds)}
-    </section>
-  );
+    </section>;
+  };
   const renderOverview = (nodes: ProgramNode[], showScope = false) => overviewGroups.map(group => {
     const entries = nodes.filter(node => group.kinds.includes(node.kind));
     return entries.length > 0 && <div key={group.title} className="mt-4">
