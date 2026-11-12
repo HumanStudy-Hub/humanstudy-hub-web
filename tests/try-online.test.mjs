@@ -377,16 +377,16 @@ test('ordinary dev workspace retains public account configuration without a host
 
 test('Online invitation grants only after verified code and before workspace launch', async () => {
   const calls = [];
-  let allow = false;
+  let allow = false, existingInvite = false;
   const route = load('app/api/try/route.ts', {
     'next/server': { NextResponse: { json: Response.json } },
-    'next/headers': { cookies: async () => ({ get: () => undefined, set: () => calls.push(['cookie']) }) },
+    'next/headers': { cookies: async () => ({ get: () => existingInvite ? { value: 'verified-owner-cookie' } : undefined, set: () => calls.push(['cookie']) }) },
     '@/lib/desktop-access': { promoMatches: code => code === 'valid-code' },
     '@/lib/hosted-model-quota': { grantHostedInvitation: async id => { calls.push(['grant', id]); return allow; } },
     '@/lib/studio/auth': { requireStudioUser: async () => ({ user }) },
     '@/lib/studio/http': { assertSameOrigin() {}, readJsonBody: request => request.json(), isUuid: value => value === attempt },
     '@/lib/try-online': {
-      hasAccess: () => false, accessCookieFor: () => 'fixture-cookie',
+      hasAccess: (id, cookie) => id === user.id && cookie === 'verified-owner-cookie', accessCookieFor: () => 'fixture-cookie',
       launchTryOnline: async (account, id) => { calls.push(['launch', account.id, id]); return { url: 'https://workspace.test' }; },
     },
     '@/lib/try-online-config': { tryConfigured: () => true },
@@ -399,4 +399,7 @@ test('Online invitation grants only after verified code and before workspace lau
   allow = true;
   assert.equal((await route.POST(request('valid-code'))).status, 200);
   assert.deepEqual(calls.slice(1), [['grant', user.id], ['cookie'], ['launch', user.id, attempt]]);
+  existingInvite = true;
+  assert.equal((await route.POST(request(undefined))).status, 200);
+  assert.deepEqual(calls.slice(-2), [['grant', user.id], ['launch', user.id, attempt]], 'a verified existing owner cookie preserves access without redeeming again');
 });
