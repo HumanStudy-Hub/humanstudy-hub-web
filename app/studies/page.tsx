@@ -45,6 +45,7 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
     <div className={styles.page}>
       <header className={styles.heading}>
         <h1>Study Library</h1>
+        <Link href="/community" className="mt-3 inline-block text-sm text-[var(--site-accent)] underline">Community leaderboard</Link>
       </header>
 
       <form id="study-search" action="/studies" className={styles.search} role="search">

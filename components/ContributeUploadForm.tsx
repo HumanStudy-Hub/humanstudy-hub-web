@@ -16,7 +16,8 @@ export default function ContributeUploadForm() {
   const selection=useRef(0);
   const [name,setName]=useState(""),[affiliation,setAffiliation]=useState("");
   const [busy,setBusy]=useState(false),[progress,setProgress]=useState<number|null>(null);
-  const [error,setError]=useState(""),[submitted,setSubmitted]=useState(false);
+  const [error,setError]=useState(""),[submitted,setSubmitted]=useState<{id: string; prUrl?: string} | null>(null);
+  const [creditStatus,setCreditStatus]=useState<{ status: string; contributorId: string | null } | null>(null);
   useEffect(()=>{fetch('/api/studio/auth').then(r=>r.json()).then(body=>setUser(body.user||null)).catch(()=>setUser(null)).finally(()=>setChecked(true))},[]);
   async function choose(next: File | undefined) {
     const currentSelection = ++selection.current;
@@ -24,7 +25,8 @@ export default function ContributeUploadForm() {
     setMetadata(null);
     setFile(null);
     setInventory([]);
-    setSubmitted(false);
+    setSubmitted(null);
+    setCreditStatus(null);
     if (!next) return;
     if (!next.name.toLowerCase().endsWith(".zip") || next.size > MAX_CONTRIBUTION_ZIP_BYTES) {
       setError("Choose a community ZIP no larger than 40 MB.");
@@ -75,13 +77,46 @@ export default function ContributeUploadForm() {
       setProgress(null);
       const response=await fetch('/api/community/publish',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({blobPathname:blob.pathname,paperMeta:metadata.paper,paperId:metadata.paperId,baseRevision:metadata.baseRevision,includesPdf:metadata.includesPdf===true,contributor:{name,affiliation},slug:'research-contribution'})});
       const result=await response.json();if(!response.ok)throw Error(result.message||'The contribution could not be submitted.');
-      setSubmitted(true);
+      setSubmitted({ id: result.id, prUrl: result.prUrl });
     }catch(e){setError(e instanceof Error?e.message:'The contribution could not be submitted.')}
     finally{setBusy(false);setProgress(null)}
   }
+  async function refreshCredit() {
+    if (!submitted || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/community/mine", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: submitted.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw Error(result.message || "Contribution status is temporarily unavailable.");
+      setCreditStatus(result);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Contribution status is temporarily unavailable.");
+    } finally {
+      setBusy(false);
+    }
+  }
   if(!checked)return <p className="text-sm text-[var(--site-muted)]">Checking sign-in…</p>;
   if(!user)return <p className="text-sm text-[var(--foreground)]"><Link href="/build/projects" className="font-semibold text-[var(--site-accent)] underline">Sign in to HumanStudy Hub</Link> to contribute. A GitHub account is optional.</p>;
-  if(submitted)return <p role="status" className="text-sm leading-6 text-[var(--site-accent)]"><strong>User submitted.</strong> The source checks and review run in the background; the current recommended version stays available.</p>;
+  if (submitted) return <div className="space-y-2 text-sm leading-6">
+    <p role="status"><strong>User submitted.</strong>{" "}
+      {creditStatus?.contributorId
+        ? <Link href={`/contributors/${creditStatus.contributorId}`} className="text-[var(--site-accent)] underline">View your public contribution credit</Link>
+        : creditStatus?.status === "merged" ? "Public credit is pending verification."
+        : creditStatus?.status === "rejected" ? "The submission was closed."
+        : creditStatus?.status === "changes_requested" ? "A reviewer requested changes."
+        : creditStatus?.status === "checks_failed" ? "The submission checks need attention."
+        : "Source checks and review are pending."}
+    </p>
+    <div className="flex flex-wrap gap-4 text-[var(--site-accent)]">
+      {submitted.prUrl && <a href={submitted.prUrl} className="underline">View submission</a>}
+      {!creditStatus?.contributorId && <button type="button" className="cursor-pointer underline" disabled={busy}
+        onClick={() => void refreshCredit()}>{busy ? "Checking…" : "Check status"}</button>}
+    </div>
+    {error && <p role="alert">{error}</p>}
+  </div>;
   return <form onSubmit={submit} className="space-y-4">
     <input aria-label="Your name" required disabled={busy} value={name} onChange={e=>setName(e.target.value)} placeholder="Your name" className="w-full rounded-md border border-[var(--site-line)] px-3 py-2 text-sm" />
     <input aria-label="Affiliation" disabled={busy} value={affiliation} onChange={e=>setAffiliation(e.target.value)} placeholder="Affiliation (optional)" className="w-full rounded-md border border-[var(--site-line)] px-3 py-2 text-sm" />

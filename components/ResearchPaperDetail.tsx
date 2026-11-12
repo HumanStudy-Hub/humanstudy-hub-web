@@ -1,4 +1,7 @@
 import Link from "next/link";
+import CreditPagination from "./CreditPagination";
+import { CREDIT_PAGE_SIZE, listCredits } from "@/lib/community-credit";
+import CommunityCreditList from "./CommunityCreditList";
 import { libraryAvailability, readProtocol, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
 import { getPublishedProgram, publishedAssetUrl } from "@/lib/published-program";
 import PublishedProgram from "./PublishedProgram";
@@ -69,20 +72,29 @@ function Protocol({ protocol, validated }: { protocol: ResearchProtocol; validat
   </section>;
 }
 
-export default async function ResearchPaperDetail({ paper }: { paper: ResearchPaper }) {
+export default async function ResearchPaperDetail({ paper, contributionPage = 1 }: { paper: ResearchPaper; contributionPage?: number }) {
   // Catalog documents from different sources omit empty lists.
   const authors = paper.authors ?? [], resources = paper.resources ?? [];
   const repository = paper.assetRoot && /^(studies\/study_\d+|community\/[A-Za-z0-9_.-]+\/revisions\/[a-f0-9]{64})$/.test(paper.assetRoot)
     ? `https://github.com/HumanStudy-Hub/HumanStudy-Bench/tree/main/${paper.assetRoot}` : null;
   const protocol = readProtocol(paper);
   const availability = libraryAvailability(paper);
-  const program = await getPublishedProgram(paper);
+  const [program, credits] = await Promise.all([
+    getPublishedProgram(paper),
+    paper.currentRevision ? listCredits({ by: "paper", id: paper.id, revision: paper.currentRevision }, contributionPage).catch(() => []) : [],
+  ]);
+  const linkedNames = new Set(credits.map(credit => credit.display_name));
+  const publicNames = Array.isArray(paper.contributors) ? [...new Set(paper.contributors.flatMap(item => {
+    const name = typeof item === "string" ? item : item && typeof item.name === "string" ? item.name : "";
+    return name.trim() && !linkedNames.has(name.trim()) ? [name.trim()] : [];
+  }))] : [];
   const programSource = program ? publishedAssetUrl(paper, program.source.filename) : null;
   return <div className={`${styles.page} ${styles.narrow}`}>
     <div>
       <Link href="/studies" className={styles.back}>← Study Library</Link>
       <h1>{paper.title}</h1>
       <p className="mt-3 text-sm text-[var(--site-muted)]">{[authors.join(", "), paper.year].filter(Boolean).join(" · ")}</p>
+      {publicNames.length > 0 && <p className="mt-2 text-sm text-[var(--site-muted)]">Contributed by {publicNames.join(", ")}</p>}
       <p className="mt-6 whitespace-pre-wrap leading-7 text-[var(--foreground)]">{paper.description}</p>
       {availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">
         {paper.developmentStage === "draft" ? "In development · protocol draft exists." : "In development · study materials are being prepared."}
@@ -111,6 +123,12 @@ export default async function ResearchPaperDetail({ paper }: { paper: ResearchPa
         </p>
       )}
       {protocol && availability.publicProtocol && <Protocol protocol={protocol} validated={availability.validated} />}
+      {(credits.length > 0 || contributionPage > 1) && <section id="community-contributions" className="mt-10 scroll-mt-24">
+        <h2 className="text-lg font-semibold font-serif">Community contributions</h2>
+        <CommunityCreditList entries={credits.slice(0, CREDIT_PAGE_SIZE)} showPaper={false} allowVote />
+        <CreditPagination page={contributionPage} hasNext={credits.length > CREDIT_PAGE_SIZE}
+          base={`/studies/${paper.id}?creditPage=`} anchor="#community-contributions" />
+      </section>}
       {paper.studyCapabilities ? <Capabilities caps={paper.studyCapabilities as StudyCapabilities} /> : null}
       {resources.length > 0 && <section className="mt-10">
         <h2 className="text-lg font-semibold font-serif">Sources</h2>

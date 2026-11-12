@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { statusChangeFor, verifyGithubSignature } from "@/lib/community-webhook";
-import { storeConfigured, updateStatus } from "@/lib/community-store";
+import { findContribution, storeConfigured, updateStatus } from "@/lib/community-store";
+
+import { reconcileCommunityCredit } from "@/lib/community-credit";
 
 export const runtime = "nodejs";
 
@@ -23,6 +25,10 @@ export async function POST(request: Request) {
   if (!change) return NextResponse.json({ ok: true, ignored: event });
   try {
     const updated = await updateStatus(change.match, { status: change.status, error: change.error });
+    if (change.status === "merged" && payload.repository?.full_name === "HumanStudy-Hub/HumanStudy-Bench") {
+      const row = await findContribution(change.match);
+      if (row) await reconcileCommunityCredit(row);
+    }
     return NextResponse.json({ ok: true, updated });
   } catch {
     return NextResponse.json({ error: "database_unavailable", message: "Could not record the change." }, { status: 503 });
