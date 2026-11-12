@@ -263,3 +263,10 @@ test('existing managed workspace at the correct origin refreshes policy without 
   assert.ok(calls.some(call => Array.isArray(call) && call[0] === 'policy'));
   assert.ok(!calls.some(call => call === 'stop' || (Array.isArray(call) && call[0] === 'start')));
 });
+
+test('ordinary dev workspace retains public account configuration without a hosted key', async t => {
+  const { calls, lib } = fixture(t, { fresh: true, hubOrigin: 'https://example-dev.vercel.app' });
+  await lib.launchTryOnline(user, attempt);
+  assert.equal(calls.find(([name]) => name === 'start')[1].HUMANSTUDY_SERVER, undefined);
+  assert.equal(calls.find(([name]) => name === '/__seed')[1].desktopKey, undefined);
+});

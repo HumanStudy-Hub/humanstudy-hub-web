@@ -319,8 +319,10 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
     if (!base) {
       started = true;
       const env: Record<string, string> = { HS_WEB_TOKEN: token };
-      if (hubOrigin) env.HUMANSTUDY_SERVER = hubOrigin;
-      if (networkPolicy) env.NODE_USE_SYSTEM_CA = "1";
+      if (networkPolicy) {
+        env.HUMANSTUDY_SERVER = hubOrigin;
+        env.NODE_USE_SYSTEM_CA = "1";
+      }
       if (config.appUrl) Object.assign(env, { HS_APP_URL: config.appUrl, HS_APP_SHA256: config.appSha });
       const command = await sandbox.runCommand({ cmd: "bash", args: [`${HS}/app/start.sh`], env, signal: operationSignal(28_000, deadline) });
       if (command.exitCode !== 0) throw FAILED();
