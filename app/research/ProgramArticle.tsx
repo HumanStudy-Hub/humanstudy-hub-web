@@ -64,7 +64,7 @@ export default function ProgramArticle() {
     <div className="mt-20">
       <aside className="mb-14 flex flex-wrap items-center justify-between gap-x-8 gap-y-4 rounded-[2px] bg-[var(--site-surface)] px-6 py-6 sm:px-8">
         <p className="max-w-[62ch] font-[family-name:var(--site-font-serif)] text-[18px] leading-[1.6]">
-          We built an app that turns a paper into a study program, with a more capable study agent than the one in the paper.
+          We built an app where you work with a study agent to turn a paper into a study program, check each part against the original sources, and prepare an experiment to run.
         </p>
         <Link href="/download" className="inline-flex min-h-11 items-center border-b border-current text-sm text-[var(--site-accent)] hover:text-[var(--foreground)]">
           Get the app →
