@@ -119,12 +119,26 @@ test('an owned submission recheck uses the current GitHub pull state', async () 
   const branch = 'community/' + id;
   const row = { id, branch, pr_number: 42, status: 'checks_failed' };
   const oldFetch = globalThis.fetch;
-  let pull = { head: { ref: branch }, state: 'open', labels: [{ name: 'community:needs-review' }] };
+  let pull = { head: { ref: branch, sha: head }, state: 'open', labels: [{ name: 'community:needs-review' }] };
+  let reviews = [], checks = [];
   try {
-    globalThis.fetch = async () => Response.json(pull);
+    globalThis.fetch = async url => {
+      const path = new URL(url).pathname;
+      if (path.endsWith('/reviews')) return Response.json(reviews);
+      if (path.endsWith(`/commits/${head}/check-runs`)) return Response.json({total_count:checks.length,check_runs:checks});
+      if (path.endsWith(`/commits/${head}/status`)) return Response.json({state:'success'});
+      if (path.endsWith('/pulls/42')) return Response.json(pull);
+      throw new Error(`Unexpected path ${path}`);
+    };
     assert.equal(await lib.readCommunitySubmissionStatus(row), 'pr_open');
-    pull = { ...pull, labels: [] };
+    reviews = [{user:{id:123},state:'CHANGES_REQUESTED'},{user:{id:123},state:'COMMENTED'}];
+    assert.equal(await lib.readCommunitySubmissionStatus(row), 'changes_requested');
+    reviews.push({user:{id:123},state:'APPROVED'});
     assert.equal(await lib.readCommunitySubmissionStatus({ ...row, status: 'changes_requested' }), 'pr_open');
+    checks = [{head_sha:head,conclusion:'failure'}];
+    assert.equal(await lib.readCommunitySubmissionStatus(row), 'checks_failed');
+    checks = [{head_sha:commit,conclusion:'failure'}];
+    assert.equal(await lib.readCommunitySubmissionStatus(row), 'pr_open');
     pull = { ...pull, state: 'closed' };
     assert.equal(await lib.readCommunitySubmissionStatus(row), 'rejected');
     pull = { ...pull, merged: true };

@@ -482,6 +482,7 @@ test('webhook signatures and status changes', () => {
   assert.deepEqual(hook.statusChangeFor('pull_request', pr(true)), { match: { prNumber: 7 }, status: 'merged', error: null });
   assert.equal(hook.statusChangeFor('pull_request', pr(false)).status, 'rejected');
   assert.equal(hook.statusChangeFor('pull_request', pr(true, 'feature/x')), null);
+  assert.equal(hook.statusChangeFor('pull_request', { ...pr(false), action: 'labeled', label: { name: 'community:needs-review' } }), null);
   const run = hook.statusChangeFor('workflow_run', { action: 'completed', workflow_run: { conclusion: 'failure', head_branch: 'community/x--hub-1', pull_requests: [], name: 'Validate' } });
   assert.deepEqual(run.match, { branch: 'community/x--hub-1' }); assert.equal(run.status, 'checks_failed');
   assert.equal(hook.statusChangeFor('check_suite', { action: 'completed', check_suite: { conclusion: 'success', head_branch: 'community/x', pull_requests: [] } }), null);
