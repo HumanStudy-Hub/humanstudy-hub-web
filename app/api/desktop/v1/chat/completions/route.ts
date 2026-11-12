@@ -1,4 +1,5 @@
-import { hostedQuotaEnvironment, reserveHostedCompletion } from "@/lib/hosted-model-quota";
+import { withProviderUsageSettlement } from "@/lib/provider-usage-settlement";
+import { hostedQuotaEnvironment, reserveHostedCompletion, settleHostedCompletion } from "@/lib/hosted-model-quota";
 import { readBoundedText } from "@/lib/bounded-request";
 import { NextResponse } from "next/server";
 import { bearer, DESKTOP_MODELS, verifyDesktopKey } from "@/lib/desktop-access";
@@ -56,7 +57,12 @@ export async function POST(request: Request) {
     signal: request.signal,
   });
   console.log(JSON.stringify({ event: "desktop_llm", reservationId, upstreamRequestId: upstream.headers.get("x-request-id") ?? undefined, user: userId, model: body.model, stream: Boolean(body.stream), status: upstream.status }));
-  return new Response(upstream.body, {
+  const responseBody = reservationId ? withProviderUsageSettlement(upstream, {
+    streaming: body.stream === true, signal: request.signal,
+    settle: actual => settleHostedCompletion(reservationId!, actual),
+    report: outcome => console.log(JSON.stringify({ event: "hosted_model_accounting", reservationId, ...outcome })),
+  }) : upstream.body;
+  return new Response(responseBody, {
     status: upstream.status,
     headers: { "Content-Type": upstream.headers.get("content-type") || "application/json", "Cache-Control": "no-store" },
   });

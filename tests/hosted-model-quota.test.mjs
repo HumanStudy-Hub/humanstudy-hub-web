@@ -24,7 +24,8 @@ test('enabled route never contacts provider on denied grants or oversized UTF8 a
  const bounds=load('lib/try-dev-model-budget.ts',{'./try-online-config':{tryServiceKey:()=> 'fixture'}});
  const route=load('app/api/desktop/v1/chat/completions/route.ts',{
   'next/server':{NextResponse:{json:Response.json}},
-  '@/lib/bounded-request':load('lib/bounded-request.ts'),
+  '@/lib/provider-usage-settlement': load('lib/provider-usage-settlement.ts'),
+    '@/lib/bounded-request':load('lib/bounded-request.ts'),
   '@/lib/desktop-access':{bearer:()=> 'signed',verifyDesktopKey:()=>user,DESKTOP_MODELS:[model]},
   '@/lib/try-dev-models':{isDevPreview:()=>false,devModelAccess:()=>false},
   '@/lib/try-dev-model-budget':bounds,
@@ -105,4 +106,28 @@ test('quota config never silently replaces an unpriced default model; legacy con
  });
  assert.equal((await route.GET()).status,503);
  enabled=null;const response=await route.GET();assert.equal(response.status,200);assert.equal((await response.json()).defaultModel,'anthropic/claude-sonnet-5.5');
+});
+
+
+test('route settles only authenticated complete upstream usage against its server reservation',async t=>{
+ const keys=['HOSTED_MODEL_QUOTAS','VERCEL_ENV','OPENROUTER_API_KEY'];const old=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+ t.after(()=>{for(const k of keys)old[k]===undefined?delete process.env[k]:process.env[k]=old[k];});
+ process.env.HOSTED_MODEL_QUOTAS='1';process.env.VERCEL_ENV='production';process.env.OPENROUTER_API_KEY='fixture';
+ let environment='production',admitted=true,forwards=0;const settlements=[];
+ const wire=JSON.stringify({id:'gen-server',choices:[{index:0,message:{content:'unchanged'},finish_reason:'stop'}],usage:{prompt_tokens:10,completion_tokens:5,total_tokens:15,cost:0.0000123}});
+ t.mock.method(globalThis,'fetch',async()=>{forwards++;return new Response(wire,{headers:{'content-type':'application/json','x-generation-id':'gen-server'}});});
+ const bounds=load('lib/try-dev-model-budget.ts',{'./try-online-config':{tryServiceKey:()=> 'fixture'}});
+ const route=load('app/api/desktop/v1/chat/completions/route.ts',{
+  'next/server':{NextResponse:{json:Response.json}},
+  '@/lib/provider-usage-settlement':load('lib/provider-usage-settlement.ts'),
+  '@/lib/bounded-request':load('lib/bounded-request.ts'),
+  '@/lib/desktop-access':{bearer:()=> 'signed',verifyDesktopKey:()=>user,DESKTOP_MODELS:[model]},
+  '@/lib/try-dev-models':{isDevPreview:()=>false,devModelAccess:()=>false},
+  '@/lib/try-dev-model-budget':bounds,
+  '@/lib/hosted-model-quota':{hostedQuotaEnvironment:()=>environment,reserveHostedCompletion:async()=>admitted?'server-reservation':null,settleHostedCompletion:async(id,cost)=>{settlements.push([id,cost]);return true;}}
+ });
+ const request=()=>new Request('https://fixture.test',{method:'POST',body:JSON.stringify({model,messages:[{role:'user',content:'not accounting'}]})});
+ assert.equal(await (await route.POST(request())).text(),wire);assert.deepEqual(settlements,[['server-reservation',13]]);
+ admitted=false;assert.equal((await route.POST(request())).status,429);assert.equal(forwards,1);assert.equal(settlements.length,1);
+ environment=null;delete process.env.HOSTED_MODEL_QUOTAS;assert.equal(await (await route.POST(request())).text(),wire);assert.equal(forwards,2);assert.equal(settlements.length,1);
 });

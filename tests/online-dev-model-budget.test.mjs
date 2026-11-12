@@ -69,6 +69,7 @@ test('dev model route forwards only after reservation; production forwards its e
   let dev = true, allowed = false, reserves = 0, forwards = 0;
   const route = load('app/api/desktop/v1/chat/completions/route.ts', {
     '@/lib/hosted-model-quota': { hostedQuotaEnvironment: () => null },
+    '@/lib/provider-usage-settlement': load('lib/provider-usage-settlement.ts'),
     '@/lib/bounded-request': load('lib/bounded-request.ts'),
     'next/server': { NextResponse: { json: (value, init) => Response.json(value, init) } },
     '@/lib/desktop-access': { bearer: () => 'fixture', verifyDesktopKey: () => user, DESKTOP_MODELS: [model] },
