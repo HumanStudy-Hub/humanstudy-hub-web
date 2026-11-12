@@ -14,12 +14,13 @@ async function voteRequest(id: string, revision: string, helpful?: boolean) {
   return await response.json() as HelpfulState;
 }
 
-export default function HelpfulVote({ id, revision, count }: { id: string; revision: string; count: number }) {
-  const [state, setState] = useState<HelpfulState | null>(null);
+export default function HelpfulVote({ id, revision, count, preview = false }: { id: string; revision: string; count: number; preview?: boolean }) {
+  const [state, setState] = useState<HelpfulState | null>(preview ? { helpful: count, voted: false, canVote: true } : null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
+    if (preview) return;
     let active = true;
     void voteRequest(id, revision).then(result => {
       if (active) setState(result);
@@ -29,10 +30,14 @@ export default function HelpfulVote({ id, revision, count }: { id: string; revis
       if (active) setLoaded(true);
     });
     return () => { active = false; };
-  }, [id, revision]);
+  }, [id, revision, preview]);
 
   async function toggle() {
     if (!state?.canVote || busy) return;
+    if (preview) {
+      setState({ ...state, voted: !state.voted, helpful: state.helpful + (state.voted ? -1 : 1) });
+      return;
+    }
     setBusy(true);
     setError("");
     try {
