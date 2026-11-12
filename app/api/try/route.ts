@@ -55,7 +55,9 @@ export async function DELETE(request: Request) {
   try {
     assertSameOrigin(request);
     const { user } = await requireStudioUser();
-    const body = request.body ? (await readJsonBody(request, 4000)) as { attempt?: unknown } | null : null;
+    // Vercel can expose an empty stream for legacy clients that send a bodyless DELETE.
+    const hasBody = request.headers.has("content-type") || Number(request.headers.get("content-length")) > 0;
+    const body = hasBody ? (await readJsonBody(request, 4000)) as { attempt?: unknown } | null : null;
     if (body?.attempt !== undefined && !isUuid(body.attempt)) return reply({ error: "invalid_attempt" }, 400);
     const result = await stopTryOnline(user.id, body?.attempt as string | undefined);
     return reply(result, result.pending ? 202 : 200);

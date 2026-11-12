@@ -11,6 +11,7 @@
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { APIError, Sandbox } from "@vercel/sandbox";
 import { mintDesktopKey } from "./desktop-access";
+import { devHubOrigin, devModelAccess, devModelNetwork, isDevPreview } from "./try-dev-models";
 import { tokenSecret, tryServiceKey, trySettings } from "./try-online-config";
 
 const PORT = 3000;
@@ -240,10 +241,44 @@ export async function stopTryOnline(userId: string, attempt?: string): Promise<{
   }
 }
 
+/** Inspect the already-running server without resuming or restarting its provider session. */
+async function runningWithDevHub(sandbox: Sandbox, origin: string, deadline: AbortSignal): Promise<boolean> {
+  const probe = `
+    const fs = require("node:fs");
+    const [server, origin] = process.argv.slice(1);
+    let matches = 0;
+    let valid = false;
+    for (const pid of fs.readdirSync("/proc")) {
+      if (!/^\\d+$/.test(pid)) continue;
+      try {
+        const args = fs.readFileSync("/proc/" + pid + "/cmdline", "utf8").split("\\0");
+        if (args[1] !== server || !/(?:^|\\/)node$/.test(args[0])) continue;
+        matches++;
+        const env = fs.readFileSync("/proc/" + pid + "/environ", "utf8").split("\\0");
+        valid = env.includes("HUMANSTUDY_SERVER=" + origin) && env.includes("NODE_USE_SYSTEM_CA=1");
+      } catch { /* Processes may exit during enumeration. */ }
+    }
+    if (matches !== 1 || !valid) process.exitCode = 1;
+  `;
+  try {
+    const result = await sandbox.currentSession().runCommand({
+      cmd: "node", args: ["-e", probe, `${HS}/app/server.cjs`, origin],
+      signal: operationSignal(5000, deadline),
+    });
+    return result.exitCode === 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Starts or reopens one private, persistent workspace. A missing prior snapshot is never replaced automatically. */
 export async function launchTryOnline(user: { id: string; email?: string | null }, attempt: string = randomUUID()): Promise<{ url: string; resumed: boolean }> {
   const config = configuration();
   if (!user.email) throw new TryError(403, "email_required", "Sign in with an email address to open an online workspace.");
+  const hubOrigin = devHubOrigin();
+  const managedDev = devModelAccess(user.id);
+  const networkPolicy = managedDev ? await devModelNetwork(hubOrigin, config.sessionMinutes) : null;
+  if (managedDev && !networkPolicy) throw new TryError(503, "model_auth_unavailable", "The dev model connection is unavailable.");
   const name = sandboxName(user.id), token = sandboxToken(user.id);
   const deadline = AbortSignal.timeout(85_000);
   const lease = await claim(config, name, false, attempt);
@@ -269,13 +304,25 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
         ...credentials(), name, source: { type: "snapshot", snapshotId: config.snapshotId },
         ports: [PORT], timeout: config.sessionMinutes * 60_000, resources: { vcpus: 2 },
         persistent: true, keepLastSnapshots: { count: 1, expiration: 0 }, tags: TAG,
+        ...(networkPolicy ? { networkPolicy } : {}),
         signal: operationSignal(25_000, deadline),
       });
+    } else if (networkPolicy) {
+      if (running(sandbox) && (sandbox.status !== "running" || !(await runningWithDevHub(sandbox, hubOrigin, deadline)))) {
+        throw new TryError(409, "workspace_restart_required", "Stop this workspace and resume it to connect to dev models. Your current session is still running.");
+      }
+      // The provider applies policy outside the guest. This also resumes stopped workspaces.
+      started = sandbox.status !== "running";
+      await sandbox.updateNetworkPolicy(networkPolicy, { signal: operationSignal(25_000, deadline) });
     }
     let base = !started && sandbox.status === "running" ? workspaceOrigin(sandbox) : null;
     if (!base) {
       started = true;
       const env: Record<string, string> = { HS_WEB_TOKEN: token };
+      if (networkPolicy) {
+        env.HUMANSTUDY_SERVER = hubOrigin;
+        env.NODE_USE_SYSTEM_CA = "1";
+      }
       if (config.appUrl) Object.assign(env, { HS_APP_URL: config.appUrl, HS_APP_SHA256: config.appSha });
       const command = await sandbox.runCommand({ cmd: "bash", args: [`${HS}/app/start.sh`], env, signal: operationSignal(28_000, deadline) });
       if (command.exitCode !== 0) throw FAILED();
@@ -290,10 +337,19 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
     }
     assertCurrentBuild(payload, config);
 
+    if (networkPolicy) {
+      const probe = await sandbox.runCommand({
+        cmd: "node",
+        args: ["-e", 'fetch(process.argv[1], { redirect: "error", signal: AbortSignal.timeout(8000) }).then(async r => { if (!r.ok || new URL((await r.json()).supabaseUrl).origin !== process.argv[2]) process.exitCode = 1; }).catch(() => { process.exitCode = 1; })', `${hubOrigin}/api/desktop/config`, config.supabaseOrigin],
+        env: { NODE_USE_SYSTEM_CA: "1" }, signal: operationSignal(10_000, deadline),
+      });
+      if (probe.exitCode !== 0) throw new TryError(502, "model_auth_failed", "The workspace could not reach the dev model service.");
+    }
     const account = await app(base, token, "/ipc/account:status", { args: [] }, deadline);
     const state = await account?.json().catch(() => null) as { value?: { signedIn?: boolean; email?: string } } | null;
     if (typeof state?.value?.signedIn !== "boolean") throw FAILED();
-    const seed: Record<string, unknown> = { desktopKey: mintDesktopKey(user.id) };
+    const seed: Record<string, unknown> = {};
+    if (!isDevPreview() || managedDev) seed.desktopKey = mintDesktopKey(user.id);
     if (!state.value.signedIn || state.value.email?.toLowerCase() !== user.email.toLowerCase()) {
       const session = await sessionFor(user.id, user.email, deadline).catch(() => null);
       if (!session) throw new TryError(502, "sign_in_failed", "The workspace could not sign in. Please try again.");

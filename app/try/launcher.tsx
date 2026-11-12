@@ -92,7 +92,8 @@ export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: 
       const attempt = activeAttempt.current;
       const response = await fetch("/api/try", {
         method: "DELETE",
-        ...(attempt ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ attempt }) } : {}),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(attempt ? { attempt } : {}),
       });
       const data = await response.json().catch(() => ({})) as Reply;
       if (response.status === 401) {
