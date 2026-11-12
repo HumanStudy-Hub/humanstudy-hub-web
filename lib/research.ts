@@ -209,6 +209,26 @@ export async function searchResearch(input: ResearchQuery) {
 export const libraryFilters = ["all", "program", "runnable", "protocol", "development", "indexed"] as const;
 export type LibraryFilter = (typeof libraryFilters)[number];
 
+export function researchContributorNames(paper: ResearchPaper, creditedNames: readonly string[] = []): string[] {
+  const catalogNames = Array.isArray(paper.contributors) ? paper.contributors.map(item => {
+    if (typeof item === "string") return item;
+    const handle = typeof item?.github === "string"
+      ? /^(?:https:\/\/github\.com\/|@)?([a-z\d][a-z\d-]{0,38})\/?$/i.exec(item.github.trim())?.[1]
+      : undefined;
+    if (handle?.toLowerCase() === "assassin808") return "HumanStudy Hub Team";
+    const name = typeof item?.name === "string" ? item.name.trim() : "";
+    return name || (handle ? `@${handle}` : "");
+  }) : [];
+  const names = [...new Set([...catalogNames, ...creditedNames].map(name => name.trim()).filter(Boolean))];
+  if (names.length) return names;
+
+  // The original twelve curated packages are Hub team reconstructions.
+  const id = paper.legacyStudyId;
+  return id && /^study_0(?:0[1-9]|1[0-2])$/.test(id) && paper.assetRoot === `studies/${id}` && paper.currentRevision
+    && !paper.publication && !paper.aliases.some(alias => alias.startsWith("community:"))
+    ? ["HumanStudy Hub Team"] : [];
+}
+
 export function libraryAvailability(paper: ResearchPaper) {
   const files = paper.assetFiles ?? [];
   const program = Boolean(paper.currentRevision && files.some(file => file.path === "program.json"));

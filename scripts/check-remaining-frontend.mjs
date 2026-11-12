@@ -237,7 +237,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
 
     report.redirects = [];
     for (const [route, destination] of [
-      ['/dataset', '/studies'], ['/build', '/download'], ['/leaderboard', '/results'],
+      ['/dataset', '/studies'], ['/community', '/studies'], ['/forum', '/blog'], ['/build', '/download'], ['/leaderboard', '/results'],
       ['/build-preview', '/build/example'], ['/build/example', '/build/projects?sample=intentional-action'],
       ['/docs', '/docs/what_to_submit'],
     ]) {

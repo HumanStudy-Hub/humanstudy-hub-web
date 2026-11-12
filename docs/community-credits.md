@@ -3,9 +3,6 @@
 The paper detail keeps original authors separate from contributors. Existing public
 contributor names remain visible. A verified Hub contribution links to a public profile
 with a randomly generated ID and the display name supplied for public credit.
-The Community leaderboard shows the top 50 accepted study contributions or contributors.
-Ranks use Helpful votes received. Contributor ties use accepted contribution count,
-then public profile ID. Study ties use submission date, then submission ID.
 
 ## Acceptance and voting
 
@@ -36,7 +33,7 @@ node scripts/check-community-credit.mjs /path/to/playwright
 
 The browser check runs a local Next server with fixture authentication and a temporary
 PGlite database. It verifies the real vote endpoint and saves paper, contributor
-profile and leaderboard screenshots. It accepts a browser executable as a second
+profile screenshots. It accepts a browser executable as a second
 argument and `COMMUNITY_CREDIT_TEST_OUTPUT` as an output directory.
 
 The signed-in `/contribute` page also lists saved submissions, 25 per page. Reloading

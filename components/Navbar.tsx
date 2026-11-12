@@ -8,7 +8,7 @@ import SiteLogo from "@/components/SiteLogo";
 import styles from "./site-chrome.module.css";
 
 const links = [
-  { name: "Forum", href: "/forum" },
+  { name: "Blog", href: "/blog" },
   { name: "Study Library", href: "/studies" },
   { name: "Desktop app", href: "/download" },
   { name: "Benchmark", href: "/results" },

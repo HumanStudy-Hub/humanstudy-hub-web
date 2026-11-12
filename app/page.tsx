@@ -5,7 +5,7 @@ import styles from "./page.module.css";
 
 const actions = [
   { href: "/download", label: "Get the desktop app" },
-  { href: "/forum", label: "Join the forum" },
+  { href: "/blog", label: "Read the blog" },
   { href: "/collaboration", label: "Work with us" },
   { href: "/studies", label: "Explore studies" },
 ] as const;

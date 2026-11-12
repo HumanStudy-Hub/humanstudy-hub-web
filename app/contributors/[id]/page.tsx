@@ -14,14 +14,14 @@ export default async function ContributorProfile({ params, searchParams }: { par
   const page = creditPage((await searchParams).page);
   const profile = await Promise.all([getContributor(id), listCredits({ by: "profile", id }, page)]).catch(() => null);
   if (!profile) return <div className={styles.page}>
-    <Link href="/community?view=contributors" className={styles.back}>← Contributors</Link>
+    <Link href="/studies" className={styles.back}>← Study Library</Link>
     <h1>Contributor profile</h1>
     <p className="mt-4 text-sm text-[var(--site-muted)]">This contributor profile is temporarily unavailable.</p>
   </div>;
   const [person, entries] = profile;
   if (!person) notFound();
   return <div className={styles.page}>
-    <Link href="/community?view=contributors" className={styles.back}>← Contributors</Link>
+    <Link href="/studies" className={styles.back}>← Study Library</Link>
     <ContributorSummary person={person} />
     <section className={styles.section}>
       <h2>Accepted contributions</h2>

@@ -2,11 +2,10 @@ import Link from "next/link";
 import type { CommunityCredit } from "@/lib/community-credit";
 import HelpfulVote from "./HelpfulVote";
 
-export default function CommunityCreditList({ entries, showPaper = true, allowVote = false, ranked = false, preview = false }: {
-  entries: CommunityCredit[]; showPaper?: boolean; allowVote?: boolean; ranked?: boolean; preview?: boolean;
+export default function CommunityCreditList({ entries, showPaper = true, allowVote = false, preview = false }: {
+  entries: CommunityCredit[]; showPaper?: boolean; allowVote?: boolean; preview?: boolean;
 }) {
-  const List = ranked ? "ol" : "ul";
-  return <List className={`divide-y divide-[var(--site-line)]${ranked ? " list-decimal pl-6" : ""}`}>
+  return <ul className="divide-y divide-[var(--site-line)]">
     {entries.map(entry => <li key={entry.id} className="space-y-1 py-4">
       {showPaper && <Link href={preview ? "#paper-credit" : `/studies/${entry.paper_id}`} className="font-medium text-[var(--site-accent)] underline">{entry.paper_title}</Link>}
       <p className="text-sm">
@@ -18,5 +17,5 @@ export default function CommunityCreditList({ entries, showPaper = true, allowVo
       {allowVote ? <HelpfulVote id={entry.id} revision={entry.revision} count={entry.helpful} preview={preview} />
         : <p className="text-sm text-[var(--site-muted)]">{entry.helpful} helpful</p>}
     </li>)}
-  </List>;
+  </ul>;
 }

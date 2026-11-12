@@ -36,6 +36,7 @@ const developmentLinks = development.papers.map(paper => {
 }).sort();
 const interactivePaper = researchIndex.papers.find(paper => !developmentLinks.includes('/studies/' + paper.id));
 interactivePaper.currentRevision = 'a'.repeat(64);
+interactivePaper.contributors = [{ github: 'assassin808' }];
 interactivePaper.assetFiles = [{ path: 'program.json' }];
 fixtures.set('/research-index.json', Buffer.from(JSON.stringify(researchIndex)));
 const interactiveLink = '/studies/' + interactivePaper.id;
@@ -53,7 +54,7 @@ const fixtureServer = createServer((request, response) => {
 });
 const report = { passed: false, views: [], checks: [], runtimeErrors: [], runtimeErrorDetails: [], blockedWrites: [], mockedAuthActions: [], checkedAt: new Date().toISOString() };
 const navigation = [
-  ['Forum', '/forum'], ['Study Library', '/studies'], ['Desktop app', '/download'],
+  ['Blog', '/blog'], ['Study Library', '/studies'], ['Desktop app', '/download'],
   ['Benchmark', '/results'], ['Partnerships', '/collaboration'], ['Account', '/account'],
 ];
 let server;
@@ -178,7 +179,7 @@ try {
     assert.equal(layout.background, 'rgb(243, 245, 239)');
     assert.ok(layout.fontsLoaded, 'Local fonts load.');
     const actions = page.getByRole('navigation', { name: 'Explore HumanStudy Hub', exact: true });
-    assert.deepEqual(await actions.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/download', '/forum', '/collaboration', '/studies']);
+    assert.deepEqual(await actions.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/download', '/blog', '/collaboration', '/studies']);
     assert.equal(await page.getByText('Questions we’re exploring.', { exact: true }).count(), 0);
     assert.equal(await page.getByText('Join the conversation.', { exact: true }).count(), 0);
     if (width >= 768) {
@@ -251,18 +252,27 @@ try {
 
   const paperLinks = page.locator('main article h2 a');
   const listedLinks = () => paperLinks.evaluateAll(links => links.map(link => link.getAttribute('href')));
-  assert.deepEqual(await listedLinks(), indexedLinks.slice(0, 30), 'The library lists the complete catalog.');
+  const paperViews = page.getByRole('navigation', { name: 'Paper views', exact: true });
+  assert.deepEqual(await paperViews.getByRole('link').allTextContents(), ['Interactive papers', 'All papers']);
+  assert.equal(await paperViews.getByRole('link', { name: 'Interactive papers', exact: true }).getAttribute('aria-current'), 'page');
+  assert.deepEqual(await listedLinks(), [interactiveLink], 'The default view lists interactive papers.');
+  const attribution = page.getByText('Contributed by HumanStudy Hub Team', { exact: true });
+  assert.ok(await attribution.isVisible());
+  assert.equal(await attribution.evaluate(element => element.previousElementSibling.textContent), 'Run experiment');
+  await paperViews.getByRole('link', { name: 'All papers', exact: true }).click();
+  await page.waitForURL(url => url.searchParams.get('status') === 'all');
+  assert.deepEqual(await listedLinks(), indexedLinks.slice(0, 30), 'All papers lists the complete catalog.');
   assert.ok(indexedLinks.length > 1, 'The bundled catalog can exercise pagination with an offset.');
-  await visit('/studies?offset=1');
+  await visit('/studies?status=all&offset=1');
   assert.deepEqual(await listedLinks(), indexedLinks.slice(1, 31), 'The existing offset contract still applies.');
   await page.getByRole('navigation', { name: 'Research pages', exact: true }).getByRole('link', { name: '← Previous', exact: true }).click();
-  await page.waitForURL(url => url.searchParams.get('offset') === '0');
+  await page.waitForURL(url => url.searchParams.get('offset') === '0' && url.searchParams.get('status') === 'all');
   await page.waitForLoadState('networkidle');
   assert.deepEqual(await listedLinks(), indexedLinks.slice(0, 30));
   const nextPage = page.getByRole('navigation', { name: 'Research pages', exact: true }).getByRole('link', { name: 'Next →', exact: true });
   if (indexedLinks.length > 30) {
     await nextPage.click();
-    await page.waitForURL(url => url.searchParams.get('offset') === '30');
+    await page.waitForURL(url => url.searchParams.get('offset') === '30' && url.searchParams.get('status') === 'all');
     await page.waitForLoadState('networkidle');
     assert.deepEqual(await listedLinks(), indexedLinks.slice(30, 60));
   } else {
@@ -270,8 +280,6 @@ try {
   }
   report.checks.push('Catalog contents and real pagination');
 
-  const paperViews = page.getByRole('navigation', { name: 'Paper views', exact: true });
-  assert.deepEqual(await paperViews.getByRole('link').allTextContents(), ['All papers', 'Interactive papers']);
   await paperViews.getByRole('link', { name: 'Interactive papers', exact: true }).click();
   await page.waitForURL(url => url.searchParams.get('status') === 'program');
   await page.waitForLoadState('networkidle');
@@ -281,6 +289,7 @@ try {
   await page.waitForURL(origin + interactiveLink + '#run-experiment');
   await page.getByRole('heading', { name: 'Run experiment', exact: true }).waitFor();
   assert.ok(await page.getByRole('button', { name: 'Copy study ID' }).isVisible());
+  assert.ok(await attribution.isVisible());
 
   await visit('/studies?status=program');
   await page.getByRole('checkbox', { name: 'Validated protocols only' }).check();
@@ -296,10 +305,10 @@ try {
   await page.getByText(/In development ·/).waitFor();
   report.checks.push('Legacy development view and detail navigation');
 
-  await visit('/studies?offset=1');
+  await visit('/studies?status=all&offset=1');
   await page.getByRole('textbox', { name: 'Search papers' }).fill('knobe');
   await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await page.waitForURL(url => url.pathname === '/studies' && url.searchParams.get('q') === 'knobe' && !url.searchParams.has('pool') && !url.searchParams.has('offset'));
+  await page.waitForURL(url => url.pathname === '/studies' && url.searchParams.get('q') === 'knobe' && url.searchParams.get('status') === 'all' && !url.searchParams.has('pool') && !url.searchParams.has('offset'));
   assert.equal(await page.getByRole('textbox', { name: 'Search papers' }).inputValue(), 'knobe');
   const paper = page.locator('main a[href^="/studies/paper_"]').first();
   assert.ok(await paper.isVisible(), 'Existing catalog search returns a paper.');
@@ -379,24 +388,31 @@ try {
 
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 1000 });
-    await visit('/forum');
-    await page.getByRole('heading', { name: 'Research & discussion', exact: true }).waitFor();
+    await visit('/blog');
+    await page.getByRole('heading', { name: 'Blog', exact: true }).waitFor();
     assert.equal(new URL(page.url()).origin, origin);
     assert.equal(await page.locator('[data-site-navigation], [data-site-footer]').count(), 2);
     const links = page.getByRole('region', { name: 'Research articles' }).getByRole('link');
     assert.deepEqual(await links.evaluateAll(items => items.map(item => item.getAttribute('href'))), [
-      'https://xuanl17.github.io/blog/reproducible-human-studies.html',
-      'https://xuanl17.github.io/blog/implicit-agent-behavior.html',
+      '/blog/reproducible-human-studies',
+      '/blog/implicit-agent-behavior',
     ]);
     const preview = page.getByRole('img', { name: /The HumanStudy Forum discussions page/ });
     await preview.evaluate(img => img.decode());
     assert.ok(await preview.isVisible());
     assert.equal(await preview.evaluate(img => img.closest('a')?.href), 'https://forum.humanstudy-hub.com/');
     assert.equal(await page.getByRole('link', { name: 'Open the forum', exact: true }).getAttribute('href'), 'https://forum.humanstudy-hub.com/');
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Forum stays within the viewport.');
-    await page.screenshot({ path: path.join(output, `forum-${width}.png`), fullPage: true });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Blog stays within the viewport.');
+    await page.screenshot({ path: path.join(output, `blog-${width}.png`), fullPage: true });
   }
-  report.checks.push('Same-site Forum landing, original articles and public forum preview');
+  for (const slug of ['reproducible-human-studies', 'implicit-agent-behavior']) {
+    await page.getByRole('region', { name: 'Research articles' }).locator(`a[href="/blog/${slug}"]`).click();
+    await page.waitForURL(origin + '/blog/' + slug);
+    assert.ok(await page.locator('main article section h2').count() > 0);
+    await page.getByRole('link', { name: '← Blog', exact: true }).click();
+    await page.waitForURL(origin + '/blog');
+  }
+  report.checks.push('Blog, same-site articles and public forum preview');
 
   assert.deepEqual(report.runtimeErrors, []);
   assert.deepEqual(report.blockedWrites, []);

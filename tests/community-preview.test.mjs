@@ -35,7 +35,7 @@ test('community review exists only on preview deployments and uses explicit no-s
     const html=renderToStaticMarkup(page());
     assert.match(html,/Example data/);assert.match(html,/nothing is saved or submitted/);
     assert.match(html,/Helpful/);assert.match(html,/My contributions/);assert.match(html,/User submitted/);
-    assert.doesNotMatch(html,/View accepted revision|href="\/contributors\/example/);
-    for(const href of ['/forum','/studies','/contribute'])assert.ok(html.includes('href="'+href+'"'));
+    assert.doesNotMatch(html,/Community leaderboard|View accepted revision|href="\/contributors\/example/);
+    for(const href of ['/blog','/studies','/contribute'])assert.ok(html.includes('href="'+href+'"'));
   }finally{if(previous===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=previous;}
 });

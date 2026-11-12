@@ -69,3 +69,28 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.articleBody {
+  display: grid;
+  gap: 28px;
+  max-width: 68ch;
+}
+
+.articleBody p {
+  margin-top: 12px;
+  line-height: 1.75;
+}
+
+.articleSources {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--site-line);
+  color: var(--site-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.articleSources a {
+  color: var(--site-accent);
+  text-decoration: underline;
+}
