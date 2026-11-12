@@ -34,7 +34,18 @@ const developmentLinks = development.papers.map(paper => {
   const id = existing?.id ?? 'paper_' + createHash('sha256').update(alias).digest('hex').slice(0, 24);
   return '/studies/' + id;
 }).sort();
-const interactivePaper = researchIndex.papers.find(paper => !developmentLinks.includes('/studies/' + paper.id));
+// Keep the browser fixture deterministic as the bundled catalog gains real packages.
+// This test deliberately exercises one interactive paper against indexed-only records.
+for (const paper of researchIndex.papers) {
+  delete paper.currentRevision;
+  delete paper.assetFiles;
+  delete paper.protocol;
+  delete paper.publication;
+}
+researchIndex.publications = {};
+const interactivePaper = researchIndex.papers.find(paper => paper.legacyStudyId === 'study_001');
+assert.ok(interactivePaper, 'The fixture requires the original team-contributed study.');
+interactivePaper.assetRoot = 'studies/study_001';
 interactivePaper.currentRevision = 'a'.repeat(64);
 interactivePaper.contributors = [{ github: 'assassin808' }];
 interactivePaper.assetFiles = [{ path: 'program.json' }];
