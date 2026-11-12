@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
+import { gzip, gunzip } from "node:zlib";
+import { unstable_cache } from "next/cache";
 import development from "../data/studies-in-development.json";
 
 type ResearchPublication = { kind: "user-submitted" | "maintainer-reviewed-protocol"; revision: string };
@@ -144,11 +147,25 @@ function asIndex(value: unknown): ResearchIndex {
   return { ...index, papers };
 }
 
+const compressIndex = promisify(gzip);
+const decompressIndex = promisify(gunzip);
+
+// Next's fetch cache has a 2 MB entry limit. Cache the validated, losslessly compressed
+// snapshot instead; the exact URL argument is part of the cache key.
+const fetchCompressedIndex = unstable_cache(async (url: string): Promise<string> => {
+  const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+  if (!response.ok) throw new Error(`Research index fetch failed (${response.status}).`);
+  const raw = await response.text();
+  asIndex(JSON.parse(raw));
+  return (await compressIndex(raw)).toString("base64");
+}, ["research-index-gzip-v1"], { revalidate: 60 });
+
 export async function getResearchIndex(): Promise<ResearchIndex> {
   const url = process.env.RESEARCH_INDEX_URL || "https://raw.githubusercontent.com/HumanStudy-Hub/HumanStudy-Bench/main/co_website/data/research_index.json";
   try {
-    const response = await fetch(url, { next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) });
-    if (response.ok) return asIndex(await response.json());
+    const cached = await fetchCompressedIndex(url);
+    const raw = await decompressIndex(Buffer.from(cached, "base64"));
+    return asIndex(JSON.parse(raw.toString("utf8")));
   } catch { /* A bundled snapshot keeps the catalog available while offline or during rollout. */ }
   return asIndex(JSON.parse(await fs.readFile(path.join(process.cwd(), "data/research_index.json"), "utf8")));
 }

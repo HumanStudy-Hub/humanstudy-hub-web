@@ -2,10 +2,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { gunzipSync } from 'node:zlib';
 const require = createRequire(import.meta.url), ts = require('typescript');
 const source = readFileSync(new URL('../lib/research.ts', import.meta.url),'utf8');
 const js = ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
-const mod = {exports:{}};new Function('require','module','exports',js)(require,mod,mod.exports);
+function loadResearch(cache = fn => fn) {
+  const mod = {exports:{}};
+  const load = id => id === 'next/cache' ? {unstable_cache: cache} : require(id);
+  new Function('require', 'module', 'exports', js)(load, mod, mod.exports);
+  return mod;
+}
+const mod = loadResearch();
 const {searchSnapshot, validateResearchQuery, searchResearch}=mod.exports;
 const index = JSON.parse(readFileSync(new URL('../data/research_index.json',import.meta.url),'utf8'));
 
@@ -164,4 +171,55 @@ test('catalog-level provenance takes precedence over contributor-supplied paper 
     assert.equal(status.userSubmitted,true);
     assert.equal(status.validated,false);
   } finally { globalThis.fetch = oldFetch; }
+});
+
+test('research index caches only lossless, validated snapshots per exact source URL', async () => {
+  const defaultFixture = new URL('../data/research_index.json', import.meta.url);
+  const raw = readFileSync(process.env.HS_TEST_FULL_RESEARCH_INDEX || defaultFixture);
+  const expected = JSON.parse(raw);
+  const savedFetch = globalThis.fetch;
+  const savedUrl = process.env.RESEARCH_INDEX_URL;
+  const stored = new Map();
+  const requests = [];
+  const { getResearchIndex } = loadResearch((load, keyParts, options) => {
+    assert.deepEqual(keyParts, ['research-index-gzip-v1']);
+    assert.equal(options.revalidate, 60);
+    return async url => {
+      if (!stored.has(url)) stored.set(url, await load(url));
+      return stored.get(url);
+    };
+  }).exports;
+  const first = 'https://example.test/catalog?branch=main';
+  const second = 'https://example.test/catalog?branch=dev';
+  try {
+    globalThis.fetch = async (url, options) => {
+      requests.push(url);
+      assert.equal(options.cache, 'no-store');
+      if (url === second) return new Response('unavailable', {status: 503});
+      return new Response(raw);
+    };
+    process.env.RESEARCH_INDEX_URL = first;
+    const loaded = await getResearchIndex();
+    assert.equal(loaded.snapshot, expected.snapshot);
+    assert.equal(loaded.papers.length, expected.papers.length);
+    assert.deepEqual(loaded.taxonomy, expected.taxonomy);
+    assert.deepEqual(gunzipSync(Buffer.from(stored.get(first), 'base64')), raw);
+    assert.ok(Buffer.byteLength(JSON.stringify(stored.get(first))) < 2 * 1024 * 1024);
+    assert.deepEqual(await getResearchIndex(), loaded);
+    assert.deepEqual(requests, [first]);
+
+    process.env.RESEARCH_INDEX_URL = second;
+    assert.equal((await getResearchIndex()).snapshot, index.snapshot);
+    assert.equal(stored.has(second), false);
+    globalThis.fetch = async () => new Response(JSON.stringify({...expected, snapshot: 'invalid'}));
+    assert.equal((await getResearchIndex()).snapshot, index.snapshot);
+    assert.equal(stored.has(second), false);
+    globalThis.fetch = async () => new Response(raw);
+    assert.deepEqual(await getResearchIndex(), loaded);
+    assert.ok(stored.has(second));
+  } finally {
+    globalThis.fetch = savedFetch;
+    if (savedUrl === undefined) delete process.env.RESEARCH_INDEX_URL;
+    else process.env.RESEARCH_INDEX_URL = savedUrl;
+  }
 });
