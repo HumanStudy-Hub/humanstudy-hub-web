@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { grantHostedInvitation } from "@/lib/hosted-model-quota";
 import { promoMatches } from "@/lib/desktop-access";
 import { requireStudioUser } from "@/lib/studio/auth";
 import { assertSameOrigin, isUuid, readJsonBody, routeError } from "@/lib/studio/http";
@@ -44,6 +45,7 @@ export async function POST(request: Request) {
       if (!promoMatches(body?.code)) {
         return reply({ error: body?.code ? "invalid_code" : "code_required", message: body?.code ? "That code is not valid." : "Enter your invitation code." }, 403);
       }
+      if (!(await grantHostedInvitation(user.id))) return reply({ error: "hosted_allowance_unavailable", message: "Hosted access could not be activated. Please try again later." }, 503);
       jar.set(TRY_ACCESS_COOKIE, accessCookieFor(user.id), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: TRY_ACCESS_DAYS * 86_400 });
     }
     return reply(await launchTryOnline(user, body?.attempt as string | undefined));
