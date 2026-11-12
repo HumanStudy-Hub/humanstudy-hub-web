@@ -70,7 +70,7 @@ export async function verifyCommunityCredit(row: Pick<ContributionRow, "id" | "p
   const root = `https://raw.githubusercontent.com/${BENCH}/${commit}`;
   const index = await publicJson<ResearchIndex>(`${root}/co_website/data/research_index.json`);
   if (index?.schemaVersion !== 1 || !Array.isArray(index.papers)) return null;
-  const matches = index.papers.filter(paper => paper.paperKey === row.paper_key || paper.aliases?.includes(row.paper_key));
+  const matches = index.papers.filter(paper => paper.paperKey === row.paper_key || (paper.aliases?.includes(row.paper_key) || paper.aliases?.includes(`community:${row.paper_key}`)));
   const paper = matches.length === 1 ? matches[0] : undefined;
   if (!paper || !/^paper_[a-f0-9]{24}$/.test(paper.id) || typeof paper.title !== "string") return null;
   const directory = `${root}/community/${paper.id}`;

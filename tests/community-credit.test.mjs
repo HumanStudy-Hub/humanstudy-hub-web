@@ -97,6 +97,12 @@ test('credit follows the accepted immutable revision even after a newer one beco
     const verified = await lib.verifyCommunityCredit(row);
     assert.equal(verified.accepted_revision,revision);
     assert.equal(verified.public_name,'Public Contributor');
+    const movedPaper = {id:paperId,paperKey:'doi:10.0000/new-key',aliases:['community:' + paperKey],title:'Fixture paper',currentRevision};
+    replies.set('/research_index.json',{schemaVersion:1,papers:[movedPaper]});
+    assert.equal((await lib.verifyCommunityCredit(row)).accepted_revision,revision);
+    replies.set('/research_index.json',{schemaVersion:1,papers:[movedPaper,{...movedPaper,id:'paper_'+'f'.repeat(24)}]});
+    assert.equal(await lib.verifyCommunityCredit(row),null,'ambiguous historical aliases never assign credit');
+    replies.set('/research_index.json',{schemaVersion:1,papers:[movedPaper]});
     replies.set('/reviews/' + id + '.json',{...review,status:'unchanged'});
     assert.equal(await lib.verifyCommunityCredit(row),null);
     replies.set('/reviews/' + id + '.json',review);
@@ -106,4 +112,42 @@ test('credit follows the accepted immutable revision even after a newer one beco
     replies.set('/revisions/' + revision + '/manifest.json',{revision,files:[{...files[0],sha256:'f'.repeat(64)}]});
     assert.equal(await lib.verifyCommunityCredit(row),null);
   } finally { globalThis.fetch = oldFetch; }
+});
+
+
+test('owned history pagination and receipt recheck cannot access another user', async () => {
+  const { NextResponse } = require('next/server');
+  let pageSeen, ownerSeen, reconciled = 0;
+  const row = {id,paper_key:paperKey,status:'merged',owner_id:owner,created_at:'2026-11-11T00:00:00Z'};
+  const auth = {requireHubUser:async () => ({id:owner}),fail:(status,error,message)=>NextResponse.json({error,message},{status})};
+  const route = load('app/api/community/mine/route.ts', {
+    '@/lib/community-auth':auth,
+    '@/lib/community-credit':{UUID:/^[a-f0-9-]{36}$/,reconcileCommunityCredit:async () => {reconciled++;return {contributor_id:other};}},
+    '@/lib/community-store':{CONTRIBUTIONS_PAGE_SIZE:25,getIdentity:async()=>null,
+      listMine:async (account,page) => {ownerSeen=account;pageSeen=page;return Array.from({length:26},()=>row);},
+      findOwnedContribution:async (submission,account)=>submission===id&&account===owner?row:null},
+  });
+  const response=await route.GET(new Request('https://hub.test/api/community/mine?page=2&owner_id='+voter));
+  const result=await response.json();
+  assert.equal(ownerSeen,owner);assert.equal(pageSeen,2);assert.equal(result.contributions.length,25);assert.equal(result.hasMore,true);
+  assert.ok(!('owner_id' in result.contributions[0]));
+  assert.equal((await route.GET(new Request('https://hub.test/api/community/mine?page=-1'))).status,400);
+  const post=body=>route.POST(new Request('https://hub.test/api/community/mine',{method:'POST',body:JSON.stringify(body)}));
+  assert.equal((await post({id:voter})).status,404);assert.equal(reconciled,0);
+  assert.deepEqual(await (await post({id})).json(),{status:'merged',contributorId:other});assert.equal(reconciled,1);
+});
+
+test('cookie-authenticated reads work without Origin but writes retain origin protection', async () => {
+  let originChecks=0;
+  const auth=load('lib/community-auth.ts',{
+    './desktop-access':{bearer:()=>null},
+    './studio/auth':{requireStudioUser:async()=>({user:{id:owner}})},
+    './studio/http':{assertSameOrigin:request=>{originChecks++;if(request.headers.get('origin')!=='https://hub.test')throw Error('origin');}},
+  });
+  assert.equal((await auth.requireHubUser(new Request('https://hub.test/api/community/mine'))).id,owner);
+  assert.equal(originChecks,0);
+  assert.equal((await auth.requireHubUser(new Request('https://hub.test/api/community/mine',{method:'POST'}))).status,401);
+  assert.equal((await auth.requireHubUser(new Request('https://hub.test/api/community/mine',{method:'POST',headers:{Origin:'https://evil.test'}}))).status,401);
+  assert.equal((await auth.requireHubUser(new Request('https://hub.test/api/community/mine',{method:'POST',headers:{Origin:'https://hub.test'}}))).id,owner);
+  assert.equal(originChecks,3);
 });

@@ -1,18 +1,23 @@
 import { NextResponse } from "next/server";
 import { fail, requireHubUser } from "@/lib/community-auth";
 import { reconcileCommunityCredit, UUID } from "@/lib/community-credit";
-import { findOwnedContribution, getIdentity, listMine } from "@/lib/community-store";
+import { CONTRIBUTIONS_PAGE_SIZE, findOwnedContribution, getIdentity, listMine } from "@/lib/community-store";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const user = await requireHubUser(request);
   if (user instanceof NextResponse) return user;
+  const page = Number(new URL(request.url).searchParams.get("page") ?? 1);
+  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(page * CONTRIBUTIONS_PAGE_SIZE)) {
+    return fail(400, "invalid_page", "Choose a valid page of contributions.");
+  }
   try {
-    const [rows, identity] = await Promise.all([listMine(user.id), getIdentity(user.id)]);
+    const [rows, identity] = await Promise.all([listMine(user.id, page), getIdentity(user.id)]);
     return NextResponse.json(
       {
-        contributions: rows.map((r) => ({ id: r.id, paperKey: r.paper_key, folder: r.folder, slug: r.slug, status: r.status, prUrl: r.pr_url, prNumber: r.pr_number, error: r.error, createdAt: r.created_at, updatedAt: r.updated_at })),
+        page, hasMore: rows.length > CONTRIBUTIONS_PAGE_SIZE,
+        contributions: rows.slice(0, CONTRIBUTIONS_PAGE_SIZE).map((r) => ({ id: r.id, paperKey: r.paper_key, folder: r.folder, slug: r.slug, status: r.status, prUrl: r.pr_url, prNumber: r.pr_number, error: r.error, createdAt: r.created_at, updatedAt: r.updated_at })),
         github: identity ? { login: identity.login, connectedAt: identity.connected_at } : null,
       },
       { headers: { "Cache-Control": "no-store" } },

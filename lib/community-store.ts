@@ -46,8 +46,10 @@ export async function insertContribution(row: Omit<ContributionRow, "created_at"
   await communityRest("contributions", { method: "POST", body: JSON.stringify(row) }, "return=minimal");
 }
 
-export async function listMine(ownerId: string): Promise<ContributionRow[]> {
-  return communityRest<ContributionRow[]>(`contributions?select=*&owner_id=${eq(ownerId)}&order=created_at.desc&limit=100`);
+export const CONTRIBUTIONS_PAGE_SIZE = 25;
+
+export async function listMine(ownerId: string, page = 1): Promise<ContributionRow[]> {
+  return communityRest<ContributionRow[]>(`contributions?select=*&owner_id=${eq(ownerId)}&order=created_at.desc,id.desc&limit=${CONTRIBUTIONS_PAGE_SIZE + 1}&offset=${(page - 1) * CONTRIBUTIONS_PAGE_SIZE}`);
 }
 
 export async function listOpenForPaper(paperKey: string): Promise<ContributionRow[]> {

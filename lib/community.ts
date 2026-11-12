@@ -6,7 +6,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import AdmZip from "adm-zip";
 import { ACCESS_SECRET } from "./access";
 import {
-  CONTRIBUTION_METADATA, CONTRIBUTION_PROGRAM, MAX_CONTRIBUTION_ZIP_BYTES,
+  CONTRIBUTION_METADATA, CONTRIBUTION_PROGRAM, CONTRIBUTION_PROTOCOL, MAX_CONTRIBUTION_ZIP_BYTES,
   contributionPathKey, contributionPathProblem, ignorableContributionPath,
 } from "./community-archive";
 
@@ -137,6 +137,7 @@ export function validateContributionZip(
     errors.push(`The contribution is ${mb(opts.zipBytes)}, over the ${mb(MAX_ZIP_BYTES)} limit. Leave out large simulation outputs and try again.`);
   }
   const files = entries.filter(entry => !entry.isDirectory && !ignorableContributionPath(entry.name));
+  const paired = files.some(file => file.name === CONTRIBUTION_PROTOCOL);
   const names = new Set<string>();
   const pathKeys = new Set<string>();
   let totalBytes = 0;
@@ -145,7 +146,7 @@ export function validateContributionZip(
     if (pathKeys.has(key)) errors.push(`The zip contains the same file more than once: ${name}.`);
     pathKeys.add(key);
     names.add(name);
-    const problem = contributionPathProblem(name, opts.includesPdf === true);
+    const problem = contributionPathProblem(name, opts.includesPdf === true, paired);
     if (problem) errors.push(problem);
     if (size > MAX_FILE_BYTES) errors.push(`${name} is ${mb(size)}, over the ${mb(MAX_FILE_BYTES)} per-file limit.`);
     totalBytes += size;
