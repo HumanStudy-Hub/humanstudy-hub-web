@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { bearer, DESKTOP_MODELS, verifyDesktopKey } from "@/lib/desktop-access";
+import { devModelAccess, isDevPreview } from "@/lib/try-dev-models";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -11,6 +12,9 @@ const MAX_BODY = 4_000_000;
 export async function POST(request: Request) {
   const userId = verifyDesktopKey(bearer(request));
   if (!userId) return NextResponse.json({ error: { message: "Invalid or expired desktop key", type: "invalid_api_key" } }, { status: 401 });
+  if (isDevPreview() && !devModelAccess(userId)) {
+    return NextResponse.json({ error: { message: "Dev model access is disabled for this account", type: "server_error" } }, { status: 503 });
+  }
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return NextResponse.json({ error: { message: "Hosted models are not configured", type: "server_error" } }, { status: 503 });
   const raw = await request.text();

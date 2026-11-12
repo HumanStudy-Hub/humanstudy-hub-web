@@ -45,7 +45,8 @@ function fixture(t, options = {}) {
     status: options.stopped ? 'stopped' : 'running',
     expiresAt: new Date('2030-01-01T01:00:00Z'),
     domain: () => 'https://workspace.vercel.run',
-    async runCommand() { calls.push('start'); this.status = 'running'; return { exitCode: 0 }; },
+    async runCommand(input) { calls.push([input.cmd === 'node' ? 'probe' : 'start', input.env]); this.status = 'running'; return { exitCode: 0 }; },
+    async updateNetworkPolicy(policy) { calls.push(['policy', policy]); this.status = 'running'; },
     async stop() { calls.push('stop'); this.status = 'stopped'; },
   };
   const Sandbox = {
@@ -54,7 +55,7 @@ function fixture(t, options = {}) {
       if (!exists) throw new APIError(404);
       return sandbox;
     },
-    async create() { calls.push('create'); exists = true; return sandbox; },
+    async create(input) { calls.push(['create', input.networkPolicy]); exists = true; return sandbox; },
     async list() {
       calls.push('list');
       if (options.listFails) throw new Error('provider unavailable');
@@ -80,6 +81,10 @@ function fixture(t, options = {}) {
   const lib = load('lib/try-online.ts', {
     '@vercel/sandbox': { Sandbox, APIError }, './try-online-config': config,
     './desktop-access': { mintDesktopKey: id => ({ key: 'fixture-desktop-key-' + id }) },
+    './try-dev-models': {
+      devHubOrigin: () => options.hubOrigin ?? '', devModelAccess: () => options.managedDev ?? false,
+      devModelNetwork: async () => options.networkPolicy ?? null, isDevPreview: () => process.env.VERCEL_ENV === 'preview' && process.env.VERCEL_GIT_COMMIT_REF === 'dev',
+    },
   });
   return { calls, config, lib };
 }
@@ -113,7 +118,7 @@ test('an existing matching workspace reopens without restarting', async t => {
   const result = await lib.launchTryOnline(user, attempt);
   assert.equal(result.resumed, true);
   assert.match(result.url, /^https:\/\/workspace\.vercel\.run\/\?t=[a-f0-9]{64}$/);
-  assert.ok(!calls.includes('start'));
+  assert.ok(!calls.some(([name]) => name === 'start'));
   assert.deepEqual(await lib.stopTryOnline(user.id), { pending: false });
   assert.ok(calls.includes('stop'));
   assert.equal(calls.at(-1)[1].release_slot, true);
@@ -143,6 +148,96 @@ test('a delayed cancellation for a superseded attempt never calls the provider',
 test('a stale build on a running workspace is not advertised or restarted', async t => {
   const { calls, lib } = fixture(t, { build: { ...build, version: 'stale' } });
   await assert.rejects(lib.launchTryOnline(user, attempt), { code: 'build_mismatch' });
-  assert.ok(!calls.includes('start'));
+  assert.ok(!calls.some(([name]) => name === 'start'));
   assert.ok(!calls.includes('stop'));
+});
+
+test('managed dev firewall credential never goes into guest environment', async t => {
+  const hubOrigin = 'https://example-dev.vercel.app';
+  const networkPolicy = { allow: { 'example-dev.vercel.app': [{ transform: [{ headers: { 'x-vercel-trusted-oidc-idp-token': 'fixture-server-secret' } }] }] } };
+  const { calls, lib } = fixture(t, { fresh: true, managedDev: true, hubOrigin, networkPolicy });
+  await lib.launchTryOnline(user, attempt);
+  assert.deepEqual(calls.find(([name]) => name === 'create'), ['create', networkPolicy]);
+  const startEnv = calls.find(([name]) => name === 'start')[1];
+  assert.equal(startEnv.HUMANSTUDY_SERVER, hubOrigin);
+  assert.equal(startEnv.NODE_USE_SYSTEM_CA, '1');
+  assert.ok(!JSON.stringify(startEnv).includes('fixture-server-secret'));
+  assert.ok(calls.some(([name]) => name === 'probe'));
+  assert.ok(calls.find(([name]) => name === '/__seed')[1].desktopKey);
+});
+
+test('missing managed dev authentication fails before reservation and compute', async t => {
+  const { calls, lib } = fixture(t, { managedDev: true });
+  await assert.rejects(lib.launchTryOnline(user, attempt), { code: 'model_auth_unavailable' });
+  assert.deepEqual(calls, []);
+});
+
+test('dev model authorization matches only configured user, host and desktop methods', async t => {
+  const { calls } = fixture(t);
+  const host = 'example-dev.vercel.app';
+  const origin = 'https://' + host;
+  for (const [key, value] of Object.entries({
+    TRY_DEV_MANAGED_MODELS: '1', TRY_DEV_MODEL_USER_ID: user.id, VERCEL_BRANCH_URL: host, TRY_DEV_HUB_ORIGIN: origin,
+  })) {
+    const previous = process.env[key];
+    process.env[key] = value;
+    t.after(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
+  }
+  const token = (environment, exp) => 'header.' + Buffer.from(JSON.stringify({ environment, exp })).toString('base64url') + '.signature';
+  const expires = Math.floor(Date.now() / 1000) + 3600;
+  let current = token('preview', expires);
+  const api = load('lib/try-dev-models.ts', { '@vercel/oidc': { getVercelOidcToken: async () => current } });
+  assert.equal(api.devModelAccess(user.id), true);
+  assert.equal(api.devModelAccess(attempt), false);
+  assert.equal(api.devHubOrigin(), origin);
+  assert.equal(await api.devModelNetwork('https://humanstudy-hub.com', 10), null);
+  const policy = await api.devModelNetwork(origin, 10);
+  assert.deepEqual(policy.allow[host].slice(0, 3).map(rule => rule.match), [
+    { path: { exact: '/api/desktop/config' }, method: ['GET'] },
+    { path: { exact: '/api/desktop/v1/models' }, method: ['GET'] },
+    { path: { exact: '/api/desktop/v1/chat/completions' }, method: ['POST'] },
+  ]);
+  assert.deepEqual(policy.allow[host].at(-1), { response: { statusCode: 403 } });
+  assert.equal(policy.allow[host][0].transform[0].headers['x-vercel-trusted-oidc-idp-token'], current);
+  assert.deepEqual(policy.allow['humanstudy-hub.com'], [{ response: { statusCode: 403 } }]);
+  assert.deepEqual(policy.allow['*'], []);
+  current = token('production', expires);
+  assert.equal(await api.devModelNetwork(origin, 10), null);
+  current = token('preview', expires - 3599);
+  assert.equal(await api.devModelNetwork(origin, 10), null);
+  process.env.VERCEL_ENV = 'production';
+  assert.equal(api.devModelAccess(user.id), false);
+  assert.equal(api.devHubOrigin(), '');
+  assert.deepEqual(calls, []);
+});
+
+test('hosted bodyless Stop and JSON cancellation both preserve owner-scoped behavior', async () => {
+  const calls = [];
+  const route = load('app/api/try/route.ts', {
+    'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
+    '@/lib/desktop-access': {},
+    '@/lib/studio/auth': { requireStudioUser: async () => ({ user }) },
+    '@/lib/studio/http': {
+      assertSameOrigin: request => assert.equal(request.headers.get('origin'), 'https://dev.example.test'),
+      readJsonBody: async request => {
+        assert.equal(request.headers.get('content-type'), 'application/json');
+        return request.json();
+      },
+      isUuid: value => value === attempt,
+      routeError: error => { throw error; },
+    },
+    '@/lib/try-online': { stopTryOnline: async (...args) => { calls.push(args); return { pending: false }; } },
+    '@/lib/try-online-config': { tryConfigured: () => true },
+  });
+  const origin = 'https://dev.example.test';
+  const request = new Request(origin + '/api/try', {
+    method: 'DELETE', headers: { origin }, body: new ReadableStream({ start(controller) { controller.close(); } }), duplex: 'half',
+  });
+  assert.notEqual(request.body, null);
+  assert.equal((await route.DELETE(request)).status, 200);
+  const json = new Request(origin + '/api/try', {
+    method: 'DELETE', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ attempt }),
+  });
+  assert.equal((await route.DELETE(json)).status, 200);
+  assert.deepEqual(calls, [[user.id, undefined], [user.id, attempt]]);
 });
