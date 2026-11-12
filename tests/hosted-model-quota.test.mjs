@@ -131,3 +131,76 @@ test('route settles only authenticated complete upstream usage against its serve
  admitted=false;assert.equal((await route.POST(request())).status,429);assert.equal(forwards,1);assert.equal(settlements.length,1);
  environment=null;delete process.env.HOSTED_MODEL_QUOTAS;assert.equal(await (await route.POST(request())).text(),wire);assert.equal(forwards,2);assert.equal(settlements.length,1);
 });
+
+test('production invitation creates one fixed allowance and cannot renew a revoked or spent grant', async () => {
+  const db = new PGlite();
+  const grant = id => db.query('select public.online_grant_production_invitation($1) as ok', [id]).then(r => r.rows[0].ok);
+  try {
+    await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
+      create schema auth; create table auth.users(id uuid primary key, email_confirmed_at timestamptz, deleted_at timestamptz, is_anonymous boolean);`);
+    for (const suffix of ['_online_dev_model_budget.sql', '_hosted_account_model_allowances.sql', '_production_invitation_model_allowance.sql']) {
+      const file = fs.readdirSync(new URL('../supabase/migrations/', import.meta.url)).find(name => name.endsWith(suffix));
+      await db.exec(fs.readFileSync(new URL('../supabase/migrations/' + file, import.meta.url), 'utf8'));
+    }
+    await db.query('insert into auth.users values($1,now(),null,false),($2,null,null,false)', [user, other]);
+    await db.exec('set role authenticated');
+    await assert.rejects(grant(user), /permission denied/);
+    await assert.rejects(db.query('select hosted_quota_private.grant_production_invitation($1)', [user]), /permission denied/);
+    await db.exec('set role service_role');
+    assert.equal(await grant(user), false, 'no production pool cannot grant');
+    await assert.rejects(db.exec('insert into public.online_dev_model_budget default values'), /permission denied/);
+    await db.exec('reset role');
+    await db.query(`insert into public.online_dev_model_budget
+      (budget_key,environment,scope,singleton,user_id,models,expires_at,remaining_microusd,remaining_requests)
+      values ('production:pool','production','pool',null,null,array[$1],now()+interval '7 days',50000000,1000)`, [model]);
+    await db.exec('set role service_role');
+    assert.equal(await grant(other), false, 'unconfirmed account cannot receive access');
+    assert.deepEqual(await Promise.all([grant(user), grant(user)]), [true, true]);
+    const read = () => db.query(`select remaining_microusd,remaining_requests,revoked,
+      expires_at=(select expires_at from public.online_dev_model_budget where budget_key='production:pool') as same_expiry,
+      models from public.online_dev_model_budget where scope='account'`).then(r => r.rows);
+    assert.deepEqual(await read(), [{ remaining_microusd: 5000000, remaining_requests: 100, revoked: false, same_expiry: true, models: [model] }]);
+    await db.exec("update public.online_dev_model_budget set remaining_microusd=0,remaining_requests=0,revoked=true where scope='account'");
+    assert.equal(await grant(user), true);
+    assert.deepEqual(await read(), [{ remaining_microusd: 0, remaining_requests: 0, revoked: true, same_expiry: true, models: [model] }]);
+    assert.deepEqual((await db.query('select public.online_account_model_access($1,$2) as models', ['production', user])).rows[0].models, []);
+    await db.exec('reset role');
+    await db.query('update auth.users set email_confirmed_at=now() where id=$1', [other]);
+    await db.exec("update public.online_dev_model_budget set expires_at=now() where scope='pool'; set role service_role");
+    assert.equal(await grant(other), false, 'expired pool cannot create new access');
+  } finally { await db.close(); }
+});
+
+test('Desktop key uses verified owner and valid invitation before creating allowance', async t => {
+  const savedUrl = process.env.SUPABASE_URL, savedKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+  process.env.SUPABASE_URL = 'https://db.test';
+  process.env.SUPABASE_PUBLISHABLE_KEY = 'fixture-public';
+  t.after(() => {
+    if (savedUrl === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = savedUrl;
+    if (savedKey === undefined) delete process.env.SUPABASE_PUBLISHABLE_KEY; else process.env.SUPABASE_PUBLISHABLE_KEY = savedKey;
+  });
+  const calls = [];
+  let allowed = false;
+  const route = load('app/api/desktop/key/route.ts', {
+    'next/server': { NextResponse: { json: Response.json } },
+    '@/lib/desktop-access': {
+      bearer: request => request.headers.get('authorization'),
+      desktopConfigured: () => true,
+      promoMatches: code => code === 'valid-code',
+      mintDesktopKey: account => { calls.push(['key', account]); return { key: 'test', expiresAt: 'later' }; },
+    },
+    '@/lib/hosted-model-quota': { grantHostedInvitation: async account => { calls.push(['grant', account]); return allowed; } },
+  });
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ id: user }));
+  const request = (code, signedIn = true) => new Request('https://hub.test/api/desktop/key', {
+    method: 'POST', headers: signedIn ? { authorization: 'verified-session' } : {}, body: JSON.stringify({ code, user_id: other }),
+  });
+  assert.equal((await route.POST(request('valid-code', false))).status, 401);
+  assert.equal((await route.POST(request('wrong-code'))).status, 403);
+  assert.deepEqual(calls, []);
+  assert.equal((await route.POST(request('valid-code'))).status, 503);
+  assert.deepEqual(calls, [['grant', user]]);
+  allowed = true;
+  assert.equal((await route.POST(request('valid-code'))).status, 200);
+  assert.deepEqual(calls.slice(1), [['grant', user], ['key', user]]);
+});

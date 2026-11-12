@@ -45,3 +45,9 @@ export async function hostedModelsForAccount(account: string): Promise<string[]>
   const result = await rpc("online_account_model_access", { budget_environment: environment, account_id: account });
   return Array.isArray(result) && result.every(value => typeof value === "string") ? result : [];
 }
+
+/** Only an authenticated server-side invitation redemption may call this. */
+export async function grantHostedInvitation(account: string): Promise<boolean> {
+  if (hostedQuotaEnvironment() !== "production") return true;
+  return await rpc("online_grant_production_invitation", { account_id: account }) === true;
+}

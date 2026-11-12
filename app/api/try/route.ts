@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { grantHostedInvitation } from "@/lib/hosted-model-quota";
 import { promoMatches } from "@/lib/desktop-access";
 import { requireStudioUser } from "@/lib/studio/auth";
 import { assertSameOrigin, isUuid, readJsonBody, routeError } from "@/lib/studio/http";
@@ -40,10 +41,12 @@ export async function POST(request: Request) {
     const jar = await cookies();
     const body = (await readJsonBody(request, 4000)) as { code?: unknown; attempt?: unknown } | null;
     if (body?.attempt !== undefined && !isUuid(body.attempt)) return reply({ error: "invalid_attempt" }, 400);
-    if (!hasAccess(user.id, jar.get(TRY_ACCESS_COOKIE)?.value)) {
-      if (!promoMatches(body?.code)) {
-        return reply({ error: body?.code ? "invalid_code" : "code_required", message: body?.code ? "That code is not valid." : "Enter your invitation code." }, 403);
-      }
+    const alreadyInvited = hasAccess(user.id, jar.get(TRY_ACCESS_COOKIE)?.value);
+    if (!alreadyInvited && !promoMatches(body?.code)) {
+      return reply({ error: body?.code ? "invalid_code" : "code_required", message: body?.code ? "That code is not valid." : "Enter your invitation code." }, 403);
+    }
+    if (!(await grantHostedInvitation(user.id))) return reply({ error: "hosted_allowance_unavailable", message: "Hosted access could not be activated. Please try again later." }, 503);
+    if (!alreadyInvited) {
       jar.set(TRY_ACCESS_COOKIE, accessCookieFor(user.id), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: TRY_ACCESS_DAYS * 86_400 });
     }
     return reply(await launchTryOnline(user, body?.attempt as string | undefined));
