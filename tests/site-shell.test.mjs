@@ -111,13 +111,13 @@ test('the homepage groups all four actions in the requested order without second
   assert.doesNotMatch(html, /Questions we’re exploring|Join the conversation|<h2/);
 });
 
-const { libraryFilters, libraryAvailability, validateResearchQuery } = load('lib/research.ts');
+const { libraryFilters, libraryAvailability, paperSource, validateResearchQuery } = load('lib/research.ts');
 const libraryCalls = [];
 let libraryResult;
 let libraryError;
 const Studies = load('app/studies/page.tsx', {
   '@/lib/research': {
-    validateResearchQuery, libraryFilters, libraryAvailability,
+    validateResearchQuery, libraryFilters, libraryAvailability, paperSource,
     searchLibrary: async (input, pool, validatedOnly) => {
       libraryCalls.push({ input, pool, validatedOnly });
       if (libraryError) throw libraryError;

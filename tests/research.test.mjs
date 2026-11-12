@@ -18,7 +18,8 @@ test('search covers the entire corpus, source claims and reviewed Chinese aliase
   const sample={...index.papers[0],id:'paper_'+'f'.repeat(24),aliases:['test:untagged'],title:'Another framing effect study',conceptIds:[]};
   const r=searchSnapshot({...index,papers:[sample]},{query:'框架效应'});
   assert.equal(r.total,1);assert.equal(r.items[0].matchedBy,'concept-alias-content');
-  assert.equal(searchSnapshot(index,{capability:'replayable'}).total,0,'imported metadata does not become runnable');
+  const imported=index.papers.filter(p=>!p.currentRevision&&!p.legacyStudyId);
+  assert.equal(searchSnapshot({...index,papers:imported},{capability:'replayable'}).total,0,'imported metadata does not become runnable');
 });
 test('pagination has stable totals and validation rejects malformed filters',()=>{
   const first=searchSnapshot(index,{offset:0,limit:2}),second=searchSnapshot(index,{offset:2,limit:2});
