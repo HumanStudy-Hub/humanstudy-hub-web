@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { upload } from "@vercel/blob/client";
 import JSZip from "jszip";
 import Link from "next/link";
+import MyContributions from "@/components/MyContributions";
 import {
   CONTRIBUTION_METADATA, CONTRIBUTION_PROGRAM, CONTRIBUTION_PROTOCOL, CONTRIBUTION_SOURCES, CONTRIBUTION_STUDY, MAX_CONTRIBUTION_ZIP_BYTES,
   contributionPathKey, contributionPathProblem, ignorableContributionPath,
@@ -107,7 +108,7 @@ export default function ContributeUploadForm() {
   }
   if(!checked)return <p className="text-sm text-[var(--site-muted)]">Checking sign-in…</p>;
   if(!user)return <p className="text-sm text-[var(--foreground)]"><Link href="/build/projects" className="font-semibold text-[var(--site-accent)] underline">Sign in to HumanStudy Hub</Link> to contribute. A GitHub account is optional.</p>;
-  if (submitted) return <div className="space-y-2 text-sm leading-6">
+  if (submitted) return <><div className="space-y-2 text-sm leading-6">
     <p role="status"><strong>User submitted.</strong>{" "}
       {creditStatus?.contributorId
         ? <Link href={`/contributors/${creditStatus.contributorId}`} className="text-[var(--site-accent)] underline">View your public contribution credit</Link>
@@ -124,8 +125,8 @@ export default function ContributeUploadForm() {
         onClick={() => void refreshCredit()}>{busy ? "Checking…" : "Check status"}</button>}
     </div>
     {error && <p role="alert">{error}</p>}
-  </div>;
-  return <form onSubmit={submit} className="space-y-4">
+  </div><MyContributions key={submitted.id} /></>;
+  return <><form onSubmit={submit} className="space-y-4">
     <input aria-label="Your name" required disabled={busy} value={name} onChange={e=>setName(e.target.value)} placeholder="Your name" className="w-full rounded-md border border-[var(--site-line)] px-3 py-2 text-sm" />
     <input aria-label="Affiliation" disabled={busy} value={affiliation} onChange={e=>setAffiliation(e.target.value)} placeholder="Affiliation (optional)" className="w-full rounded-md border border-[var(--site-line)] px-3 py-2 text-sm" />
     <label className="block rounded-xl border border-dashed border-[var(--site-line)] bg-[var(--site-surface)] p-6 text-sm text-[var(--foreground)]">
@@ -169,5 +170,5 @@ export default function ContributeUploadForm() {
     </div>}
     {error&&<p role="alert" className="text-sm text-red-700">{error}</p>}
     <button disabled={!file||busy||!name.trim()||metadata?.kind==="protocol"&&!reviewed} className="w-full rounded-md bg-[var(--site-accent)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{busy?progress!==null?`Uploading ${Math.round(progress)}%`:'Submitting…':'Contribute'}</button>
-  </form>;
+  </form><MyContributions /></>;
 }

@@ -21,8 +21,11 @@ library recommendation, make the draft runnable, or grant a validation badge.
 Desktop computes the study's hsenv canonical protocol hash. The Web checks the
 hash field's shape and checks the program's raw hash against actual protocol bytes.
 Bench remains responsible for the engine's canonical hash and full release checks.
-The current Bench release validator requires curated fidelity and can reject a
-community draft. A maintainer must review it before any library publication.
+Bench PR #78 adds a separate draft intake that validates the submitted program,
+protocol, source paths, hashes and paper identity before returning `needs_review`.
+Until that dependency is merged, the older release validator can reject draft quality.
+Neither route adopts the draft automatically: a maintainer must review it before
+any library publication.
 
 To verify a Desktop export without publishing a test proposal, set
 `HUMANSTUDY_DESKTOP_PAIRED_ZIP` to the fixture archive and run

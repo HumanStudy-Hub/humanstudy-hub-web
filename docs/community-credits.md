@@ -38,3 +38,9 @@ The browser check runs a local Next server with fixture authentication and a tem
 PGlite database. It verifies the real vote endpoint and saves paper, contributor
 profile and leaderboard screenshots. It accepts a browser executable as a second
 argument and `COMMUNITY_CREDIT_TEST_OUTPUT` as an output directory.
+
+The signed-in `/contribute` page also lists saved submissions, 25 per page. Reloading
+or returning later reads the owned records again; it never depends on an upload
+receipt in browser memory. Each pending credit can be rechecked without uploading
+again. Historical `community:<paperKey>` aliases remain eligible for reconciliation
+when a paper's current identity gains a DOI; ambiguous catalog matches are rejected.
