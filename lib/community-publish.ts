@@ -38,7 +38,7 @@ export function publicTextProblem(value: unknown): string | null {
   if (typeof value === "string") {
     if (/\b(?:sk-[A-Za-z0-9_-]{12,}|hsk_[A-Za-z0-9_-]{8,}|(?:ghp|gho|github_pat|xox[abp])_[A-Za-z0-9_]{12,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})\b|\bAuthorization\s*:\s*Bearer\s+[^\s"'<>]{8,}/i.test(value)) return "a credential-like value";
     const withoutUrls = value.replace(/https?:\/\/[^\s<>"']+/gi, "");
-    if (/(?<![\w:/])(?:file:\/\/[^\s]+|[A-Za-z]:[\\/][^\s]+|\\\\[^\\\s]+\\[^\s]+|(?:~?\/Users\/|~?\/home\/|\/private\/|\/tmp\/|\/var\/folders\/|\/vercel\/sandbox\/)[^\s]+)/i.test(withoutUrls)) return "an absolute local path";
+    if (/(?<![\w:/])(?:file:\/\/[^\s]+|[A-Za-z]:[\\/](?![\\/])[^\s]+|\\\\[^\\\s]+\\[^\s]+|(?:~?\/Users\/|~?\/home\/|\/private\/|\/tmp\/|\/var\/folders\/|\/vercel\/sandbox\/)[^\s]+)/i.test(withoutUrls)) return "an absolute local path";
     return null;
   }
   const values = Array.isArray(value) ? value : value && typeof value === "object"
