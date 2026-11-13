@@ -362,7 +362,11 @@ test('the published Overview preserves study scope, evidence, results and record
     steps: [{ id: 'step', studyId: 'A', title: 'Present question', actorIds: [], inputIds: [], outputIds: [], visibleIds: [], children: [], next: [], evidenceIds: [] }],
   };
   const html = renderToStaticMarkup(React.createElement(PublishedProgram, { paper, program }));
-  const [overview, experiments] = html.split('Experiments and analyses');
+  assert.match(html, /aria-label="Study contents"/);
+  assert.match(html, /href="#paper-overview-0"[^>]*>Research question and motivation/);
+  assert.match(html, /href="#paper-experiment-1"[^>]*>Experiment B/);
+  assert.match(html, /<details id="paper-experiment-1"/);
+  const [overview, experiments] = html.slice(html.indexOf('Human Study Program')).split('Experiments and analyses');
   assert.match(overview, /Overview.*Research question and motivation.*What prompted the research.*Paper summary.*Hypotheses.*Applies to Experiment A, Experiment B.*A shared prediction.*Source evidence.*Original excerpt.*Additional node-level excerpt.*Main findings.*The primary finding/s);
   assert.equal((overview.match(/Original excerpt/g) || []).length, 1, "Shared field and note evidence is rendered once");
   assert.doesNotMatch(overview, /A scoped prediction/);

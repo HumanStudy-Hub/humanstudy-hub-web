@@ -1,0 +1,37 @@
+.page { max-width: 1060px; }
+.intro { max-width: 820px; }
+.page .intro h1 {
+  max-width: 38ch;
+  font-size: clamp(24px, 2.5vw, 30px);
+  line-height: 1.18;
+}
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+.body { min-width: 0; max-width: 820px; }
+.page .body h2, .page > div > section > h2 { font-size: clamp(22px, 2vw, 24px); }
+.page .layout h3 { font-size: 19px; }
+.page .layout h4 { font-size: 15px; }
+.contents { font-size: 13px; line-height: 1.4; color: var(--site-muted); }
+.contents ul { margin-top: 6px; padding: 0; list-style: none; }
+.contents li + li { margin-top: 5px; }
+.contents a { color: var(--site-accent); overflow-wrap: anywhere; }
+.contents a:hover, .contents a:focus-visible { text-decoration: underline; }
+.contents strong { color: var(--foreground); }
+.contents div + div { margin-top: 14px; }
+.rail { display: none; }
+.compact summary { cursor: pointer; font-weight: 600; color: var(--foreground); }
+.compact[open] summary { margin-bottom: 10px; }
+
+@media (min-width: 850px) {
+  .layout:has(.contents) { grid-template-columns: 165px minmax(0, 1fr); gap: 28px; }
+  .contents {
+    position: sticky;
+    top: 108px;
+    align-self: start;
+    max-height: calc(100vh - 128px);
+    overflow: auto;
+    padding-right: 12px;
+    border-right: 1px solid var(--site-line);
+  }
+  .rail { display: block; }
+  .compact { display: none; }
+}
