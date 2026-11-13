@@ -24,7 +24,12 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
     const revision = actionRevision.current;
     try {
       const response = await fetch("/api/try", { cache: "no-store", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000) });
-      if (response.status === 401) return;
+      if (response.status === 401) {
+        if (revision !== actionRevision.current || signal?.aborted) return;
+        setPhase("idle");
+        window.location.assign(paperWorkspaceSignIn(target));
+        return "signed-out" as const;
+      }
       const data = await response.json() as Reply;
       if (revision !== actionRevision.current || signal?.aborted) return;
       if (!response.ok || !data.status) throw Error(data.message || "Could not check your workspace status.");
@@ -55,7 +60,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
     let checks = 0;
     const poll = async () => {
       const status = await checkStatus(controller.signal);
-      if (controller.signal.aborted || status === "stopped" || status === "new") return;
+      if (controller.signal.aborted || status === "stopped" || status === "new" || status === "signed-out") return;
       if (++checks >= 18) {
         setPhase("idle");
         setMessage("Stopping is taking longer than usual. Check status again before reopening; your workspace may still be saving.");
@@ -158,7 +163,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
         {phase === "cancelling" && <p role="status">Cancellation requested. The workspace will stop once startup finishes.</p>}
         {message && <p role="status" className="mb-4">{message}</p>}
         {url && <p className="mb-4"><a href={url} target="_blank" rel="noreferrer" className={styles.button}>Open in browser ↗</a></p>}
-        {!busy && !url && <form onSubmit={event => { event.preventDefault(); void start(); }} className="mb-4">
+        {!busy && !url && workspace !== "transition" && <form onSubmit={event => { event.preventDefault(); void start(); }} className="mb-4">
           {codeRequired && <label className="mb-3 block">
             <span className="block">Invitation code</span>
             <input value={code} onChange={event => setCode(event.target.value)} autoComplete="off"
