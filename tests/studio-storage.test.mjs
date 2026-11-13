@@ -84,6 +84,15 @@ test("access session uses a verified Supabase user and never trusts cookie ident
   assert.equal(calls[0].options.headers.apikey, "publishable-test");
 }));
 
+test("verified account exposes only contributor profile fields from user metadata", async () => withService(async () => {
+  jarValues.set("studio_access", "access-one");
+  global.fetch = async () => Response.json({ id: userId, email: "owner@example.test",
+    user_metadata: { hub_name: " Ada Example ", hub_affiliation: "Example Lab", role: "admin", private_data: "hidden" } });
+  assert.deepEqual((await auth.requireStudioUser()).user, {
+    id: userId, email: "owner@example.test", profile: { name: "Ada Example", affiliation: "Example Lab" },
+  });
+}));
+
 test("expired session refreshes and verifies the new access token before rotating HttpOnly cookies", async () => withService(async () => {
   jarValues.set("studio_access", "expired"); jarValues.set("studio_refresh", "refresh-one");
   const calls = [];
