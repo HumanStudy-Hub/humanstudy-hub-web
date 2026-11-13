@@ -1,3 +1,4 @@
+import reading from "./published-reading.module.css";
 import Link from "next/link";
 import CreditPagination from "./CreditPagination";
 import { CREDIT_PAGE_SIZE, listCredits } from "@/lib/community-credit";
@@ -92,8 +93,8 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
   const contributors = researchContributorNames(paper, credits.map(credit => credit.display_name));
   const online = paperWorkspace({ paper: paper.id, revision: paper.currentRevision, intent: "read" });
   const programSource = program ? publishedAssetUrl(paper, program.source.filename) : null;
-  return <div className={`${styles.page} ${styles.narrow}`}>
-    <div>
+  return <div className={`${styles.page} ${reading.page}`}>
+    <div className={reading.intro}>
       <Link href="/studies" className={styles.back}>← Study Library</Link>
       <h1>{paper.title}</h1>
       <p className="mt-3 text-sm text-[var(--site-muted)]">{[authors.join(", "), paper.year, paperSource(paper)].filter(Boolean).join(" · ")}</p>

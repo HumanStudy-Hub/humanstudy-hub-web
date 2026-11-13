@@ -1,3 +1,5 @@
+import ReadingContents from "./ReadingContents";
+import reading from "./published-reading.module.css";
 import { publishedAssetUrl } from "@/lib/published-program";
 import type { ResearchPaper } from "@/lib/research";
 import { programText, type HumanProgram, type ProgramNode, type ProgramField, type ProgramStep } from "@/lib/studio/human-program";
@@ -91,9 +93,9 @@ export default function PublishedProgram({ paper, program }: { paper: ResearchPa
       {renderEvidence(noteSourceIds)}
     </section>;
   };
-  const renderOverview = (nodes: ProgramNode[], showScope = false) => overviewGroups.map(group => {
+  const renderOverview = (nodes: ProgramNode[], showScope = false) => overviewGroups.map((group, index) => {
     const entries = nodes.filter(node => group.kinds.includes(node.kind));
-    return entries.length > 0 && <div key={group.title} className="mt-4">
+    return entries.length > 0 && <div key={group.title} id={showScope ? `paper-overview-${index}` : undefined} tabIndex={showScope ? -1 : undefined} className="mt-4 scroll-mt-24">
       <h4 className="font-semibold">{group.title}</h4>
       {entries.map(node => renderNode(node, showScope))}
     </div>;
@@ -128,31 +130,38 @@ export default function PublishedProgram({ paper, program }: { paper: ResearchPa
     </ul>
   </details>;
 
-  return <section id="paper-program" className="mt-9 scroll-mt-24 border-t border-[var(--site-line)] pt-6">
-    <div className="flex flex-wrap items-baseline justify-between gap-3">
-      <h2 className="text-xl font-semibold font-serif">Human Study Program</h2>
-      <a href="#run-experiment" className="text-sm text-[var(--site-accent)] underline">Run experiment</a>
+  const overviewLinks = overviewGroups.flatMap((group, index) =>
+    paperNodes.some(node => group.kinds.includes(node.kind))
+      ? [{ id: `paper-overview-${index}`, title: group.title }] : []);
+  const experimentLinks = program.studies.map((study, index) => ({ id: `paper-experiment-${index}`, title: study.title }));
+  return <section id="paper-program" className={`mt-9 scroll-mt-24 border-t border-[var(--site-line)] pt-6 ${reading.layout}`}>
+    <ReadingContents overview={overviewLinks} experiments={experimentLinks} />
+    <div className={reading.body}>
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h2>Human Study Program</h2>
+        <a href="#run-experiment" className="text-sm text-[var(--site-accent)] underline">Run experiment</a>
+      </div>
+      {paperNodes.some(node => overviewKinds.has(node.kind)) && <section className="mt-6">
+        <h3 className="font-serif text-lg font-semibold">Overview</h3>
+        {renderOverview(paperNodes, true)}
+      </section>}
+      {program.studies.length > 0 && <section className="mt-7">
+        <h3 className="font-semibold">Experiments and analyses</h3>
+        {program.studies.map((study, index) => {
+          const nodes = nodesFor(study.id);
+          return <details id={experimentLinks[index].id} key={study.id} className="mt-2 scroll-mt-24 border-b border-[var(--site-line)] py-2" open={program.studies.length === 1}>
+            <summary className="cursor-pointer font-medium">{study.title}</summary>
+            {study.description && <p className="mt-2 text-sm leading-relaxed">{study.description}</p>}
+            {renderOverview(nodes)}
+            {renderSteps(program.steps.filter(step => step.studyId === study.id))}
+            {renderGroups(nodes)}
+          </details>;
+        })}
+      </section>}
+      {paperNodes.some(node => !overviewKinds.has(node.kind)) && <section className="mt-7">
+        <h3 className="font-semibold">Details across the paper</h3>
+        {renderGroups(paperNodes, true)}
+      </section>}
     </div>
-    {paperNodes.some(node => overviewKinds.has(node.kind)) && <section className="mt-6">
-      <h3 className="font-serif text-lg font-semibold">Overview</h3>
-      {renderOverview(paperNodes, true)}
-    </section>}
-    {program.studies.length > 0 && <section className="mt-7">
-      <h3 className="font-semibold">Experiments and analyses</h3>
-      {program.studies.map(study => {
-        const nodes = nodesFor(study.id);
-        return <details key={study.id} className="mt-2 border-b border-[var(--site-line)] py-2" open={program.studies.length === 1}>
-          <summary className="cursor-pointer font-medium">{study.title}</summary>
-          {study.description && <p className="mt-2 text-sm leading-relaxed">{study.description}</p>}
-          {renderOverview(nodes)}
-          {renderSteps(program.steps.filter(step => step.studyId === study.id))}
-          {renderGroups(nodes)}
-        </details>;
-      })}
-    </section>}
-    {paperNodes.some(node => !overviewKinds.has(node.kind)) && <section className="mt-7">
-      <h3 className="font-semibold">Details across the paper</h3>
-      {renderGroups(paperNodes, true)}
-    </section>}
   </section>;
 }
