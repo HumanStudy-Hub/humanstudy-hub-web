@@ -76,6 +76,8 @@ export default function PublishedProgram({ paper, program }: { paper: ResearchPa
   const renderNode = (node: ProgramNode, showScope: boolean) => {
     const sharedScope = showScope && node.studyIds.length > 1
       && (!node.fields.length || node.summary || node.description || node.fields.every(field => !field.studyIds?.length));
+    const fieldSourceIds = new Set(node.fields.flatMap(field => field.evidenceIds.length ? field.evidenceIds : node.evidenceIds));
+    const noteSourceIds = node.evidenceIds.filter(id => !fieldSourceIds.has(id));
     return <section key={node.id} className="mt-3">
       <h5 className="text-sm font-semibold">{node.title}</h5>
       {sharedScope && <p className="text-sm text-[var(--site-muted)]">Applies to {studyNames(node.studyIds)}</p>}
@@ -86,7 +88,7 @@ export default function PublishedProgram({ paper, program }: { paper: ResearchPa
         return renderField(field, node.evidenceIds, node.fields.length !== 1 || field.label.trim() !== node.title.trim(),
           showScope && ids.length > 1 && (!sharedScope || field.studyIds?.length) ? studyNames(ids) : undefined);
       })}
-      {node.fields.every(field => field.evidenceIds.length > 0) && renderEvidence(node.evidenceIds)}
+      {renderEvidence(noteSourceIds)}
     </section>;
   };
   const renderOverview = (nodes: ProgramNode[], showScope = false) => overviewGroups.map(group => {

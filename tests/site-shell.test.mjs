@@ -349,7 +349,7 @@ test('the published Overview preserves study scope, evidence, results and record
       node('hypothesis', [
         field('hypothesis', 'A shared prediction.', { evidenceIds: ['quote'] }),
         field('prediction', 'A scoped prediction.', { studyIds: ['B'] }),
-      ], ['A', 'B'], ['node-quote']),
+      ], ['A', 'B'], ['quote', 'node-quote']),
       node('finding', [field('finding', 'The primary finding.')]),
       node('condition', [field('condition', 'A condition.')], ['A']),
       node('result', [field('result', 'An experiment result.')], ['A']),
@@ -364,6 +364,7 @@ test('the published Overview preserves study scope, evidence, results and record
   const html = renderToStaticMarkup(React.createElement(PublishedProgram, { paper, program }));
   const [overview, experiments] = html.split('Experiments and analyses');
   assert.match(overview, /Overview.*Research question and motivation.*What prompted the research.*Paper summary.*Hypotheses.*Applies to Experiment A, Experiment B.*A shared prediction.*Source evidence.*Original excerpt.*Additional node-level excerpt.*Main findings.*The primary finding/s);
+  assert.equal((overview.match(/Original excerpt/g) || []).length, 1, "Shared field and note evidence is rendered once");
   assert.doesNotMatch(overview, /A scoped prediction/);
   assert.doesNotMatch(experiments, /A shared prediction/);
   assert.match(experiments, /Experiment A.*Experiment flow.*Present question.*Design and conditions.*A condition.*Reported results.*An experiment result.*Limitations.*Not reported in the available source.*Experiment B.*A scoped prediction.*Experiment C/s);
