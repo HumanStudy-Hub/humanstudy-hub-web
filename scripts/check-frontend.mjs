@@ -291,18 +291,19 @@ try {
   assert.equal(await page.getByRole('link', { name: /^Interact with paper/ }).getAttribute('href'), '/try?paper=' + interactivePaper.id + '&revision=' + interactivePaper.currentRevision + '&intent=read');
   await page.getByRole('link', { name: /^Run experiment/ }).click();
   await page.waitForURL(origin + interactiveLink + '#run-experiment');
-  await page.getByRole('heading', { name: 'Run experiment', exact: true }).waitFor();
-  assert.ok(await page.getByRole('link', { name: 'Open experiment workspace' }).isVisible());
-  await page.getByText('Use the desktop app', { exact: true }).click();
-  assert.ok(await page.getByRole('button', { name: 'Copy study ID' }).isVisible());
-  assert.ok(await attribution.isVisible());
+  const runExperiment = page.getByRole('link', { name: 'Run experiment', exact: true });
+  await runExperiment.waitFor();
+  assert.equal(await runExperiment.getAttribute('id'), 'run-experiment');
+  assert.equal(await runExperiment.getAttribute('href'), '/try?paper=' + interactivePaper.id + '&revision=' + interactivePaper.currentRevision + '&intent=run');
+  assert.equal(await page.getByRole('link', { name: 'Interact with paper', exact: true }).count(), 0);
+  assert.equal(await attribution.count(), 0);
 
   await visit('/studies?status=program');
   await page.getByRole('checkbox', { name: 'Validated protocols only' }).check();
   await page.waitForURL(url => url.searchParams.get('status') === 'program' && url.searchParams.get('validated') === '1');
   assert.ok(await page.getByRole('checkbox', { name: 'Validated protocols only' }).isChecked());
   assert.ok(await page.getByText('No papers match this view.', { exact: true }).isVisible());
-  report.checks.push('Interactive paper view, validation filter and Desktop run setup');
+  report.checks.push('Interactive paper view, validation filter and single experiment action');
 
   await visit('/studies?status=development');
   assert.deepEqual(await listedLinks(), developmentLinks);
