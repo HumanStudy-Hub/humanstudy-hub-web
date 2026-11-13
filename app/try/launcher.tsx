@@ -6,7 +6,7 @@ import { paperWorkspaceSignIn, workspacePaperUrl, type PaperWorkspace } from "@/
 import styles from "@/components/folio-page.module.css";
 
 type Workspace = "new" | "running" | "stopped" | "transition";
-type Phase = "idle" | "starting" | "stopping" | "cancelling";
+type Phase = "idle" | "starting" | "stopping" | "saving" | "cancelling";
 type Reply = { status?: Workspace; url?: string; error?: string; message?: string; pending?: boolean; ignored?: boolean };
 
 export default function TryLauncher({ needsCode, sessionMinutes, target, paperTitle }: { needsCode: boolean; sessionMinutes: number; target?: PaperWorkspace | null; paperTitle?: string }) {
@@ -23,14 +23,18 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
   async function checkStatus(signal?: AbortSignal) {
     const revision = actionRevision.current;
     try {
-      const response = await fetch("/api/try", { cache: "no-store", signal });
+      const response = await fetch("/api/try", { cache: "no-store", signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000) });
       if (response.status === 401) return;
       const data = await response.json() as Reply;
       if (revision !== actionRevision.current || signal?.aborted) return;
       if (!response.ok || !data.status) throw Error(data.message || "Could not check your workspace status.");
       setWorkspace(data.status);
       if (data.status !== "running") setUrl("");
-      if (data.status === "stopped" || data.status === "new") setPhase(current => current === "cancelling" ? "idle" : current);
+      if (data.status === "stopped" || data.status === "new") {
+        setPhase(current => current === "cancelling" || current === "saving" ? "idle" : current);
+        if (stopRequested.current) setMessage("Workspace stopped. Resume it when you are ready.");
+      }
+      return data.status;
     } catch (error) {
       if (revision === actionRevision.current && !signal?.aborted) setMessage(error instanceof Error ? error.message : "Could not check your workspace status.");
     }
@@ -41,6 +45,27 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
     void checkStatus(controller.signal);
     return () => controller.abort();
   }, []);
+
+  // Saving a persistent workspace can outlast the DELETE response. Confirm with read-only
+  // status requests; never repeat DELETE automatically or call a slow save a failure.
+  useEffect(() => {
+    if (phase !== "saving" && phase !== "cancelling") return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let checks = 0;
+    const poll = async () => {
+      const status = await checkStatus(controller.signal);
+      if (controller.signal.aborted || status === "stopped" || status === "new") return;
+      if (++checks >= 18) {
+        setPhase("idle");
+        setMessage("Stopping is taking longer than usual. Check status again before reopening; your workspace may still be saving.");
+        return;
+      }
+      timer = setTimeout(() => void poll(), 5000);
+    };
+    void poll();
+    return () => { controller.abort(); if (timer) clearTimeout(timer); };
+  }, [phase]);
 
   async function start() {
     actionRevision.current++;
@@ -102,7 +127,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
       }
       if (!response.ok) throw Error(data.message || "Could not stop the workspace. Please try again.");
       if (data.pending) {
-        setPhase(activeAttempt.current || !attempt ? "cancelling" : "idle");
+        setPhase(attempt && activeAttempt.current ? "cancelling" : "saving");
         return;
       }
       if (data.ignored) {
@@ -110,8 +135,9 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
         void checkStatus();
         return;
       }
-      setWorkspace("stopped");
-      setMessage("Workspace stopped. Resume it when you are ready.");
+      setWorkspace("transition");
+      setPhase("saving");
+      return;
     } catch (error) {
       stopRequested.current = false;
       setMessage(error instanceof Error ? error.message : "Could not stop the workspace.");
@@ -128,7 +154,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
       {target && <p className="mt-4">Opening <strong>{paperTitle}</strong>. You can review it and create your own project; no experiment starts automatically.</p>}
       <div className={styles.section}>
         {phase === "starting" && <p role="status">Opening your workspace…</p>}
-        {phase === "stopping" && <p role="status">Stopping your workspace…</p>}
+        {(phase === "stopping" || phase === "saving") && <p role="status">Saving your workspace and stopping… This can take a little while.</p>}
         {phase === "cancelling" && <p role="status">Cancellation requested. The workspace will stop once startup finishes.</p>}
         {message && <p role="status" className="mb-4">{message}</p>}
         {url && <p className="mb-4"><a href={url} target="_blank" rel="noreferrer" className={styles.button}>Open in browser ↗</a></p>}
