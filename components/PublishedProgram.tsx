@@ -2,7 +2,7 @@ import ReadingContents from "./ReadingContents";
 import reading from "./published-reading.module.css";
 import { publishedAssetUrl } from "@/lib/published-program";
 import type { ResearchPaper } from "@/lib/research";
-import { programText, type HumanProgram, type ProgramNode, type ProgramField, type ProgramStep } from "@/lib/studio/human-program";
+import { programText, type JsonValue, type HumanProgram, type ProgramNode, type ProgramField, type ProgramStep } from "@/lib/studio/human-program";
 
 function sourceUrl(url?: string) {
   if (!url) return null;
@@ -12,6 +12,53 @@ function sourceUrl(url?: string) {
   } catch {
     return null;
   }
+}
+
+function sourceObject(value?: JsonValue) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : undefined;
+}
+
+function reuseLink(value?: JsonValue) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    return ["http:", "https:"].includes(url.protocol) && !url.username && !url.password ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function reuseSources(extensions: HumanProgram["extensions"]) {
+  const sources = new Map<string, {
+    url: string | null; title: string; attribution: string; license: string; licenseUrl: string | null; changes: string;
+  }>();
+  const value = (field?: JsonValue) => typeof field === "string" ? field.trim() : "";
+  for (const section of [extensions?.publication, extensions?.communityExport]) {
+    const entries = sourceObject(section)?.sources;
+    if (!Array.isArray(entries)) continue;
+    for (const raw of entries) {
+      const entry = sourceObject(raw);
+      if (!entry) continue;
+      const url = reuseLink(entry.url);
+      const title = value(entry.title);
+      const attribution = value(entry.attribution) || value(entry.authors);
+      const license = value(entry.license);
+      const licenseUrl = reuseLink(entry.licenseUrl);
+      const changes = value(entry.changes);
+      if (!url && !attribution && !license && !licenseUrl && !changes) continue;
+      const key = url ?? JSON.stringify([title, attribution, license, licenseUrl, changes]);
+      const previous = sources.get(key);
+      sources.set(key, {
+        url,
+        title: title || previous?.title || "",
+        attribution: attribution || previous?.attribution || "",
+        license: license || previous?.license || "",
+        licenseUrl: licenseUrl || previous?.licenseUrl || null,
+        changes: changes || previous?.changes || "",
+      });
+    }
+  }
+  return [...sources.values()];
 }
 
 const overviewGroups = [
@@ -133,6 +180,7 @@ export default function PublishedProgram({ paper, program }: { paper: ResearchPa
   const overviewLinks = overviewGroups.flatMap((group, index) =>
     paperNodes.some(node => group.kinds.includes(node.kind))
       ? [{ id: `paper-overview-${index}`, title: group.title }] : []);
+  const credits = reuseSources(program.extensions);
   const experimentLinks = program.studies.map((study, index) => ({ id: `paper-experiment-${index}`, title: study.title }));
   return <section id="paper-program" className={`mt-9 scroll-mt-24 border-t border-[var(--site-line)] pt-6 ${reading.layout}`}>
     <ReadingContents overview={overviewLinks} experiments={experimentLinks} />
@@ -161,6 +209,21 @@ export default function PublishedProgram({ paper, program }: { paper: ResearchPa
       {paperNodes.some(node => !overviewKinds.has(node.kind)) && <section className="mt-7">
         <h3 className="font-semibold">Details across the paper</h3>
         {renderGroups(paperNodes, true)}
+      </section>}
+      {credits.length > 0 && <section className="mt-7 border-t border-[var(--site-line)] pt-4">
+        <h3>Sources and reuse</h3>
+        <ul className="mt-2 space-y-3 text-sm leading-relaxed [overflow-wrap:anywhere]">
+          {credits.map((source, index) => <li key={source.url ?? index}>
+            {source.url ? <a className="font-medium text-[var(--site-accent)] underline" href={source.url} target="_blank" rel="noreferrer">
+              {source.title || "Original source"} ↗
+            </a> : source.title && <p className="font-medium">{source.title}</p>}
+            {source.attribution && <p>{source.attribution}</p>}
+            {source.licenseUrl ? <a className="text-[var(--site-accent)] underline" href={source.licenseUrl} target="_blank" rel="noreferrer">
+              {source.license || "Reuse terms"} ↗
+            </a> : source.license && <p>{source.license}</p>}
+            {source.changes && <p className="text-[var(--site-muted)]">{source.changes}</p>}
+          </li>)}
+        </ul>
       </section>}
     </div>
   </section>;

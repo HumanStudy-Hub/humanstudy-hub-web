@@ -374,6 +374,43 @@ test('the published Overview preserves study scope, evidence, results and record
   assert.match(experiments, /Experiment A.*Experiment flow.*Present question.*Design and conditions.*A condition.*Reported results.*An experiment result.*Limitations.*Not reported in the available source.*Experiment B.*A scoped prediction.*Experiment C/s);
 });
 
+test('published Programs show original source credit and safe reuse links', () => {
+  const PublishedProgram = load('components/PublishedProgram.tsx').default;
+  const original = {
+    sourceId: 'paper',
+    title: 'Do good actions inspire good actions in others?',
+    url: 'https://doi.org/10.1038/srep07470',
+    attribution: 'Valerio Capraro and Alessandra Marcelletti; Do good actions inspire good actions in others?; DOI 10.1038/srep07470',
+    license: 'CC-BY-4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    changes: 'HumanStudy Hub Team summarized the paper into a reading Program. Original source unchanged; summaries and study organization are new.',
+  };
+  const view = extensions => renderToStaticMarkup(React.createElement(PublishedProgram, {
+    paper, program: { studies: [], nodes: [], evidence: [], steps: [], extensions },
+  }));
+  assert.doesNotMatch(view(undefined), /Sources and reuse/);
+  assert.doesNotMatch(view({ communityExport: { sources: [null, {}, 'bad'] } }), /Sources and reuse/);
+  const html = view({
+    publication: { sources: [original] },
+    communityExport: { sources: [
+      { evidenceIds: ['paper-quote'], ...original, title: undefined },
+      { evidenceIds: ['survey-quote'], url: 'http://example.test/survey', attribution: 'Survey authors',
+        license: 'Reuse terms apply', licenseUrl: 'javascript:alert(1)', changes: 'Selected questions reformatted.' },
+      { url: 'javascript:alert(1)', licenseUrl: 'data:text/html,example', attribution: 'Original source authors' },
+    ] },
+  });
+  assert.ok(html.includes('<h3>Sources and reuse</h3>'));
+  assert.equal(html.split('href="https://doi.org/10.1038/srep07470"').length, 2);
+  assert.match(html, /Valerio Capraro and Alessandra Marcelletti/);
+  assert.ok(html.includes('href="https://creativecommons.org/licenses/by/4.0/"'));
+  assert.match(html, /CC-BY-4.0/);
+  assert.match(html, /Original source unchanged; summaries and study organization are new/);
+  assert.ok(html.includes('href="http://example.test/survey"'));
+  assert.match(html, /Survey authors.*Reuse terms apply.*Selected questions reformatted/s);
+  assert.match(html, /Original source authors/);
+  assert.doesNotMatch(html, /href="(?:javascript|data):/i);
+});
+
 test('paper details preserve research links, capability caveats and safe resource URLs', async () => {
   const html = renderToStaticMarkup(await PaperDetail({ paper: {
     ...paper,
