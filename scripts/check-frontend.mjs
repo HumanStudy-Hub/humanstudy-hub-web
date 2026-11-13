@@ -288,10 +288,12 @@ try {
   await page.waitForURL(url => url.searchParams.get('status') === 'program');
   await page.waitForLoadState('networkidle');
   assert.deepEqual(await listedLinks(), [interactiveLink]);
-  assert.equal(await page.getByRole('link', { name: /^Interact with paper/ }).getAttribute('href'), interactiveLink + '#paper-program');
+  assert.equal(await page.getByRole('link', { name: /^Interact with paper/ }).getAttribute('href'), '/try?paper=' + interactivePaper.id + '&revision=' + interactivePaper.currentRevision + '&intent=read');
   await page.getByRole('link', { name: /^Run experiment/ }).click();
   await page.waitForURL(origin + interactiveLink + '#run-experiment');
   await page.getByRole('heading', { name: 'Run experiment', exact: true }).waitFor();
+  assert.ok(await page.getByRole('link', { name: 'Open experiment workspace' }).isVisible());
+  await page.getByText('Use the desktop app', { exact: true }).click();
   assert.ok(await page.getByRole('button', { name: 'Copy study ID' }).isVisible());
   assert.ok(await attribution.isVisible());
 

@@ -338,7 +338,7 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
     let base = !started && sandbox.status === "running" ? workspaceOrigin(sandbox) : null;
     if (!base) {
       started = true;
-      const env: Record<string, string> = { HS_WEB_TOKEN: token };
+      const env: Record<string, string> = { HS_WEB_TOKEN: token, HUMANSTUDY_COMMUNITY_BRANCH: process.env.VERCEL_ENV === "preview" ? "dev" : "main" };
       if (networkPolicy) {
         env.HUMANSTUDY_SERVER = hubOrigin;
         env.NODE_USE_SYSTEM_CA = "1";

@@ -2,14 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { TRY_SIGN_IN } from "@/lib/try-online-config";
+import { paperWorkspaceSignIn, workspacePaperUrl, type PaperWorkspace } from "@/lib/paper-workspace";
 import styles from "@/components/folio-page.module.css";
 
 type Workspace = "new" | "running" | "stopped" | "transition";
 type Phase = "idle" | "starting" | "stopping" | "cancelling";
 type Reply = { status?: Workspace; url?: string; error?: string; message?: string; pending?: boolean; ignored?: boolean };
 
-export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: boolean; sessionMinutes: number }) {
+export default function TryLauncher({ needsCode, sessionMinutes, target, paperTitle }: { needsCode: boolean; sessionMinutes: number; target?: PaperWorkspace | null; paperTitle?: string }) {
   const [codeRequired, setCodeRequired] = useState(needsCode);
   const [code, setCode] = useState("");
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -56,7 +56,7 @@ export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: 
       });
       const data = await response.json().catch(() => ({})) as Reply;
       if (response.status === 401) {
-        window.location.assign(TRY_SIGN_IN);
+        window.location.assign(paperWorkspaceSignIn(target));
         return;
       }
       if (response.status === 403 && ["code_required", "invalid_code"].includes(data.error || "")) setCodeRequired(true);
@@ -71,7 +71,7 @@ export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: 
       setCode("");
       if (!stopRequested.current) {
         setWorkspace("running");
-        setUrl(data.url);
+        setUrl(workspacePaperUrl(data.url, target));
         setPhase("idle");
       }
     } catch (error) {
@@ -97,7 +97,7 @@ export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: 
       });
       const data = await response.json().catch(() => ({})) as Reply;
       if (response.status === 401) {
-        window.location.assign(TRY_SIGN_IN);
+        window.location.assign(paperWorkspaceSignIn(target));
         return;
       }
       if (!response.ok) throw Error(data.message || "Could not stop the workspace. Please try again.");
@@ -125,6 +125,7 @@ export default function TryLauncher({ needsCode, sessionMinutes }: { needsCode: 
     <div className={`${styles.page} ${styles.narrow}`}>
       <h1>HumanStudy Hub online</h1>
       <p className={styles.lede}>Open the desktop workspace in your browser. Sessions last up to {sessionMinutes} minutes.</p>
+      {target && <p className="mt-4">Opening <strong>{paperTitle}</strong>. You can review it and create your own project; no experiment starts automatically.</p>}
       <div className={styles.section}>
         {phase === "starting" && <p role="status">Opening your workspace…</p>}
         {phase === "stopping" && <p role="status">Stopping your workspace…</p>}

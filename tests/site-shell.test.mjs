@@ -260,7 +260,7 @@ test('program cards open the interactive document and a separate run setup witho
   const html = await renderStudies({ status: 'program' }, {
     ...results, items: [{ ...paper, aliases: ['bench:study_005'], currentRevision: 'a'.repeat(64), assetFiles: [{ path: 'program.json' }], contributors: [{ github: 'assassin808' }] }],
   });
-  assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#paper-program"[^>]*>Interact with paper/);
+  assert.match(html, /href="\/try\?paper=paper_0123456789abcdef01234567&amp;revision=a{64}&amp;intent=read"[^>]*>Interact with paper/);
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#run-experiment"[^>]*>Run experiment/);
   assert.match(html, /Run experiment<\/a><p[^>]*>Contributed by HumanStudy Hub Team<\/p>/);
   assert.doesNotMatch(html, /HumanStudy-Bench|>Validated protocol<|>Runnable draft</);
@@ -427,15 +427,17 @@ test('user-submitted protocol details show conditions and suppress uploader fide
   assert.doesNotMatch(html, /High fidelity|signed by Uploader|Validated protocol/);
 });
 
-test('run setup identifies the Desktop import flow and shows program blockers', () => {
+test('run setup opens the exact online paper, retains Desktop and shows blockers', () => {
   const RunExperiment = load('components/RunExperiment.tsx').default;
   const html = renderToStaticMarkup(React.createElement(RunExperiment, {
-    paper, program: { source: { filename: 'supplement.pdf' }, evidence: [], studies: [{ type: 'empirical' }, { type: 'empirical' }], issues: [
+    paper: { ...paper, currentRevision: 'b'.repeat(64) }, program: { source: { filename: 'supplement.pdf' }, evidence: [], studies: [{ type: 'empirical' }, { type: 'empirical' }], issues: [
       { id: 'issue', severity: 'blocking', title: 'Missing scenario wording', reason: 'The available paper only summarizes the prompt.' },
     ] }, protocol: null, validated: false, runnable: false,
   }));
   assert.match(html, /id="run-experiment"/);
-  assert.match(html, /Prepare a runnable draft/);
+  assert.match(html, /Prepare and review an experiment/);
+  assert.match(html, /href="\/try\?paper=paper_0123456789abcdef01234567&amp;revision=b{64}&amp;intent=run"/);
+  assert.match(html, /Use the desktop app/);
   assert.match(html, /Fork to my projects/);
   assert.match(html, /select the experiment you want to run/);
   assert.match(html, /Build the study first/);

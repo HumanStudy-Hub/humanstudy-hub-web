@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { ResearchPaper } from "@/lib/research";
 import { validateHumanProgram, type HumanProgram } from "@/lib/studio/human-program";
 
-const rawBench = "https://raw.githubusercontent.com/HumanStudy-Hub/HumanStudy-Bench/main/";
+const rawBench = () => `https://raw.githubusercontent.com/HumanStudy-Hub/HumanStudy-Bench/${process.env.VERCEL_ENV === "preview" ? "dev" : "main"}/`;
 
 function revisionRoot(paper: ResearchPaper) {
   if (!/^paper_[a-f0-9]{24}$/.test(paper.id) || !/^[a-f0-9]{64}$/.test(paper.currentRevision ?? "")) return null;
@@ -15,7 +15,7 @@ export function publishedAssetUrl(paper: ResearchPaper, path: string) {
   const segments = path.split("/");
   if (!root || segments.some(segment => !segment || segment === "." || segment === ".." || segment.includes("\\"))) return null;
   if (!paper.assetFiles?.some(file => file.path === path)) return null;
-  return rawBench + root + "/" + segments.map(encodeURIComponent).join("/");
+  return rawBench() + root + "/" + segments.map(encodeURIComponent).join("/");
 }
 
 export async function getPublishedProgram(paper: ResearchPaper): Promise<HumanProgram | null> {
