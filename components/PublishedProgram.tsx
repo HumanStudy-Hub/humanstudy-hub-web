@@ -78,6 +78,11 @@ const detailGroups = [
 
 export default function PublishedProgram({ paper, program }: { paper: ResearchPaper; program: HumanProgram }) {
   const evidence = new Map(program.evidence.map(item => [item.id, item]));
+  const exportMetadata = sourceObject(program.extensions?.communityExport);
+  const withheld = sourceObject(exportMetadata?.withheldEvidenceQuotes);
+  const withheldIds = new Set(Array.isArray(withheld?.ids) ? withheld.ids : []);
+  const paperFile = program.source?.filename;
+  const paperUrl = paper.resources?.find(resource => resource.kind === "original-paper" && sourceUrl(resource.url))?.url;
   const studiesById = new Map(program.studies.map(study => [study.id, study]));
   const overviewKinds = new Set(overviewGroups.flatMap(group => group.kinds));
   const studyNames = (ids: string[]) => ids.map(id => studiesById.get(id)?.title ?? id).join(", ");
@@ -101,12 +106,19 @@ export default function PublishedProgram({ paper, program }: { paper: ResearchPa
       <summary className="cursor-pointer text-[var(--site-accent)]">Source evidence ({sources.length})</summary>
       <ul className="mt-2 space-y-2">
         {sources.map(item => {
-          const file = item.path ? publishedAssetUrl(paper, item.path) : null;
-          const url = sourceUrl(item.url) ?? (file && item.locator.page ? `${file}#page=${item.locator.page}` : file);
+          const isWithheld = !item.quote && withheldIds.has(item.id);
+          const isPaper = item.path ? item.path === paperFile : item.sourceId === "paper";
+          const path = item.path ?? (isWithheld && isPaper ? paperFile : undefined);
+          const asset = path ? publishedAssetUrl(paper, path) : null;
+          const url = sourceUrl(item.url) ?? (asset && item.locator.page ? `${asset}#page=${item.locator.page}` : asset)
+            ?? (isWithheld && isPaper ? sourceUrl(paperUrl) : null);
           const location = item.locator.page ? `Page ${item.locator.page}` : item.locator.pointer || item.locator.cell || "Original source";
           return <li key={item.id}>
-            {url ? <a className="underline" href={url} target="_blank" rel="noreferrer">{location} ↗</a> : <span>{location}</span>}
+            {url ? <a className="underline" href={url} target="_blank" rel="noreferrer">{isWithheld ? `Open original source · ${location}` : location} ↗</a> : <span>{location}</span>}
             {item.quote && <blockquote className="mt-1 border-l-2 border-[var(--site-line)] pl-3">{item.quote}</blockquote>}
+            {isWithheld && <p className="mt-1 text-[var(--site-muted)]">{withheld?.reason === "redistribution-unverified"
+              ? "This excerpt is withheld because redistribution permission hasn’t been verified."
+              : "This excerpt is withheld from the published study."}</p>}
           </li>;
         })}
       </ul>
