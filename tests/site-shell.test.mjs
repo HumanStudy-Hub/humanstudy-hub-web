@@ -418,6 +418,42 @@ test('published Programs show original source credit and safe reuse links', () =
   assert.doesNotMatch(html, /href="(?:javascript|data):/i);
 });
 
+test('published evidence explains only marked omissions and links to the matching original source', () => {
+  const PublishedProgram = load('components/PublishedProgram.tsx').default;
+  const program = {
+    source: { filename: 'paper.pdf' }, studies: [], steps: [],
+    extensions: { communityExport: { withheldEvidenceQuotes: {
+      ids: ['supplement', 'paper', 'unlinked', 'present'], reason: 'redistribution-unverified',
+    } } },
+    evidence: [
+      { id: 'supplement', sourceId: 'supplement', locator: { page: 2 }, url: 'https://example.test/supplement' },
+      { id: 'paper', sourceId: 'paper', locator: { page: 3 } },
+      { id: 'unlinked', sourceId: 'other', locator: { page: 4 }, url: 'javascript:alert(1)' },
+      { id: 'locator', sourceId: 'paper', locator: { page: 5 } },
+      { id: 'present', sourceId: 'paper', locator: { page: 6 }, quote: 'Published excerpt' },
+    ],
+    nodes: [{ id: 'finding', kind: 'finding', title: 'Finding', fields: [], studyIds: [],
+      evidenceIds: ['supplement', 'paper', 'unlinked', 'locator', 'present'] }],
+  };
+  const render = (extensions, assets) => renderToStaticMarkup(React.createElement(PublishedProgram, {
+    paper: { ...paper, resources: [{ kind: 'original-paper', url: 'https://example.test/publisher' }], ...assets },
+    program: { ...program, extensions },
+  }));
+  const html = render(program.extensions);
+  assert.match(html, /href="https:\/\/example.test\/supplement"[^>]*>Open original source · Page 2/);
+  assert.match(html, /href="https:\/\/example.test\/publisher"[^>]*>Open original source · Page 3/);
+  assert.match(html, /<span>Page 4<\/span>.*?excerpt is withheld/);
+  assert.match(html, /<span>Page 5<\/span><\/li>/);
+  assert.match(html, /Published excerpt/);
+  assert.equal((html.match(/redistribution permission hasn’t been verified/g) || []).length, 3);
+  assert.doesNotMatch(html, /href="javascript:/);
+  assert.doesNotMatch(render(undefined), /excerpt is withheld/);
+  const revision = 'a'.repeat(64);
+  const assetRoot = `community/${paper.id}/revisions/${revision}`;
+  assert.ok(render(program.extensions, { currentRevision: revision, assetRoot, assetFiles: [{ path: 'paper.pdf' }] })
+    .includes(`/${assetRoot}/paper.pdf#page=3`));
+});
+
 test('paper details preserve research links, capability caveats and safe resource URLs', async () => {
   const html = renderToStaticMarkup(await PaperDetail({ paper: {
     ...paper,
