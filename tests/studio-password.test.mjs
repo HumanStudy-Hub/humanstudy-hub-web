@@ -22,7 +22,7 @@ function fixture() {
   const auth = {
     clearStudioSession: async () => { jar.delete('studio_access'); },
     establishStudioSession: async session => { jar.set('studio_access', session.access_token); return { id: uid, email: 'owner@test.org' }; },
-    requireStudioUser: async () => { if (!jar.get('studio_access')) throw new http.StudioError(401, 'unauthorized'); return { user: { id: uid, email: 'owner@test.org' } }; },
+    requireStudioUser: async () => { if (!jar.get('studio_access')) throw new http.StudioError(401, 'unauthorized'); return { user: { id: uid, email: 'owner@test.org' }, accessToken: jar.get('studio_access') }; },
     studioConfirmationUrl: (_req, type = 'confirm') => `https://hub.test/auth/${type}`,
   };
   const deps = {
@@ -31,8 +31,8 @@ function fixture() {
       calls.push({ path, options });
       if (path === '/auth/v1/verify') return NextResponse.json({ access_token: token });
       if (path === '/auth/v1/user' && options.method !== 'PUT') return NextResponse.json({ id: uid, email: 'owner@test.org' });
-      if (path === '/auth/v1/user') return NextResponse.json({ id: uid });
-      if (path.includes('grant_type=password')) return badPassword ? NextResponse.json({ error_code: 'invalid_credentials' }, { status: 400 }) : NextResponse.json({ access_token: passwordToken, refresh_token: 'refresh', expires_in: 3600 });
+      if (path.startsWith('/auth/v1/user') && options.method === 'PUT') return NextResponse.json({ id: uid });
+      if (path.includes('grant_type=password')) return badPassword ? NextResponse.json({ error_code: 'invalid_credentials' }, { status: 400 }) : NextResponse.json({ access_token: passwordToken, refresh_token: 'refresh', expires_in: 3600, user: { id: uid } });
       if (/recover|resend/.test(path)) return badEmail ? NextResponse.json({ error_code: 'over_email_send_rate_limit' }, { status: 429 }) : NextResponse.json({});
       throw new Error('Unexpected request: ' + path);
     } },
@@ -104,4 +104,42 @@ test('password reset URLs and page credentials never enter website analytics', (
   assert.equal(metrics.default(), null);
   assert.equal(metrics.filterAuthMetrics({ url: 'https://hub.test/auth/reset?token_hash=secret' }), null);
   assert.equal(metrics.filterAuthMetrics({ url: 'https://hub.test/build' }).url, 'https://hub.test/build');
+});
+
+test('account profile only writes validated metadata for the authenticated user', async () => {
+  const f = fixture();
+  const post = (body, origin = 'https://hub.test') => f.authRoute.POST(new Request('https://hub.test/api/studio/auth', {
+    method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }));
+  const payload = { action: 'save-profile', id: 'another-user', name: '  Ada Example ', affiliation: 'Example Lab', role: 'admin' };
+  assert.equal((await post(payload)).status, 401);
+  f.jar.set('studio_access', f.passwordToken);
+  assert.equal((await post(payload, 'https://other.test')).status, 403);
+  assert.equal((await post({ ...payload, name: '' })).status, 400);
+  assert.equal(f.calls.length, 0);
+  const saved = await post(payload);
+  assert.equal(saved.status, 200);
+  assert.deepEqual((await saved.json()).user, { id: uid, email: 'owner@test.org', profile: { name: 'Ada Example', affiliation: 'Example Lab' } });
+  assert.deepEqual(f.calls[0], { path: '/auth/v1/user', options: { method: 'PUT', token: f.passwordToken,
+    body: { data: { hub_name: 'Ada Example', hub_affiliation: 'Example Lab' } } } });
+  assert.equal((await post({ ...payload, affiliation: '' })).status, 200);
+  assert.equal(f.calls[1].options.body.data.hub_affiliation, '');
+});
+
+test('email change requires the current password and requests provider confirmation', async () => {
+  const f = fixture();
+  f.jar.set('studio_access', f.token);
+  const post = () => f.authRoute.POST(new Request('https://hub.test/api/studio/auth', {
+    method: 'POST', headers: { origin: 'https://hub.test', 'content-type': 'application/json' }, body: JSON.stringify({ action: 'change-email', email: 'new@test.org', currentPassword: 'current-password' }),
+  }));
+  const requested = await post();
+  assert.equal(requested.status, 200);
+  assert.deepEqual(await requested.json(), { confirmationRequested: true });
+  assert.deepEqual(f.calls[0].options.body, { email: 'owner@test.org', password: 'current-password' });
+  assert.deepEqual(f.calls[1].options.body, { email: 'new@test.org' });
+  assert.equal(f.calls[1].options.token, f.passwordToken);
+  assert.equal(f.jar.get('studio_access'), f.token);
+  f.failPassword();
+  assert.equal((await post()).status, 400);
+  assert.equal(f.calls.filter(call => call.options.method === 'PUT').length, 1);
 });

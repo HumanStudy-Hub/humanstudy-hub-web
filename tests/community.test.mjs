@@ -188,6 +188,7 @@ function zipOf(extra = {}) {
   return z.toBuffer();
 }
 const body = (over = {}) => ({
+  publicReviewed: true,
   contributor: { name: 'Ada Lovelace', affiliation: 'NYU' },
   includesPdf: false,
   paperMeta: { doi: '10.1111/1468-0017.00215', title: 'Intentional action and side effects', year: 2003, firstAuthor: 'Joshua Knobe' },
@@ -513,4 +514,14 @@ test('publication checks reports and contributor metadata but retains ordinary c
   const {publish} = setup(); const z = new AdmZip(zipOf());
   z.updateFile('program.json',Buffer.from(JSON.stringify({nodes:[],notes:'Author author@example.org; https://example.org/home/paper and https://example.org/Users/resource; doi:10.1234/example; Qualtrics: ${q://QID373/Choices}'})));
   assert.equal((await publish({userId,zip:z.toBuffer(),body:body()})).ok,true);
+});
+
+
+test('Program-only submissions require explicit public file approval', async () => {
+  const { publish, Fake } = setup();
+  for (const publicReviewed of [undefined, false, "true"]) {
+    const result = await publish({ userId, zip: zipOf(), body: body({ publicReviewed }) });
+    assert.equal(result.error, 'public_review_required');
+  }
+  assert.equal(Fake.calls.length, 0);
 });
