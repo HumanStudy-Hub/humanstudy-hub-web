@@ -4,7 +4,7 @@ import CreditPagination from "./CreditPagination";
 import { CREDIT_PAGE_SIZE, listCredits } from "@/lib/community-credit";
 import CommunityCreditList from "./CommunityCreditList";
 import { libraryAvailability, paperSource, readProtocol, researchContributorNames, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
-import { getPublishedProgram } from "@/lib/published-program";
+import { getPublishedProgram, publishedAssetUrl } from "@/lib/published-program";
 import PublishedProgram from "./PublishedProgram";
 import RunExperiment from "./RunExperiment";
 import styles from "./folio-page.module.css";
@@ -92,6 +92,8 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
   const studyList = `${studies.length} ${studies.length === 1 ? "study" : "studies"}: ${studies.map(study => study.title).join("; ")}`;
   const canOpenExperiment = availability.program || availability.publicProtocol;
   const participantPreview = availability.program ? null : protocol?.preview;
+  const originalPaper = program && !resources.some(resource => resource.kind === "original-paper" && safeUrl(resource.url))
+    ? publishedAssetUrl(paper, program.source.filename) : null;
   return <div className={`${styles.page} ${reading.page}`}>
     <div className={reading.intro}>
       <Link href="/studies" className={styles.back}>← Study Library</Link>
@@ -129,9 +131,10 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
           base={`/studies/${paper.id}?creditPage=`} anchor="#community-contributions" />
       </section>}
       {paper.studyCapabilities ? <Capabilities caps={paper.studyCapabilities as StudyCapabilities} /> : null}
-      {resources.length > 0 && <section className="mt-10">
+      {(resources.length > 0 || originalPaper) && <section className="mt-10">
         <h2 className="text-lg font-semibold font-serif">Sources</h2>
         <ul className="mt-3 space-y-3 text-sm">
+          {originalPaper && <li><a href={originalPaper} target="_blank" rel="noopener noreferrer" className="text-[var(--site-accent)] underline">Original paper ↗</a></li>}
           {resources.map((resource, i) => {
             const url = safeUrl(resource.url);
             return <li key={`${resource.id}-${i}`}>

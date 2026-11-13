@@ -333,7 +333,7 @@ test('unavailable desktop releases retain the release-page fallback', async () =
 
 let publishedProgram = null;
 const PaperDetail = load('components/ResearchPaperDetail.tsx', {
-  '@/lib/published-program': { getPublishedProgram: async () => publishedProgram },
+  '@/lib/published-program': { ...load('lib/published-program.ts'), getPublishedProgram: async () => publishedProgram },
 }).default;
 
 test('the published Overview preserves study scope, evidence, results and recorded flow', () => {
@@ -455,12 +455,16 @@ test('published paper details provide a single experiment action and use the con
     assert.match(html, /<a id="run-experiment"[^>]*href="\/try\?paper=paper_0123456789abcdef01234567&amp;revision=b{64}&amp;intent=run"[^>]*>Run experiment<\/a>/);
     assert.match(html, /<summary[^>]*>Second experiment<\/summary>/);
     assert.match(html, /Contributed by Public Contributor/);
-    assert.doesNotMatch(html, /2 studies:|Human Study Program|Interact with paper|Original paper ↗|Research files ↗|Open experiment workspace|Use the desktop app|Prepare and review an experiment/);
+    assert.match(html, /Sources<\/h2>.*href="https:\/\/raw\.githubusercontent\.com\/[^"]+\/sources\/open\/paper\.pdf"[^>]*>Original paper ↗/s);
+    assert.doesNotMatch(html, /2 studies:|Human Study Program|Interact with paper|Research files ↗|Open experiment workspace|Use the desktop app|Prepare and review an experiment/);
 
     const withSummary = renderToStaticMarkup(await PaperDetail({ paper: {
       ...publishedPaper, description: 'A summary of the original paper.',
+      resources: [{ id: 'paper', kind: 'original-paper', url: 'https://example.test/original', access: 'open' }],
     } }));
     assert.match(withSummary, /A summary of the original paper/);
+    assert.match(withSummary, /href="https:\/\/example\.test\/original"/);
+    assert.doesNotMatch(withSummary, /sources\/open\/paper\.pdf/);
   } finally {
     publishedProgram = null;
   }

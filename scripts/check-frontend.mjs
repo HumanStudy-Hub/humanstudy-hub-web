@@ -296,7 +296,8 @@ try {
   assert.equal(await runExperiment.getAttribute('id'), 'run-experiment');
   assert.equal(await runExperiment.getAttribute('href'), '/try?paper=' + interactivePaper.id + '&revision=' + interactivePaper.currentRevision + '&intent=run');
   assert.equal(await page.getByRole('link', { name: 'Interact with paper', exact: true }).count(), 0);
-  assert.equal(await attribution.count(), 0);
+  assert.equal(await attribution.count(), 1);
+  assert.ok(await attribution.isVisible());
 
   await visit('/studies?status=program');
   await page.getByRole('checkbox', { name: 'Validated protocols only' }).check();
