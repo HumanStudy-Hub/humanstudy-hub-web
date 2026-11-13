@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ResearchPaper, ResearchProtocol } from "@/lib/research";
 import type { HumanProgram } from "@/lib/studio/human-program";
 import CopyStudyId from "./CopyStudyId";
+import { paperWorkspace, paperWorkspacePath } from "@/lib/paper-workspace";
 
 export default function RunExperiment({
   paper, program, protocol, validated, runnable,
@@ -22,8 +23,7 @@ export default function RunExperiment({
   const excluded = (protocol?.runExcluded ?? run?.excluded ?? []).filter(item => item.what || item.reason);
   const source = program?.source.filename;
   const files = paper.assetFiles ?? [];
-  const needsNewDesktop = Boolean(protocol || files.some(file =>
-    file.path === "capabilities.json" || file.path === "effects.json"));
+  const online = paperWorkspace({ paper: paper.id, revision: paper.currentRevision, intent: "run" });
   const paperPaths = new Set(program?.evidence.filter(item => item.sourceId === "paper").map(item => item.path));
   const sourceAvailable = files.some(file => /\.pdf$/i.test(file.path) && (
     paperPaths.has(file.path) || file.path === source
@@ -35,23 +35,21 @@ export default function RunExperiment({
     <h2 className="text-xl font-semibold font-serif">Run experiment</h2>
     {validated && <p className="mt-2 text-sm text-[var(--site-accent)]">Validated protocol · {scope.join(", ")}</p>}
     {canRunProtocol ? (
-      <p className="mt-2 text-sm">Import the published protocol in HumanStudy Desktop to review its supported conditions.</p>
+      <p className="mt-2 text-sm">Open the study workspace to review its supported conditions.</p>
     ) : program ? (
       <p className="mt-2 text-sm">{runnable
-        ? "A runnable draft is included. Check the supported conditions in Desktop before running."
-        : "Prepare a runnable draft from the paper in HumanStudy Desktop."}</p>
+        ? "A runnable draft is included. Review its conditions before running."
+        : "Prepare and review an experiment from this paper with the agent."}</p>
     ) : (
       <p className="mt-2 text-sm">{protocol
         ? "The published protocol has no conditions supported for running here."
         : "The published study document could not be loaded. You can still try importing it in Desktop."}</p>
     )}
-    {needsNewDesktop && (
-      <p className="mt-3 text-sm">This release needs a newer Desktop version to import from Studies. On Desktop 0.7.2, you can <Link href="/pipeline" className="text-[var(--site-accent)] underline">build a draft from the paper</Link>.</p>
-    )}
+    {online && <Link href={paperWorkspacePath(online)} className="mt-4 inline-block text-[var(--site-accent)] underline">Open experiment workspace →</Link>}
     {program && !sourceAvailable && (
       <p className="mt-3 text-sm">
         {source ? <>The release does not identify an included copy of <code>{source}</code>.</> : "The release has no paper PDF."}
-        {" "}Check the sources below and attach a copy in Desktop if needed.
+        {" "}Check the sources below and attach your copy in the workspace if needed.
       </p>
     )}
     {runGap && <p className="mt-3 text-sm">{runGap}</p>}
@@ -62,6 +60,7 @@ export default function RunExperiment({
         {issues.map(issue => <li key={issue.id}><strong>{issue.title}</strong> {issue.reason}</li>)}
       </ul>
     </details>}
+    <details className="mt-4"><summary className="cursor-pointer text-sm">Use the desktop app</summary>
     <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm">
       <li>In HumanStudy Desktop, open <strong>Studies</strong> and search for this study ID.</li>
       <li>Open the study and select <strong>Fork to my projects</strong>.</li>
@@ -74,5 +73,6 @@ export default function RunExperiment({
     </ol>
     <CopyStudyId id={paper.id} />
     <Link href="/download" className="mt-3 inline-block text-sm text-[var(--site-accent)] underline">Get HumanStudy Desktop</Link>
+    </details>
   </section>;
 }

@@ -6,6 +6,7 @@ import { libraryAvailability, paperSource, readProtocol, researchContributorName
 import { getPublishedProgram, publishedAssetUrl } from "@/lib/published-program";
 import PublishedProgram from "./PublishedProgram";
 import RunExperiment from "./RunExperiment";
+import { paperWorkspace, paperWorkspacePath } from "@/lib/paper-workspace";
 import styles from "./folio-page.module.css";
 
 const label: Record<string, string> = { "original-paper": "Original paper", "original-data-link": "Original data", "transcription-code": "Transcription code", "metadata": "Source reference", "claim-metadata": "Claim and analysis metadata" };
@@ -89,6 +90,7 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
     paper.currentRevision ? listCredits({ by: "paper", id: paper.id, revision: paper.currentRevision }, contributionPage).catch(() => []) : [],
   ]);
   const contributors = researchContributorNames(paper, credits.map(credit => credit.display_name));
+  const online = paperWorkspace({ paper: paper.id, revision: paper.currentRevision, intent: "read" });
   const programSource = program ? publishedAssetUrl(paper, program.source.filename) : null;
   return <div className={`${styles.page} ${styles.narrow}`}>
     <div>
@@ -102,7 +104,7 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
       {availability.userSubmitted && <p className="mt-3 text-sm text-[var(--site-muted)]">User submitted</p>}
       {!program && !availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">{availability.publicProtocol ? "A published protocol is available for this study." : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
       <div className="mt-6 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
-        {program && <a href="#paper-program">Interact with paper</a>}
+        {program && online && <Link href={paperWorkspacePath(online)}>Interact with paper</Link>}
         {(availability.program || availability.publicProtocol)
           ? <a href="#run-experiment">Run experiment</a>
           : <Link href="/pipeline">Build a study</Link>}
