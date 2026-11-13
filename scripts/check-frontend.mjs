@@ -291,10 +291,12 @@ try {
   assert.equal(await page.getByRole('link', { name: /^Interact with paper/ }).getAttribute('href'), '/try?paper=' + interactivePaper.id + '&revision=' + interactivePaper.currentRevision + '&intent=read');
   await page.getByRole('link', { name: /^Run experiment/ }).click();
   await page.waitForURL(origin + interactiveLink + '#run-experiment');
-  await page.getByRole('heading', { name: 'Run experiment', exact: true }).waitFor();
-  assert.ok(await page.getByRole('link', { name: 'Open experiment workspace' }).isVisible());
-  await page.getByText('Use the desktop app', { exact: true }).click();
-  assert.ok(await page.getByRole('button', { name: 'Copy study ID' }).isVisible());
+  const runExperiment = page.getByRole('link', { name: 'Run experiment', exact: true });
+  await runExperiment.waitFor();
+  assert.equal(await runExperiment.getAttribute('id'), 'run-experiment');
+  assert.equal(await runExperiment.getAttribute('href'), '/try?paper=' + interactivePaper.id + '&revision=' + interactivePaper.currentRevision + '&intent=run');
+  assert.equal(await page.getByRole('link', { name: 'Interact with paper', exact: true }).count(), 0);
+  assert.equal(await attribution.count(), 1);
   assert.ok(await attribution.isVisible());
 
   await visit('/studies?status=program');
@@ -302,13 +304,14 @@ try {
   await page.waitForURL(url => url.searchParams.get('status') === 'program' && url.searchParams.get('validated') === '1');
   assert.ok(await page.getByRole('checkbox', { name: 'Validated protocols only' }).isChecked());
   assert.ok(await page.getByText('No papers match this view.', { exact: true }).isVisible());
-  report.checks.push('Interactive paper view, validation filter and Desktop run setup');
+  report.checks.push('Interactive paper view, validation filter and single experiment action');
 
   await visit('/studies?status=development');
   assert.deepEqual(await listedLinks(), developmentLinks);
   await paperLinks.first().click();
   await page.waitForURL(/\/studies\/paper_[a-f0-9]{24}$/);
   await page.getByText(/In development ·/).waitFor();
+  assert.equal(await page.getByRole('link', { name: 'Be the first to contribute a reconstruction', exact: true }).getAttribute('href'), '/contribute?paper=' + new URL(page.url()).pathname.split('/').at(-1));
   report.checks.push('Legacy development view and detail navigation');
 
   await visit('/studies?status=all&offset=1');

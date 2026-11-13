@@ -197,48 +197,30 @@ export default async function DownloadPage() {
         </figure>
       </section>
 
-      <section className="mt-16">
-        <div className="grid gap-12 border-t border-[var(--site-line)] pt-14 lg:grid-cols-2">
-          <div>
-            <h2 className="font-serif text-2xl font-bold sm:text-3xl">Getting access</h2>
-            <p className="mt-4 text-base leading-7 text-[var(--foreground)]">
-              Access is by invitation. You need a HumanStudy Hub account and an invitation code.
-            </p>
-            <ol className="mt-6 space-y-5">
-              {[
-                <>
-                  <Link href={SIGN_UP} className="font-semibold text-[var(--site-accent)] underline decoration-[var(--site-accent)]/30 underline-offset-2 hover:text-[var(--site-accent)]">Create a HumanStudy-Hub account</Link>{" "}
-                  and confirm your email address.
-                </>,
-                <>
-                  Ask the team for an invitation code. Contact details are on the{" "}
-                  <Link href={CONTACT} className="font-semibold text-[var(--site-accent)] underline decoration-[var(--site-accent)]/30 underline-offset-2 hover:text-[var(--site-accent)]">Partnerships page</Link>.
-                </>,
-                <>Install the app, sign in with your account, enter the code and accept the research-data agreement.</>,
-              ].map((step, i) => (
-                <li key={i} className="grid grid-cols-[2rem_1fr] gap-2 text-base leading-7 text-[var(--foreground)]">
-                  <span className="font-serif text-xl font-bold text-[var(--site-accent)]">{i + 1}</span>
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ol>
-          </div>
-          <div>
-            <h2 className="font-serif text-2xl font-bold sm:text-3xl">Requirements</h2>
-            <dl className="mt-6 divide-y divide-[var(--site-line)] border-y border-[var(--site-line)] text-base">
-              {[
-                ["System", "macOS 12 Monterey or later, on Apple Silicon or Intel. Windows 10/11 (64-bit) as a preview."],
-                ["First launch", "Downloads the study assistant, about 170 MB, once."],
-                ["Models", "Hosted. No API keys or model accounts needed."],
-                ["Sign-in", "HumanStudy-Hub account, invitation code and research-data agreement."],
-              ].map(([term, detail]) => (
-                <div key={term} className="grid gap-1 py-3 sm:grid-cols-[9rem_1fr] sm:gap-4">
-                  <dt className="font-semibold text-[var(--foreground)]">{term}</dt>
-                  <dd className="leading-7 text-[var(--foreground)]">{detail}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
+      <section className="mt-16 border-t border-[var(--site-line)] pt-14">
+        <div className="max-w-3xl">
+          <h2 className="font-serif text-2xl font-bold sm:text-3xl">Getting access</h2>
+          <p className="mt-4 text-base leading-7 text-[var(--foreground)]">
+            Access is by invitation. You need a HumanStudy Hub account and an invitation code.
+          </p>
+          <ol className="mt-6 space-y-5">
+            {[
+              <>
+                <Link href={SIGN_UP} className="font-semibold text-[var(--site-accent)] underline decoration-[var(--site-accent)]/30 underline-offset-2 hover:text-[var(--site-accent)]">Create a HumanStudy-Hub account</Link>{" "}
+                and confirm your email address.
+              </>,
+              <>
+                Ask the team for an invitation code. Contact details are on the{" "}
+                <Link href={CONTACT} className="font-semibold text-[var(--site-accent)] underline decoration-[var(--site-accent)]/30 underline-offset-2 hover:text-[var(--site-accent)]">Partnerships page</Link>.
+              </>,
+              <>Install the app, sign in with your account, enter the code and accept the research-data agreement.</>,
+            ].map((step, i) => (
+              <li key={i} className="grid grid-cols-[2rem_1fr] gap-2 text-base leading-7 text-[var(--foreground)]">
+                <span className="font-serif text-xl font-bold text-[var(--site-accent)]">{i + 1}</span>
+                <span>{step}</span>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 
