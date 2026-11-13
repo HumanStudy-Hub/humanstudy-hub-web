@@ -24,7 +24,7 @@ function fixture(t, options = {}) {
     TRY_TOKEN_SECRET: 'fake-test-secret'.repeat(3), SUPABASE_SERVICE_ROLE_KEY: 'fake-test-service',
     SUPABASE_URL: 'https://database.example.test', SUPABASE_PUBLISHABLE_KEY: 'fake-test-public',
     PROMO_CODE: 'fake-test-code', TRY_APP_VERSION: build.version, TRY_APP_GIT_SHA: build.gitsha,
-    TRY_APP_PACK_SHA256: build.packhash, TRY_SESSION_MINUTES: options.sessionMinutes ?? '45', TRY_MAX_RUNNING: '6' };
+    TRY_APP_PACK_SHA256: build.packhash, TRY_SESSION_MINUTES: options.sessionMinutes ?? '45', TRY_MAX_RUNNING: options.maxRunning ?? '6' };
   const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
   Object.assign(process.env, env);
   t.after(() => {
@@ -95,7 +95,7 @@ function fixture(t, options = {}) {
     async list() {
       calls.push('list');
       if (options.listFails) throw new Error('provider unavailable');
-      return { toArray: async () => [] };
+      return { toArray: async () => options.providerSessions ?? [] };
     },
   };
   t.mock.method(globalThis, 'fetch', async (url, init) => {
@@ -104,7 +104,7 @@ function fixture(t, options = {}) {
     const data = init?.body ? JSON.parse(init.body) : undefined;
     calls.push([path, data]);
     if (path.endsWith('online_claim_workspace')) {
-      return options.admissionFails ? new Response(null, { status: 503 }) : Response.json(options.claim ?? lease);
+      return options.admissionFails ? new Response(null, { status: 503 }) : Response.json(Object.hasOwn(options, 'claim') ? options.claim : lease);
     }
     if (path.endsWith('online_finish_workspace')) {
       return Response.json(options.cancelled ? Boolean(data.release_slot) : true);
@@ -437,3 +437,28 @@ test('Online invitation grants only after verified code and before workspace lau
   assert.equal((await route.POST(request(undefined))).status, 200);
   assert.deepEqual(calls.slice(-2), [['grant', user.id], ['launch', user.id, attempt]], 'a verified existing owner cookie preserves access without redeeming again');
 });
+
+
+test('a denied 51st database reservation never reaches the provider', async t => {
+  const { calls, lib } = fixture(t, { fresh: true, maxRunning: '50', claim: null });
+  await assert.rejects(lib.launchTryOnline(user, attempt), { code: 'busy' });
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0][0].endsWith('online_claim_workspace'));
+  assert.equal(calls[0][1].session_seconds, 2700);
+});
+
+for (const count of [49, 50]) {
+  test(`provider reconciliation at ${count} existing sessions respects configured capacity50`, async t => {
+    const sessions = Array.from({ length: count }, (_, i) => ({ name: `try-preview-123456789abc-existing-${i}`, status: 'running' }));
+    const { calls, lib } = fixture(t, { fresh: true, maxRunning: '50', providerSessions: sessions });
+    if (count === 49) {
+      await lib.launchTryOnline(user, attempt);
+      assert.ok(calls.some(([name]) => name === 'create'));
+    } else {
+      await assert.rejects(lib.launchTryOnline(user, attempt), { code: 'busy' });
+      assert.ok(!calls.some(([name]) => name === 'create'));
+      assert.ok(calls.some(([name, body]) => name.endsWith?.('online_finish_workspace') && body.release_slot === true));
+    }
+    assert.ok(calls.findIndex(([name]) => name.endsWith?.('online_claim_workspace')) < calls.indexOf('list'));
+  });
+}
