@@ -171,13 +171,13 @@ test('the homepage groups all four actions in the requested order without second
   assert.doesNotMatch(html, /Questions we’re exploring|Join the conversation|<h2/);
 });
 
-const { libraryFilters, libraryAvailability, paperSource, researchContributorNames, validateResearchQuery } = load('lib/research.ts');
+const { libraryFilters, libraryAvailability, researchContributorNames, validateResearchQuery } = load('lib/research.ts');
 const libraryCalls = [];
 let libraryResult;
 let libraryError;
 const Studies = load('app/studies/page.tsx', {
   '@/lib/research': {
-    validateResearchQuery, libraryFilters, libraryAvailability, paperSource, researchContributorNames,
+    validateResearchQuery, libraryFilters, libraryAvailability, researchContributorNames,
     searchLibrary: async (input, pool, validatedOnly) => {
       libraryCalls.push({ input, pool, validatedOnly });
       if (libraryError) throw libraryError;
@@ -258,12 +258,12 @@ test('library pagination preserves the search query and the selected pool', asyn
 
 test('program cards open the interactive document and a separate run setup without implying validation', async () => {
   const html = await renderStudies({ status: 'program' }, {
-    ...results, items: [{ ...paper, currentRevision: 'a'.repeat(64), assetFiles: [{ path: 'program.json' }], contributors: [{ github: 'assassin808' }] }],
+    ...results, items: [{ ...paper, aliases: ['bench:study_005'], currentRevision: 'a'.repeat(64), assetFiles: [{ path: 'program.json' }], contributors: [{ github: 'assassin808' }] }],
   });
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#paper-program"[^>]*>Interact with paper/);
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#run-experiment"[^>]*>Run experiment/);
   assert.match(html, /Run experiment<\/a><p[^>]*>Contributed by HumanStudy Hub Team<\/p>/);
-  assert.doesNotMatch(html, />Validated protocol<|>Runnable draft</);
+  assert.doesNotMatch(html, /HumanStudy-Bench|>Validated protocol<|>Runnable draft</);
 });
 
 test('user-submitted protocol cards hide self-declared review quality', async () => {
@@ -331,6 +331,43 @@ test('unavailable desktop releases retain the release-page fallback', async () =
 });
 
 const PaperDetail = load('components/ResearchPaperDetail.tsx').default;
+
+test('the published Overview preserves study scope, evidence, results and recorded flow', () => {
+  const PublishedProgram = load('components/PublishedProgram.tsx').default;
+  const field = (id, value, options = {}) => ({
+    id, label: id, value, origin: 'reported', state: 'confirmed', evidenceIds: [], ...options,
+  });
+  const node = (kind, fields, studyIds = [], evidenceIds = []) => ({
+    id: kind, kind, title: kind, fields, studyIds, evidenceIds,
+  });
+  const study = id => ({ id, title: `Experiment ${id}` });
+  const program = {
+    studies: ['A', 'B', 'C'].map(study),
+    nodes: [
+      node('background', [field('motivation', 'What prompted the research?')]),
+      node('overview', [field('summary', 'A short published summary.')]),
+      node('hypothesis', [
+        field('hypothesis', 'A shared prediction.', { evidenceIds: ['quote'] }),
+        field('prediction', 'A scoped prediction.', { studyIds: ['B'] }),
+      ], ['A', 'B'], ['node-quote']),
+      node('finding', [field('finding', 'The primary finding.')]),
+      node('condition', [field('condition', 'A condition.')], ['A']),
+      node('result', [field('result', 'An experiment result.')], ['A']),
+      node('limitation', [field('limitation', null, { state: 'missing' })], ['A']),
+    ],
+    evidence: [
+      { id: 'quote', locator: { page: 2 }, url: 'https://example.test/paper', quote: 'Original excerpt' },
+      { id: 'node-quote', locator: { page: 3 }, url: 'https://example.test/paper', quote: 'Additional node-level excerpt' },
+    ],
+    steps: [{ id: 'step', studyId: 'A', title: 'Present question', actorIds: [], inputIds: [], outputIds: [], visibleIds: [], children: [], next: [], evidenceIds: [] }],
+  };
+  const html = renderToStaticMarkup(React.createElement(PublishedProgram, { paper, program }));
+  const [overview, experiments] = html.split('Experiments and analyses');
+  assert.match(overview, /Overview.*Research question and motivation.*What prompted the research.*Paper summary.*Hypotheses.*Applies to Experiment A, Experiment B.*A shared prediction.*Source evidence.*Original excerpt.*Additional node-level excerpt.*Main findings.*The primary finding/s);
+  assert.doesNotMatch(overview, /A scoped prediction/);
+  assert.doesNotMatch(experiments, /A shared prediction/);
+  assert.match(experiments, /Experiment A.*Experiment flow.*Present question.*Design and conditions.*A condition.*Reported results.*An experiment result.*Limitations.*Not reported in the available source.*Experiment B.*A scoped prediction.*Experiment C/s);
+});
 
 test('paper details preserve research links, capability caveats and safe resource URLs', async () => {
   const html = renderToStaticMarkup(await PaperDetail({ paper: {
