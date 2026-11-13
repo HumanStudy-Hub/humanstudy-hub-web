@@ -47,3 +47,33 @@ test('the shared admission store protects capacity, cancellation, and stale comp
     await db.close();
   }
 });
+
+test('a configured 50-person cohort reserves 45-minute sessions and rejects excess claims', async () => {
+  const db = new PGlite();
+  const workspace = i => 'try-aaaaaaaa-aaaa-4aaa-aaaa-' + String(i).padStart(12, '0');
+  try {
+    await db.exec('create role anon; create role authenticated; create role service_role bypassrls;');
+    await db.exec(await readFile(new URL('../supabase/migrations/20261112080202_online_workspace_admission.sql', import.meta.url), 'utf8'));
+    // A deployment operator changes compute capacity; application credentials cannot do so.
+    await db.exec("update public.online_workspace_capacity set max_running=50 where scope='production'; set role service_role;");
+    await assert.rejects(db.exec("update public.online_workspace_capacity set max_running=100"), /permission denied/);
+    const claim = async name => (await db.query('select public.online_claim_workspace($1, 2700, false, $2) as value', [name, randomUUID()])).rows[0].value;
+    const finish = async (name, id, release) => (await db.query('select public.online_finish_workspace($1, $2, $3, null) as value', [name, id, release])).rows[0].value;
+    // PGlite queues these calls; this verifies SQL admission semantics, not a multi-connection load test.
+    const attempts = await Promise.all(Array.from({ length: 100 }, (_, i) => claim(workspace(i))));
+    assert.equal(attempts.filter(Boolean).length, 50);
+    assert.equal((await db.query('select count(*)::integer as n from public.online_workspace_leases')).rows[0].n, 50);
+    const timing = (await db.query('select min(extract(epoch from reserved_until-clock_timestamp())) as seconds from public.online_workspace_leases')).rows[0];
+    assert.ok(Number(timing.seconds) > 2700 && Number(timing.seconds) <= 2880);
+    assert.equal(await claim(workspace(0)), null, 'duplicate in-flight launch cannot create another operation');
+    assert.equal(await finish(workspace(0), attempts[0], false), true);
+    const reopened = await claim(workspace(0));
+    assert.ok(reopened, 'existing admitted account can reopen at full capacity');
+    assert.equal(await finish(workspace(0), attempts[0], true), false, 'stale completion cannot release newer ownership');
+    assert.equal(await finish(workspace(0), reopened, true), true);
+    const refill = await Promise.all(Array.from({ length: 20 }, (_, i) => claim(workspace(100+i))));
+    assert.equal(refill.filter(Boolean).length, 1, 'one released slot admits only one replacement');
+    const preview = workspace(0).replace('try-', 'try-preview-123456789abc-');
+    assert.ok(await claim(preview), 'preview uses its separate six-person scope');
+  } finally { await db.close(); }
+});
