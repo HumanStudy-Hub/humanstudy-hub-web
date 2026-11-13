@@ -127,3 +127,10 @@ test('partial shared cookies never borrow a different legacy identity or refresh
     assert.equal(h.auth.studioSessionToken(h.jar, 'refresh'), 'new-identity');
   });
 });
+
+test('sign-in can return to the selected contribution paper', () => {
+  const target = '/contribute?paper=paper_' + 'a'.repeat(24);
+  assert.equal(policy.accountReturnTo('/contribute'), '/contribute');
+  assert.equal(policy.accountReturnTo(target), target);
+  assert.equal(policy.accountReturnTo(target + '&returnTo=https://evil.test'), undefined);
+});

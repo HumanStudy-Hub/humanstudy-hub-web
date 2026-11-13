@@ -373,7 +373,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
   await upload.setInputFiles({ name: 'invalid.txt', mimeType: 'text/plain', buffer: Buffer.from('Preview only') });
   await page.getByRole('alert').filter({ hasText: 'Choose a community ZIP no larger than 40 MB.' }).waitFor();
   assert.equal(await page.getByRole('region', { name: 'My contributions', exact: true }).getByRole('alert').count(), 0);
-  assert.ok(await page.getByRole('button', { name: 'Contribute', exact: true }).isDisabled());
+  assert.ok(await page.getByRole('button', { name: 'Submit for review', exact: true }).isDisabled());
   const zip = new (require('adm-zip'))();
   zip.addFile('CONTRIBUTION.json', Buffer.from(JSON.stringify({
     paper: { title: 'Framing experiment', firstAuthor: 'Original Researcher', year: 2025 },
@@ -387,19 +387,22 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
   await inventory.click();
   assert.ok(await page.getByText('artifacts/simulations/example/report.md', { exact: true }).isVisible());
   await page.getByRole('textbox', { name: 'Your name', exact: true }).fill('Preview Contributor');
-  assert.ok(await page.getByRole('button', { name: 'Contribute', exact: true }).isEnabled());
+  const approval = page.getByRole('checkbox', { name: 'I reviewed these files and approve their public submission.', exact: true });
+  assert.ok(await page.getByRole('button', { name: 'Submit for review', exact: true }).isDisabled());
+  await approval.check();
+  assert.ok(await page.getByRole('button', { name: 'Submit for review', exact: true }).isEnabled());
 
   zip.addFile('sources/private/item.txt', Buffer.from('Private attachment'));
   await upload.setInputFiles({ name: 'private.zip', mimeType: 'application/zip', buffer: zip.toBuffer() });
   const privateFileAlert = page.getByRole('alert').filter({ hasText: 'private project file or raw record' });
   await privateFileAlert.waitFor();
-  assert.ok(await page.getByRole('button', { name: 'Contribute', exact: true }).isDisabled());
+  assert.ok(await page.getByRole('button', { name: 'Submit for review', exact: true }).isDisabled());
 
   setSignedIn(false);
   await visit('/contribute');
   await page.getByRole('link', { name: 'Sign in to HumanStudy Hub', exact: true }).waitFor();
   assert.equal(await page.getByLabel('Community contribution ZIP', { exact: true }).count(), 0);
-  checked('Community submission and history use Hub sign-in without a promo cookie');
+  checked('Community submission checks ZIP privacy, requires explicit file approval, and uses Hub sign-in without a promo cookie');
   await page.context().addCookies([{ name: 'hs_unlock', value: cookie, url: origin, httpOnly: true, sameSite: 'Lax' }]);
   workspace.title = model.title;
   workspace.document.title = model.title;

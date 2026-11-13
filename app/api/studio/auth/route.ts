@@ -42,6 +42,54 @@ export async function POST(request: Request) {
     const body = await readJsonBody(request, 8_192);
     if (!body || typeof body !== "object") throw new StudioError(400, "invalid_request");
     const { action, email, password, tokenHash, type, returnTo } = body as Record<string, unknown>;
+    if (action === "save-profile") {
+      const { user, accessToken } = await requireStudioUser();
+      const { name, affiliation } = body as Record<string, unknown>;
+      if (typeof name !== "string" || !name.trim() || name.length > 200 ||
+        typeof affiliation !== "string" || affiliation.length > 300 || /[\u0000-\u001f\u007f]/.test(name + affiliation)) {
+        throw new StudioError(400, "invalid_profile");
+      }
+      const profile = { name: name.trim(), affiliation: affiliation.trim() };
+      const response = await studioFetch("/auth/v1/user", { method: "PUT", token: accessToken,
+        body: { data: { hub_name: profile.name, hub_affiliation: profile.affiliation } } });
+      await checkAuthResponse(response);
+      return NextResponse.json({ user: { ...user, profile } }, { headers: { "Cache-Control": "no-store" } });
+    }
+    if (action === "change-email") {
+      const { user } = await requireStudioUser();
+      const { currentPassword } = body as Record<string, unknown>;
+      const nextEmail = typeof email === "string" ? email.trim() : "";
+      if (!user.email || typeof currentPassword !== "string" || !currentPassword || currentPassword.length > 128) {
+        throw new StudioError(400, "invalid_current_password");
+      }
+      if (!/^\S+@\S+\.\S+$/.test(nextEmail) || nextEmail.length > 254 || nextEmail.toLowerCase() === user.email.toLowerCase()) {
+        throw new StudioError(400, "invalid_new_email");
+      }
+      const response = await studioFetch("/auth/v1/token?grant_type=password", {
+        method: "POST", body: { email: user.email, password: currentPassword },
+      });
+      if ([400, 401, 403].includes(response.status)) {
+        const detail = await response.clone().json().catch(() => ({}));
+        if (!["over_email_send_rate_limit", "over_request_rate_limit"].includes(detail.error_code || detail.code)) {
+          throw new StudioError(400, "invalid_current_password");
+        }
+      }
+      await checkAuthResponse(response);
+      const session = await upstreamJson<{ access_token?: string; user?: { id?: string } }>(response);
+      if (!session.access_token || session.user?.id !== user.id) throw new StudioError(401, "unauthorized");
+      const redirectTo = studioConfirmationUrl(request, "account");
+      const update = await studioFetch(`/auth/v1/user?redirect_to=${encodeURIComponent(redirectTo)}`, {
+        method: "PUT", token: session.access_token, body: { email: nextEmail },
+      });
+      if ([400, 422].includes(update.status)) {
+        const detail = await update.clone().json().catch(() => ({}));
+        if (!["over_email_send_rate_limit", "over_request_rate_limit"].includes(detail.error_code || detail.code)) {
+          throw new StudioError(400, "email_change_failed");
+        }
+      }
+      await checkAuthResponse(update);
+      return NextResponse.json({ confirmationRequested: true }, { headers: { "Cache-Control": "no-store" } });
+    }
     if (action === "signout") {
       let currentToken: string | undefined;
       try { currentToken = (await requireStudioUser()).accessToken; }

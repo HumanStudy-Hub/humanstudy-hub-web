@@ -10,13 +10,13 @@ export type StudioContext = { user: StudioUser; accessToken: string };
 
 // Use a stable hosted origin when configured, so preview-deployment URLs do not
 // need a broad redirect allowlist. Otherwise use the already checked POST origin.
-export function studioConfirmationUrl(request: Request, destination: 'confirm' | 'reset' = 'confirm', returnTo?: unknown): string {
+export function studioConfirmationUrl(request: Request, destination: 'confirm' | 'reset' | 'account' = 'confirm', returnTo?: unknown): string {
   const raw = process.env.HUB_AUTH_ORIGIN || process.env.STUDIO_AUTH_ORIGIN || request.headers.get("origin");
   try {
     const url = new URL(raw || "");
     const local = ["localhost", "127.0.0.1"].includes(url.hostname);
     if ((url.protocol !== "https:" && !(local && url.protocol === "http:")) || url.username || url.password || url.search || url.hash || url.pathname !== "/") throw new Error("Invalid origin");
-    const target = new URL(`/auth/${destination}`, url.origin);
+    const target = new URL(destination === "account" ? "/account" : `/auth/${destination}`, url.origin);
     const next = accountReturnTo(returnTo);
     if (next) target.searchParams.set("returnTo", next);
     return target.href;
@@ -58,7 +58,7 @@ export async function clearStudioSession(): Promise<void> {
 async function verifiedUser(token: string): Promise<StudioUser | null> {
   const response = await studioFetch("/auth/v1/user", { token });
   if (response.status === 401 || response.status === 403) return null;
-  const user = await upstreamJson<{ id?: unknown; email?: unknown }>(response);
+  const user = await upstreamJson<{ id?: unknown; email?: unknown; user_metadata?: { hub_name?: unknown; hub_affiliation?: unknown } }>(response);
   if (!isUuid(user.id)) throw new StudioError(502, "invalid_service_response");
   if (sharedCookieDomain()) {
     const active = await studioFetch("/rest/v1/rpc/hub_session_active", { method: "POST", token, body: {} });
@@ -68,7 +68,9 @@ async function verifiedUser(token: string): Promise<StudioUser | null> {
     if (isActive === false) return null;
     if (isActive !== true) throw new StudioError(502, "invalid_service_response");
   }
-  return { id: user.id, ...(typeof user.email === "string" ? { email: user.email } : {}) };
+  const name = typeof user.user_metadata?.hub_name === "string" ? user.user_metadata.hub_name.trim().slice(0, 200) : "";
+  const affiliation = typeof user.user_metadata?.hub_affiliation === "string" ? user.user_metadata.hub_affiliation.trim().slice(0, 300) : "";
+  return { id: user.id, ...(typeof user.email === "string" ? { email: user.email } : {}), ...(name ? { profile: { name, affiliation } } : {}) };
 }
 
 export async function requireStudioUser({ allowRefresh = true }: { allowRefresh?: boolean } = {}): Promise<StudioContext> {

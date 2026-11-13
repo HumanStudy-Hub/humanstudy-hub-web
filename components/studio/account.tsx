@@ -17,14 +17,25 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [name, setName] = useState('');
+  const [affiliation, setAffiliation] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
   const [cooldown, setCooldown] = useState(0);
   const continueTo = (destination: string) => window.location.replace(destination);
   useEffect(() => {
     let cancelled = false;
+    const confirmation = new URLSearchParams(window.location.hash.slice(1));
+    if (confirmation.get('type') === 'email_change' || confirmation.has('access_token') || confirmation.has('error_code')) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      if (confirmation.has('error_code')) setError('This email confirmation link has expired or could not be verified.');
+    }
     studioApi<{ user: StudioUser | null }>('/api/studio/auth').then(result => {
       if (cancelled) return;
       setUser(result.user);
+      setName(result.user?.profile?.name ?? '');
+      setAffiliation(result.user?.profile?.affiliation ?? '');
       if (result.user && returnTo && !logout) continueTo(returnTo);
     }).catch(cause => { if (!cancelled) setError(cause instanceof Error ? cause.message : 'Could not load your account.'); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -42,6 +53,30 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not sign in.'); }
     finally { setBusy(false); }
   }
+  async function saveProfile(event: React.FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    try {
+      const { user } = await studioApi<{ user: StudioUser }>('/api/studio/auth', {
+        method: 'POST', body: JSON.stringify({ action: 'save-profile', name, affiliation }),
+      });
+      setUser(user);
+      setName(user.profile?.name ?? '');
+      setAffiliation(user.profile?.affiliation ?? '');
+      setNotice('Profile saved.');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not save your profile.'); }
+    finally { setBusy(false); }
+  }
+  async function changeEmail(event: React.FormEvent) {
+    event.preventDefault(); setBusy(true); setError(''); setNotice('');
+    try {
+      await studioApi('/api/studio/auth', {
+        method: 'POST', body: JSON.stringify({ action: 'change-email', email: newEmail, currentPassword }),
+      });
+      setNewEmail('');
+      setNotice('Check your email for confirmation links. Your sign-in email changes after confirmation.');
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not change your email.'); }
+    finally { setCurrentPassword(''); setBusy(false); }
+  }
   async function signout() {
     setBusy(true); setError('');
     try {
@@ -58,8 +93,8 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
   return (
     <div className={s.page}>
       <section className={s.story} aria-labelledby="account-title">
-        <h1 id="account-title">A place for<br />your research.</h1>
-        <p>Keep sources, studies and your next question together.</p>
+        <h1 id="account-title">{user && !logout ? 'Your account' : <>A place for<br />your research.</>}</h1>
+        <p>{user && !logout ? 'Manage your sign-in details and contribution credit.' : 'Keep sources, studies and your next question together.'}</p>
         <Image
           src="/images/folio-account.jpg"
           alt="A sage paper folder keeps source papers, data and charts together beside a notebook and pencil."
@@ -75,17 +110,37 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
           <p role="status">Loading your account…</p>
         ) : user ? (
           <>
-            <h2>{logout ? 'Sign out?' : 'Your account'}</h2>
-            <p>{user.email}</p>
-            <p>One account for HumanStudy Hub, the desktop app, and the forum.</p>
-            {!logout && (
-              <nav className={s.accountLinks} aria-label="Account links">
+            <h2>{logout ? 'Sign out?' : 'Contributor profile'}</h2>
+            {logout ? <p>{user.email}</p> : <>
+              <p>Use this name and affiliation when you submit studies. They become public when included in a submission.</p>
+              <form onSubmit={saveProfile} aria-label="Contributor profile">
+                <label>Name<input data-private autoComplete="name" required maxLength={200} value={name}
+                  onChange={event => setName(event.target.value)} disabled={busy} /></label>
+                <label>Affiliation (optional)<input data-private autoComplete="organization" maxLength={300} value={affiliation}
+                  onChange={event => setAffiliation(event.target.value)} disabled={busy} /></label>
+                <button className={s.button} disabled={busy}>Save profile <ArrowRight /></button>
+              </form>
+              <div className={s.accountLinks} aria-label="Sign-in details">
+                <h3>Sign-in details</h3>
+                <p><strong>Current email</strong> {user.email}</p>
+                {user.email && <details>
+                  <summary>Change email</summary>
+                  <form onSubmit={changeEmail} aria-label="Change email">
+                    <label>New email<input data-private type="email" autoComplete="email" required maxLength={254} value={newEmail}
+                      onChange={event => setNewEmail(event.target.value)} disabled={busy} /></label>
+                    <label>Current password<input data-private type="password" autoComplete="current-password" required maxLength={128} value={currentPassword}
+                      onChange={event => setCurrentPassword(event.target.value)} disabled={busy} /></label>
+                    <button className={s.button} disabled={busy}>Request email change <ArrowRight /></button>
+                  </form>
+                </details>}
                 <Link className={s.back} href={accountPath(returnTo, '/auth/reset?mode=change')}>Change password</Link>
+              </div>
+              <nav className={s.links} aria-label="Account links">
                 <Link className={s.back} href="https://forum.humanstudy-hub.com/">Forum</Link>
                 <Link className={s.back} href="/build/projects">Your projects</Link>
                 <Link className={s.back} href="/contribute#my-contributions">My contributions</Link>
               </nav>
-            )}
+            </>}
             <button className={s.button} disabled={busy} onClick={() => void signout()}>
               {busy ? 'Signing out…' : 'Sign out'} <ArrowRight />
             </button>

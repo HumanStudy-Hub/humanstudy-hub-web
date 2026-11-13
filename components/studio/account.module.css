@@ -154,8 +154,12 @@
 }
 
 .accountLinks {
+  display: block;
   margin-bottom: 24px;
 }
+.accountLinks h3 { margin-bottom: 8px; font-weight: 600; }
+.accountLinks summary { margin-top: 12px; color: var(--site-accent); cursor: pointer; }
+.accountLinks form { margin: 12px 0 8px; }
 
 .card .error {
   margin-top: 24px;

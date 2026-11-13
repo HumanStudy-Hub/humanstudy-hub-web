@@ -3,7 +3,7 @@ const HUB_ORIGINS = new Set(['https://humanstudy-hub.com', 'https://www.humanstu
 export function accountReturnTo(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.length > 2048 || [...value].some(char => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 92)) return undefined;
   try {
-    if (value === '/try') return value;
+    if (value === '/try' || /^\/contribute(?:\?paper=paper_[a-f0-9]{24})?$/.test(value)) return value;
     if (value.startsWith('/try?')) {
       const local = new URL(value, 'https://humanstudy-hub.com');
       const fields = local.searchParams;
