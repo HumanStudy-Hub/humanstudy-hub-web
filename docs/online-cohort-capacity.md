@@ -17,7 +17,7 @@ Both must be 50 in the intended environment for a 50-person cohort. `TRY_SESSION
 2. Record current database capacity and deployment settings. Set `TRY_MAX_RUNNING=50` and `TRY_SESSION_MINUTES=45` in the intended environment and redeploy. Increasing this provider guard alone does not bypass the lower database limit.
 3. After deployment verification, update only the intended capacity row to 50 with an authorized database connection. Leave the other scope unchanged. Do not modify hosted-model pool/account allowances ($50/1000 request pool remains independent).
 4. Verify one existing test account starts, stops, and resumes with its files intact. Do not launch 50 paid sandboxes just to inspect a limit. Real 50-person throughput/latency and model-provider rate limits require separately controlled acceptance.
-5. Rollback: lower the database capacity first, then the environment limit. Existing leases are not killed; new accounts are denied until usage drops below the lower cap. A stop/reopen can continue using its existing reservation.
+5. Rollback: lower the database capacity first, then the environment limit. Existing leases are not killed; new accounts are denied until usage drops below the lower cap. Existing active reservations can reconnect; after a successful stop, a new launch must fit the lowered capacity.
 
 A failed/uncertain provider create conservatively retains its reservation; capacity may remain occupied until expiry. Successful stop releases a slot. Lease expiry is initially session duration plus a 180-second startup margin, then successful startup supplies actual provider expiry. Reconnecting may extend the provider session; 45 minutes is not a hard per-account daily usage allowance.
 
