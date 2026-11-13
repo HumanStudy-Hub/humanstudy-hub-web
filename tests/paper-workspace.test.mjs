@@ -4,9 +4,9 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 function load(file) {
   const compiled = ts.transpileModule(readFileSync(new URL(file, import.meta.url), 'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  const module = {exports:{}};
-  new Function('module','exports', compiled)(module,module.exports);
-  return module.exports;
+  const loadedModule = {exports:{}};
+  new Function('module','exports', compiled)(loadedModule,loadedModule.exports);
+  return loadedModule.exports;
 }
 const lib = load('../lib/paper-workspace.ts');
 const auth = load('../lib/studio/auth-policy.ts');
