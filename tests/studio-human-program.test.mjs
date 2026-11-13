@@ -123,3 +123,16 @@ test('programs written by the desktop build skill validate: evidence note and so
  assert.equal(program.validateHumanProgram(p).source.doi,'10.1006/game.1995.1027');
  assert.deepEqual(validation.validateStudyModel(p).program.evidence,p.evidence);
 });
+
+test('published evidence retains the original Aiyer source digest and rejects malformed digests', () => {
+ const p = sample('study_009');
+ const sourceSha256 = '72fb1d27588bd782782b4ebfb1a06d53bb59e175b16918b2819b3a69852b85fd';
+ p.evidence.push({
+  id: 'aiyer-background', sourceId: 'paper', sourceSha256, path: 'sources/bundle/paper/paper.pdf',
+  url: 'https://doi.org/10.5334/irsp.751', locator: { page: 2 }, verification: 'unverified',
+ });
+ const checked = program.validateHumanProgram(p, { published: true });
+ assert.deepEqual(checked.evidence.at(-1), p.evidence.at(-1));
+ p.evidence.at(-1).sourceSha256 = 'not-a-sha256';
+ assert.throws(() => program.validateHumanProgram(p, { published: true }), /sourceSha256: invalid string/);
+});

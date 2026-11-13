@@ -1,3 +1,4 @@
+import reading from "./published-reading.module.css";
 import Link from "next/link";
 import CreditPagination from "./CreditPagination";
 import { CREDIT_PAGE_SIZE, listCredits } from "@/lib/community-credit";
@@ -80,8 +81,6 @@ function Protocol({ protocol, validated }: { protocol: ResearchProtocol; validat
 export default async function ResearchPaperDetail({ paper, contributionPage = 1 }: { paper: ResearchPaper; contributionPage?: number }) {
   // Catalog documents from different sources omit empty lists.
   const authors = paper.authors ?? [], resources = paper.resources ?? [];
-  const repository = paper.assetRoot && /^(studies\/study_\d+|community\/[A-Za-z0-9_.-]+\/revisions\/[a-f0-9]{64})$/.test(paper.assetRoot)
-    ? `https://github.com/HumanStudy-Hub/HumanStudy-Bench/tree/main/${paper.assetRoot}` : null;
   const protocol = readProtocol(paper);
   const availability = libraryAvailability(paper);
   const [program, credits] = await Promise.all([
@@ -89,37 +88,36 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
     paper.currentRevision ? listCredits({ by: "paper", id: paper.id, revision: paper.currentRevision }, contributionPage).catch(() => []) : [],
   ]);
   const contributors = researchContributorNames(paper, credits.map(credit => credit.display_name));
-  const programSource = program ? publishedAssetUrl(paper, program.source.filename) : null;
-  return <div className={`${styles.page} ${styles.narrow}`}>
-    <div>
+  const studies = paper.studies ?? [];
+  const studyList = `${studies.length} ${studies.length === 1 ? "study" : "studies"}: ${studies.map(study => study.title).join("; ")}`;
+  const canOpenExperiment = availability.program || availability.publicProtocol;
+  const participantPreview = availability.program ? null : protocol?.preview;
+  const originalPaper = program && !resources.some(resource => resource.kind === "original-paper" && safeUrl(resource.url))
+    ? publishedAssetUrl(paper, program.source.filename) : null;
+  return <div className={`${styles.page} ${reading.page}`}>
+    <div className={reading.intro}>
       <Link href="/studies" className={styles.back}>← Study Library</Link>
       <h1>{paper.title}</h1>
       <p className="mt-3 text-sm text-[var(--site-muted)]">{[authors.join(", "), paper.year, paperSource(paper)].filter(Boolean).join(" · ")}</p>
-      <p className="mt-6 whitespace-pre-wrap leading-7 text-[var(--foreground)]">{paper.description}</p>
+      {paper.description && (!program || paper.description !== studyList) && (
+        <p className="mt-6 whitespace-pre-wrap leading-7 text-[var(--foreground)]">{paper.description}</p>
+      )}
       {availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">
         {paper.developmentStage === "draft" ? "In development · protocol draft exists." : "In development · study materials are being prepared."}
       </p>}
       {availability.userSubmitted && <p className="mt-3 text-sm text-[var(--site-muted)]">User submitted</p>}
       {!program && !availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">{availability.publicProtocol ? "A published protocol is available for this study." : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
-      <div className="mt-6 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
-        {program && <a href="#paper-program">Interact with paper</a>}
-        {(availability.program || availability.publicProtocol)
-          ? <a href="#run-experiment">Run experiment</a>
-          : <Link href="/pipeline">Build a study</Link>}
-      </div>
-      {contributors.length > 0 && <p className="mt-2 text-sm text-[var(--site-muted)]">Contributed by {contributors.join(", ")}</p>}
-      {(programSource || repository || protocol?.preview) && <div className="mt-4 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
-        {programSource && <a href={programSource} target="_blank" rel="noreferrer">Original paper ↗</a>}
-        {repository && <a href={repository} target="_blank" rel="noopener noreferrer">Research files ↗</a>}
-        {protocol?.preview && <a href={protocol.preview} target="_blank" rel="noopener noreferrer">Participant view ↗</a>}
+      {(!canOpenExperiment || participantPreview) && <div className="mt-6 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
+        {!canOpenExperiment && <Link href={`/contribute?paper=${encodeURIComponent(paper.id)}`}>Be the first to contribute a reconstruction</Link>}
+        {participantPreview && <a href={participantPreview} target="_blank" rel="noopener noreferrer">Participant view ↗</a>}
       </div>}
-      {(availability.program || availability.publicProtocol) && <RunExperiment
+      {canOpenExperiment && <RunExperiment
         paper={paper}
-        program={program}
+        hasProgram={availability.program}
         protocol={availability.publicProtocol ? protocol : null}
         validated={availability.validated}
-        runnable={availability.runnable}
       />}
+      {contributors.length > 0 && <p className="mt-2 text-sm text-[var(--site-muted)]">Contributed by {contributors.join(", ")}</p>}
       {program ? <PublishedProgram paper={paper} program={program} /> : availability.program && (
         <p id="paper-program" className="mt-9 scroll-mt-24 text-sm text-[var(--site-muted)]">
           The published study document could not be loaded. Try refreshing the page.
@@ -133,9 +131,10 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
           base={`/studies/${paper.id}?creditPage=`} anchor="#community-contributions" />
       </section>}
       {paper.studyCapabilities ? <Capabilities caps={paper.studyCapabilities as StudyCapabilities} /> : null}
-      {resources.length > 0 && <section className="mt-10">
+      {(resources.length > 0 || originalPaper) && <section className="mt-10">
         <h2 className="text-lg font-semibold font-serif">Sources</h2>
         <ul className="mt-3 space-y-3 text-sm">
+          {originalPaper && <li><a href={originalPaper} target="_blank" rel="noopener noreferrer" className="text-[var(--site-accent)] underline">Original paper ↗</a></li>}
           {resources.map((resource, i) => {
             const url = safeUrl(resource.url);
             return <li key={`${resource.id}-${i}`}>

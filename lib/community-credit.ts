@@ -108,7 +108,8 @@ export async function readCommunitySubmissionStatus(row: ContributionRow): Promi
 export async function verifyCommunityCredit(row: Pick<ContributionRow, "id" | "paper_key" | "pr_number" | "branch">) {
   if (!UUID.test(row.id) || row.branch !== `community/${row.id}` ||
       !row.pr_number || !Number.isSafeInteger(row.pr_number) || row.pr_number < 1) return null;
-  const ref = await publicJson<{ object?: { sha?: string } }>(`${api}/git/ref/heads/main`);
+  const branch = process.env.VERCEL_ENV === "preview" ? "dev" : "main";
+  const ref = await publicJson<{ object?: { sha?: string } }>(`${api}/git/ref/heads/${branch}`);
   const commit = ref?.object?.sha;
   if (!commit || !COMMIT.test(commit)) return null;
   const root = `https://raw.githubusercontent.com/${BENCH}/${commit}`;
@@ -123,12 +124,15 @@ export async function verifyCommunityCredit(row: Pick<ContributionRow, "id" | "p
       typeof review.revision !== "string" || !REVISION.test(review.revision) || !COMMIT.test(review.headCommit ?? "")) return null;
   const [proposal, pull, manifest] = await Promise.all([
     publicJson<Proposal>(`${directory}/proposals/${row.id}/CONTRIBUTION.json`),
-    publicJson<{ head?: { ref?: string; sha?: string } }>(`${api}/pulls/${row.pr_number}`),
+    publicJson<{ head?: { ref?: string; sha?: string }; base?: { ref?: string; repo?: { full_name?: string } } }>(
+      `${api}/pulls/${row.pr_number}`),
     publicJson<{ revision?: string; files?: { path: string; sha256: string }[] }>(
       `${directory}/revisions/${review.revision}/manifest.json`),
   ]);
   if (proposal?.proposalId !== row.id || proposal.paperKey !== row.paper_key ||
       pull?.head?.ref !== row.branch || pull.head.sha !== review.headCommit ||
+      pull.base?.repo?.full_name?.toLowerCase() !== BENCH.toLowerCase() ||
+      (pull.base?.ref !== "main" && pull.base?.ref !== "dev") ||
       manifest?.revision !== review.revision || !Array.isArray(manifest.files)) return null;
   const paths = new Set<string>();
   const entries = [];

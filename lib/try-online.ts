@@ -317,28 +317,36 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
       }
     }
     const resumed = Boolean(sandbox);
+    const timeout = config.sessionMinutes * 60_000;
     if (!sandbox) {
       // Reserve conservatively if create itself fails, since the provider may have accepted it.
       started = true;
       sandbox = await Sandbox.create({
         ...credentials(), name, source: { type: "snapshot", snapshotId: config.snapshotId },
-        ports: [PORT], timeout: config.sessionMinutes * 60_000, resources: { vcpus: 2 },
+        ports: [PORT], timeout, resources: { vcpus: 2 },
         persistent: true, keepLastSnapshots: { count: 1, expiration: 0 }, tags: TAG,
         ...(networkPolicy ? { networkPolicy } : {}),
         signal: operationSignal(25_000, deadline),
       });
-    } else if (networkPolicy) {
-      if (running(sandbox) && (sandbox.status !== "running" || !(await runningWithDevHub(sandbox, hubOrigin, deadline)))) {
+    } else {
+      if (networkPolicy && running(sandbox) && (sandbox.status !== "running" || !(await runningWithDevHub(sandbox, hubOrigin, deadline)))) {
         throw new TryError(409, "workspace_restart_required", "Stop this workspace and resume it to connect to dev models. Your current session is still running.");
       }
-      // The provider applies policy outside the guest. This also resumes stopped workspaces.
-      started = sandbox.status !== "running";
-      await sandbox.updateNetworkPolicy(networkPolicy, { signal: operationSignal(25_000, deadline) });
+      // The SDK applies an absolute timeout and only extends a running session by any shortfall.
+      // A lower timeout changes the next session's default without shortening the current session.
+      if (sandbox.timeout !== timeout || (sandbox.status === "running" && sandbox.currentSession().timeout < timeout)) {
+        await sandbox.update({ timeout }, { signal: operationSignal(8000, deadline) });
+      }
+      if (networkPolicy) {
+        // The provider applies policy outside the guest. This also resumes stopped workspaces.
+        started = sandbox.status !== "running";
+        await sandbox.updateNetworkPolicy(networkPolicy, { signal: operationSignal(25_000, deadline) });
+      }
     }
     let base = !started && sandbox.status === "running" ? workspaceOrigin(sandbox) : null;
     if (!base) {
       started = true;
-      const env: Record<string, string> = { HS_WEB_TOKEN: token };
+      const env: Record<string, string> = { HS_WEB_TOKEN: token, HUMANSTUDY_COMMUNITY_BRANCH: process.env.VERCEL_ENV === "preview" ? "dev" : "main" };
       if (networkPolicy) {
         env.HUMANSTUDY_SERVER = hubOrigin;
         env.NODE_USE_SYSTEM_CA = "1";

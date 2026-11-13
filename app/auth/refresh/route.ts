@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   try {
     await requireStudioUser();
     await migrateStudioSession();
-    return NextResponse.redirect(returnTo, { status: 307, headers: { 'Cache-Control': 'no-store' } });
+    return NextResponse.redirect(new URL(returnTo, url), { status: 307, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     if (error instanceof StudioError && error.status === 401) {
       await clearStudioSession();

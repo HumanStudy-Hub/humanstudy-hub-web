@@ -24,7 +24,7 @@ function fixture(t, options = {}) {
     TRY_TOKEN_SECRET: 'fake-test-secret'.repeat(3), SUPABASE_SERVICE_ROLE_KEY: 'fake-test-service',
     SUPABASE_URL: 'https://database.example.test', SUPABASE_PUBLISHABLE_KEY: 'fake-test-public',
     PROMO_CODE: 'fake-test-code', TRY_APP_VERSION: build.version, TRY_APP_GIT_SHA: build.gitsha,
-    TRY_APP_PACK_SHA256: build.packhash, TRY_SESSION_MINUTES: '45', TRY_MAX_RUNNING: '6' };
+    TRY_APP_PACK_SHA256: build.packhash, TRY_SESSION_MINUTES: options.sessionMinutes ?? '45', TRY_MAX_RUNNING: '6' };
   const previous = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
   Object.assign(process.env, env);
   t.after(() => {
@@ -42,17 +42,24 @@ function fixture(t, options = {}) {
   }
   let exists = !options.fresh;
   let stopFailed = false;
+  let activeTimeout = (options.activeMinutes ?? options.providerMinutes ?? Number(env.TRY_SESSION_MINUTES)) * 60_000;
   const sandbox = {
     status: options.stopped ? 'stopped' : 'running',
+    timeout: (options.providerMinutes ?? Number(env.TRY_SESSION_MINUTES)) * 60_000,
     currentSnapshotId: 'snap_previous',
     expiresAt: new Date('2030-01-01T01:00:00Z'),
     domain: () => 'https://workspace.vercel.run',
     async runCommand(input) { calls.push([input.cmd === 'node' ? 'probe' : 'start', input.env]); this.status = 'running'; return { exitCode: 0 }; },
     currentSession() {
-      return { sessionId: 'fixture-session', runCommand: async input => {
+      return { sessionId: 'fixture-session', timeout: activeTimeout, runCommand: async input => {
         calls.push(['inspect-runtime', input.args.at(-1)]);
         return { exitCode: options.runtimeMatches ? 0 : 1 };
       } };
+    },
+    async update({ timeout }) {
+      calls.push(['timeout', timeout, this.status]);
+      this.timeout = timeout;
+      if (this.status === 'running') activeTimeout = Math.max(activeTimeout, timeout);
     },
     async updateNetworkPolicy(policy) { calls.push(['policy', policy]); this.status = 'running'; },
     async stop() {
@@ -126,8 +133,34 @@ function fixture(t, options = {}) {
       devModelNetwork: async () => options.networkPolicy ?? null, isDevPreview: () => process.env.VERCEL_ENV === 'preview' && process.env.VERCEL_GIT_COMMIT_REF === 'dev',
     },
   });
-  return { calls, config, lib };
+  return { calls, config, lib, sandbox };
 }
+
+test('a stopped persistent workspace adopts the configured hour before managed policy resumes it', async t => {
+  const { calls, lib } = fixture(t, { stopped: true, providerMinutes: 10, sessionMinutes: '60',
+    managedDev: true, hubOrigin: 'https://example-dev.vercel.app', networkPolicy: 'allow-all' });
+  assert.equal((await lib.launchTryOnline(user, attempt)).resumed, true);
+  assert.deepEqual(calls.filter(([name]) => ['timeout', 'policy', 'start'].includes(name)).map(([name, value, state]) =>
+    name === 'timeout' ? [name, value, state] : [name]), [['timeout', 3_600_000, 'stopped'], ['policy'], ['start']]);
+  assert.ok(!calls.some(([name]) => name === 'create'));
+});
+
+test('reconnecting extends a shorter active session to the configured total only once', async t => {
+  const { calls, lib, sandbox } = fixture(t, { providerMinutes: 60, activeMinutes: 10, sessionMinutes: '60' });
+  await lib.launchTryOnline(user, attempt);
+  await lib.launchTryOnline(user, attempt);
+  assert.deepEqual(calls.filter(([name]) => name === 'timeout'), [['timeout', 3_600_000, 'running']]);
+  assert.equal(sandbox.currentSession().timeout, 3_600_000);
+  assert.ok(!calls.some(call => call === 'stop' || call[0] === 'start'));
+});
+
+test('a lower configured timeout applies to future sessions without shortening the active hour', async t => {
+  const { calls, lib, sandbox } = fixture(t, { providerMinutes: 60, sessionMinutes: '30' });
+  await lib.launchTryOnline(user, attempt);
+  assert.equal(sandbox.timeout, 1_800_000);
+  assert.equal(sandbox.currentSession().timeout, 3_600_000);
+  assert.ok(!calls.some(call => call === 'stop' || call[0] === 'start'));
+});
 
 test('production and preview use distinct workspace identities and status never resumes', async t => {
   const { calls, lib } = fixture(t);
@@ -269,6 +302,7 @@ test('managed dev firewall credential never goes into guest environment', async 
   assert.deepEqual(calls.find(([name]) => name === 'create'), ['create', networkPolicy]);
   const startEnv = calls.find(([name]) => name === 'start')[1];
   assert.equal(startEnv.HUMANSTUDY_SERVER, hubOrigin);
+  assert.equal(startEnv.HUMANSTUDY_COMMUNITY_BRANCH, 'dev');
   assert.equal(startEnv.NODE_USE_SYSTEM_CA, '1');
   assert.ok(!JSON.stringify(startEnv).includes('fixture-server-secret'));
   assert.ok(calls.some(([name]) => name === 'probe'));

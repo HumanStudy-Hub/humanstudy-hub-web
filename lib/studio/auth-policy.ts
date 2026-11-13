@@ -3,6 +3,17 @@ const HUB_ORIGINS = new Set(['https://humanstudy-hub.com', 'https://www.humanstu
 export function accountReturnTo(value: unknown): string | undefined {
   if (typeof value !== 'string' || value.length > 2048 || [...value].some(char => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 92)) return undefined;
   try {
+    if (value === '/try') return value;
+    if (value.startsWith('/try?')) {
+      const local = new URL(value, 'https://humanstudy-hub.com');
+      const fields = local.searchParams;
+      if (local.hash || [...fields.keys()].some(key => !['paper', 'revision', 'intent'].includes(key))
+        || ['paper', 'revision', 'intent'].some(key => fields.getAll(key).length > 1)
+        || !/^paper_[a-f0-9]{24}$/.test(fields.get('paper') || '')
+        || !/^[a-f0-9]{64}$/.test(fields.get('revision') || '')
+        || !['read', 'run'].includes(fields.get('intent') || 'read')) return undefined;
+      return local.pathname + local.search;
+    }
     const url = new URL(value);
     const local = process.env.NODE_ENV !== 'production' && process.env.HUB_AUTH_ALLOW_LOCAL_RETURN === 'true' && ['localhost', '127.0.0.1'].includes(url.hostname) && ['http:', 'https:'].includes(url.protocol);
     if ((!HUB_ORIGINS.has(url.origin) && !local) || url.username || url.password || url.hash) return undefined;

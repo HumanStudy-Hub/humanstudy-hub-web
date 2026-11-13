@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { paperWorkspace, paperWorkspacePath } from "@/lib/paper-workspace";
 import ArrowRight from "@/components/ArrowRight";
-import { libraryFilters, libraryAvailability, paperSource, researchContributorNames, searchLibrary, validateResearchQuery, type LibraryFilter } from "@/lib/research";
+import { libraryFilters, libraryAvailability, researchContributorNames, searchLibrary, validateResearchQuery, type LibraryFilter } from "@/lib/research";
 import ValidatedFilter from "./ValidatedFilter";
 import styles from "./page.module.css";
 
@@ -92,22 +93,23 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
             {result.items.map(paper => {
               const status = libraryAvailability(paper);
               const href = `/studies/${paper.id}`;
+              const online = paperWorkspace({ paper: paper.id, revision: paper.currentRevision });
               const label = status.program ? "Interact with paper" : "View paper";
               const contributors = researchContributorNames(paper);
               return (
                 <article key={paper.id} className={styles.study}>
                   <div>
                     <h2><Link href={href}>{paper.title}</Link></h2>
-                    {((paper.authors ?? []).length > 0 || paper.year || paperSource(paper)) && (
+                    {((paper.authors ?? []).length > 0 || paper.year) && (
                       <p className={styles.authors}>
-                        {[(paper.authors ?? []).join(", "), paper.year, paperSource(paper)].filter(Boolean).join(" · ")}
+                        {[(paper.authors ?? []).join(", "), paper.year].filter(Boolean).join(" · ")}
                       </p>
                     )}
                     {status.validated && <p className={styles.validated}>Validated protocol</p>}
                     {status.userSubmitted && <p className={styles.authors}>User submitted</p>}
                   </div>
                   <div className={styles.actions}>
-                    <Link className={styles.primary} href={status.program ? `${href}#paper-program` : href} aria-label={`${label}: ${paper.title}`}>
+                    <Link className={styles.primary} href={status.program && online ? paperWorkspacePath(online) : href} aria-label={`${label}: ${paper.title}`}>
                       {label} <ArrowRight />
                     </Link>
                     {(status.program || status.publicProtocol) && (

@@ -488,3 +488,29 @@ test('webhook signatures and status changes', () => {
   assert.equal(hook.statusChangeFor('check_suite', { action: 'completed', check_suite: { conclusion: 'success', head_branch: 'community/x', pull_requests: [] } }), null);
   assert.equal(hook.statusChangeFor('pull_request_review', { action: 'submitted', review: { state: 'changes_requested' }, pull_request: { number: 3, head: { ref: 'community/x' } } }).status, 'changes_requested');
 });
+
+test('publishing refuses embedded credentials and local paths before any GitHub call', async () => {
+  const samples = ['Loaded from /Users/example/private/interview.txt', 'Read C:\\Users\\example\\notes.txt', 'Read C:/Users/example/notes.txt', 'Authorization: Bearer synthetic-secret-value', 'key sk-synthetic0000000000000000', 'file:///home/example/private.txt'];
+  for (const sample of samples) {
+    const { publish, Fake, inserted } = setup();
+    const z = new AdmZip(zipOf());
+    z.updateFile('program.json', Buffer.from(JSON.stringify({nodes: [], notes: sample})));
+    const result = await publish({userId, zip: z.toBuffer(), body: body()});
+    assert.equal(result.error, 'private_content');
+    assert.equal(Fake.calls.length, 0); assert.equal(Fake.instances.length, 0); assert.equal(inserted.length, 0);
+    assert.ok(!result.message.includes(sample));
+  }
+});
+
+test('publication checks reports and contributor metadata but retains ordinary citations', async () => {
+  for (const location of ['report', 'metadata']) {
+    const {publish, Fake} = setup(); const z = new AdmZip(zipOf()); const b = body();
+    if (location === 'report') z.addFile('artifacts/report.md', Buffer.from('Copied from /home/example/interview.txt'));
+    else b.contributor.affiliation = 'Credentials: ghp_synthetic0000000000000';
+    const result = await publish({userId, zip:z.toBuffer(), body:b});
+    assert.equal(result.error, 'private_content'); assert.equal(Fake.calls.length,0);
+  }
+  const {publish} = setup(); const z = new AdmZip(zipOf());
+  z.updateFile('program.json',Buffer.from(JSON.stringify({nodes:[],notes:'Author author@example.org; https://example.org/home/paper and https://example.org/Users/resource; doi:10.1234/example; Qualtrics: ${q://QID373/Choices}'})));
+  assert.equal((await publish({userId,zip:z.toBuffer(),body:body()})).ok,true);
+});
