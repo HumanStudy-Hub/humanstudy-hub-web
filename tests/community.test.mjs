@@ -65,7 +65,11 @@ test('github tokens are sealed and only open with the same secret', () => {
   assert.ok(!sealed.includes('gho_secret'));
   assert.equal(lib.decryptToken(sealed), 'gho_secret');
   assert.notEqual(lib.encryptToken('gho_secret'), sealed);
-  assert.equal(lib.decryptToken(sealed.slice(0, -2) + 'AA'), null);
+  const parts = sealed.split('.');
+  const tamperedBody = Buffer.from(parts[3], 'base64url');
+  tamperedBody[0] ^= 1;
+  parts[3] = tamperedBody.toString('base64url');
+  assert.equal(lib.decryptToken(parts.join('.')), null);
   const other = load('lib/community.ts', { './access': { ACCESS_SECRET: 'other' }, ...communityDeps });
   assert.equal(other.decryptToken(sealed), null);
 });
