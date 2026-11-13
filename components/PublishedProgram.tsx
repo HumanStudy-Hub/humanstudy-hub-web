@@ -30,7 +30,7 @@ function reuseLink(value?: JsonValue) {
 
 function reuseSources(extensions: HumanProgram["extensions"]) {
   const sources = new Map<string, {
-    url: string | null; title: string; attribution: string; license: string; licenseUrl: string | null; changes: string;
+    url: string | null; title: string; attribution: string; license: string; licenseUrl: string | null; changes: string[];
   }>();
   const value = (field?: JsonValue) => typeof field === "string" ? field.trim() : "";
   for (const section of [extensions?.publication, extensions?.communityExport]) {
@@ -46,7 +46,7 @@ function reuseSources(extensions: HumanProgram["extensions"]) {
       const licenseUrl = reuseLink(entry.licenseUrl);
       const changes = value(entry.changes);
       if (!url && !attribution && !license && !licenseUrl && !changes) continue;
-      const key = url ?? JSON.stringify([title, attribution, license, licenseUrl, changes]);
+      const key = JSON.stringify([url ?? title, attribution, license, licenseUrl]);
       const previous = sources.get(key);
       sources.set(key, {
         url,
@@ -54,7 +54,7 @@ function reuseSources(extensions: HumanProgram["extensions"]) {
         attribution: attribution || previous?.attribution || "",
         license: license || previous?.license || "",
         licenseUrl: licenseUrl || previous?.licenseUrl || null,
-        changes: changes || previous?.changes || "",
+        changes: [...new Set([...(previous?.changes ?? []), ...(changes ? [changes] : [])])],
       });
     }
   }
@@ -213,7 +213,7 @@ export default function PublishedProgram({ paper, program }: { paper: ResearchPa
       {credits.length > 0 && <section className="mt-7 border-t border-[var(--site-line)] pt-4">
         <h3>Sources and reuse</h3>
         <ul className="mt-2 space-y-3 text-sm leading-relaxed [overflow-wrap:anywhere]">
-          {credits.map((source, index) => <li key={source.url ?? index}>
+          {credits.map((source, index) => <li key={index}>
             {source.url ? <a className="font-medium text-[var(--site-accent)] underline" href={source.url} target="_blank" rel="noreferrer">
               {source.title || "Original source"} ↗
             </a> : source.title && <p className="font-medium">{source.title}</p>}
@@ -221,7 +221,7 @@ export default function PublishedProgram({ paper, program }: { paper: ResearchPa
             {source.licenseUrl ? <a className="text-[var(--site-accent)] underline" href={source.licenseUrl} target="_blank" rel="noreferrer">
               {source.license || "Reuse terms"} ↗
             </a> : source.license && <p>{source.license}</p>}
-            {source.changes && <p className="text-[var(--site-muted)]">{source.changes}</p>}
+            {source.changes.map(change => <p key={change} className="text-[var(--site-muted)]">{change}</p>)}
           </li>)}
         </ul>
       </section>}

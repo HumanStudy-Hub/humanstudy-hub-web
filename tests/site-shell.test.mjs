@@ -393,14 +393,17 @@ test('published Programs show original source credit and safe reuse links', () =
   const html = view({
     publication: { sources: [original] },
     communityExport: { sources: [
-      { evidenceIds: ['paper-quote'], ...original, title: undefined },
+      { evidenceIds: ['paper-quote'], ...original, title: undefined, changes: 'Published excerpts were reformatted.' },
+      { ...original, attribution: 'Independent archive authors', license: 'Archive terms', licenseUrl: 'https://example.test/archive-terms' },
       { evidenceIds: ['survey-quote'], url: 'http://example.test/survey', attribution: 'Survey authors',
         license: 'Reuse terms apply', licenseUrl: 'javascript:alert(1)', changes: 'Selected questions reformatted.' },
       { url: 'javascript:alert(1)', licenseUrl: 'data:text/html,example', attribution: 'Original source authors' },
     ] },
   });
   assert.ok(html.includes('<h3>Sources and reuse</h3>'));
-  assert.equal(html.split('href="https://doi.org/10.1038/srep07470"').length, 2);
+  assert.equal(html.split('href="https://doi.org/10.1038/srep07470"').length, 3);
+  assert.match(html, /Independent archive authors.*Archive terms/s);
+  assert.match(html, /Published excerpts were reformatted/);
   assert.match(html, /Valerio Capraro and Alessandra Marcelletti/);
   assert.ok(html.includes('href="https://creativecommons.org/licenses/by/4.0/"'));
   assert.match(html, /CC-BY-4.0/);
