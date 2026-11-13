@@ -3,11 +3,10 @@ import Link from "next/link";
 import CreditPagination from "./CreditPagination";
 import { CREDIT_PAGE_SIZE, listCredits } from "@/lib/community-credit";
 import CommunityCreditList from "./CommunityCreditList";
-import { libraryAvailability, paperSource, readProtocol, researchContributorNames, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
-import { getPublishedProgram, publishedAssetUrl } from "@/lib/published-program";
+import { libraryAvailability, paperSource, readProtocol, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
+import { getPublishedProgram } from "@/lib/published-program";
 import PublishedProgram from "./PublishedProgram";
 import RunExperiment from "./RunExperiment";
-import { paperWorkspace, paperWorkspacePath } from "@/lib/paper-workspace";
 import styles from "./folio-page.module.css";
 
 const label: Record<string, string> = { "original-paper": "Original paper", "original-data-link": "Original data", "transcription-code": "Transcription code", "metadata": "Source reference", "claim-metadata": "Claim and analysis metadata" };
@@ -82,46 +81,38 @@ function Protocol({ protocol, validated }: { protocol: ResearchProtocol; validat
 export default async function ResearchPaperDetail({ paper, contributionPage = 1 }: { paper: ResearchPaper; contributionPage?: number }) {
   // Catalog documents from different sources omit empty lists.
   const authors = paper.authors ?? [], resources = paper.resources ?? [];
-  const repository = paper.assetRoot && /^(studies\/study_\d+|community\/[A-Za-z0-9_.-]+\/revisions\/[a-f0-9]{64})$/.test(paper.assetRoot)
-    ? `https://github.com/HumanStudy-Hub/HumanStudy-Bench/tree/main/${paper.assetRoot}` : null;
   const protocol = readProtocol(paper);
   const availability = libraryAvailability(paper);
   const [program, credits] = await Promise.all([
     getPublishedProgram(paper),
     paper.currentRevision ? listCredits({ by: "paper", id: paper.id, revision: paper.currentRevision }, contributionPage).catch(() => []) : [],
   ]);
-  const contributors = researchContributorNames(paper, credits.map(credit => credit.display_name));
-  const online = paperWorkspace({ paper: paper.id, revision: paper.currentRevision, intent: "read" });
-  const programSource = program ? publishedAssetUrl(paper, program.source.filename) : null;
+  const studies = paper.studies ?? [];
+  const studyList = `${studies.length} ${studies.length === 1 ? "study" : "studies"}: ${studies.map(study => study.title).join("; ")}`;
+  const canOpenExperiment = availability.program || availability.publicProtocol;
+  const participantPreview = availability.program ? null : protocol?.preview;
   return <div className={`${styles.page} ${reading.page}`}>
     <div className={reading.intro}>
       <Link href="/studies" className={styles.back}>← Study Library</Link>
       <h1>{paper.title}</h1>
       <p className="mt-3 text-sm text-[var(--site-muted)]">{[authors.join(", "), paper.year, paperSource(paper)].filter(Boolean).join(" · ")}</p>
-      <p className="mt-6 whitespace-pre-wrap leading-7 text-[var(--foreground)]">{paper.description}</p>
+      {paper.description && (!program || paper.description !== studyList) && (
+        <p className="mt-6 whitespace-pre-wrap leading-7 text-[var(--foreground)]">{paper.description}</p>
+      )}
       {availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">
         {paper.developmentStage === "draft" ? "In development · protocol draft exists." : "In development · study materials are being prepared."}
       </p>}
       {availability.userSubmitted && <p className="mt-3 text-sm text-[var(--site-muted)]">User submitted</p>}
       {!program && !availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">{availability.publicProtocol ? "A published protocol is available for this study." : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
-      <div className="mt-6 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
-        {program && online && <Link href={paperWorkspacePath(online)}>Interact with paper</Link>}
-        {(availability.program || availability.publicProtocol)
-          ? <a href="#run-experiment">Run experiment</a>
-          : <Link href="/pipeline">Build a study</Link>}
-      </div>
-      {contributors.length > 0 && <p className="mt-2 text-sm text-[var(--site-muted)]">Contributed by {contributors.join(", ")}</p>}
-      {(programSource || repository || protocol?.preview) && <div className="mt-4 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
-        {programSource && <a href={programSource} target="_blank" rel="noreferrer">Original paper ↗</a>}
-        {repository && <a href={repository} target="_blank" rel="noopener noreferrer">Research files ↗</a>}
-        {protocol?.preview && <a href={protocol.preview} target="_blank" rel="noopener noreferrer">Participant view ↗</a>}
+      {(!canOpenExperiment || participantPreview) && <div className="mt-6 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
+        {!canOpenExperiment && <Link href="/pipeline">Build a study</Link>}
+        {participantPreview && <a href={participantPreview} target="_blank" rel="noopener noreferrer">Participant view ↗</a>}
       </div>}
-      {(availability.program || availability.publicProtocol) && <RunExperiment
+      {canOpenExperiment && <RunExperiment
         paper={paper}
-        program={program}
+        hasProgram={availability.program}
         protocol={availability.publicProtocol ? protocol : null}
         validated={availability.validated}
-        runnable={availability.runnable}
       />}
       {program ? <PublishedProgram paper={paper} program={program} /> : availability.program && (
         <p id="paper-program" className="mt-9 scroll-mt-24 text-sm text-[var(--site-muted)]">

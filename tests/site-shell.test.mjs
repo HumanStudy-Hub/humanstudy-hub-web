@@ -330,7 +330,10 @@ test('unavailable desktop releases retain the release-page fallback', async () =
   assert.doesNotMatch(html, /href="(?:null|undefined)"/);
 });
 
-const PaperDetail = load('components/ResearchPaperDetail.tsx').default;
+let publishedProgram = null;
+const PaperDetail = load('components/ResearchPaperDetail.tsx', {
+  '@/lib/published-program': { getPublishedProgram: async () => publishedProgram },
+}).default;
 
 test('the published Overview preserves study scope, evidence, results and recorded flow', () => {
   const PublishedProgram = load('components/PublishedProgram.tsx').default;
@@ -366,7 +369,7 @@ test('the published Overview preserves study scope, evidence, results and record
   assert.match(html, /href="#paper-overview-0"[^>]*>Research question and motivation/);
   assert.match(html, /href="#paper-experiment-1"[^>]*>Experiment B/);
   assert.match(html, /<details id="paper-experiment-1"/);
-  const [overview, experiments] = html.slice(html.indexOf('Human Study Program')).split('Experiments and analyses');
+  const [overview, experiments] = html.slice(html.indexOf('<h2>Overview</h2>')).split('<h2>Experiments and analyses</h2>');
   assert.match(overview, /Overview.*Research question and motivation.*What prompted the research.*Paper summary.*Hypotheses.*Applies to Experiment A, Experiment B.*A shared prediction.*Source evidence.*Original excerpt.*Additional node-level excerpt.*Main findings.*The primary finding/s);
   assert.equal((overview.match(/Original excerpt/g) || []).length, 1, "Shared field and note evidence is rendered once");
   assert.doesNotMatch(overview, /A scoped prediction/);
@@ -374,7 +377,7 @@ test('the published Overview preserves study scope, evidence, results and record
   assert.match(experiments, /Experiment A.*Experiment flow.*Present question.*Design and conditions.*A condition.*Reported results.*An experiment result.*Limitations.*Not reported in the available source.*Experiment B.*A scoped prediction.*Experiment C/s);
 });
 
-test('paper details preserve research links, capability caveats and safe resource URLs', async () => {
+test('paper details preserve capability caveats and safe source URLs', async () => {
   const html = renderToStaticMarkup(await PaperDetail({ paper: {
     ...paper,
     description: 'Original research description.',
@@ -390,18 +393,44 @@ test('paper details preserve research links, capability caveats and safe resourc
   assert.match(html, /Some materials are missing/);
   assert.match(html, /Availability not checked/);
   assert.match(html, /href="https:\/\/example\.test\/data"/);
-  assert.match(html, /href="https:\/\/github\.com\/HumanStudy-Hub\/HumanStudy-Bench\/tree\/main\/studies\/study_005"/);
+  assert.doesNotMatch(html, /Research files/);
   assert.doesNotMatch(html, /href="javascript:/);
   assert.doesNotMatch(html, /<main\b/);
 });
 
-test('catalog contributor names remain visible without a registered Hub profile', async () => {
+test('published paper details provide a single experiment action and use the contents for study names', async () => {
+  const revision = 'b'.repeat(64);
+  const studies = [{ id: 'first', title: 'First experiment' }, { id: 'second', title: 'Second experiment' }];
+  publishedProgram = { studies, nodes: [], steps: [], evidence: [], source: { filename: 'sources/open/paper.pdf' } };
+  try {
+    const publishedPaper = {
+      ...paper, currentRevision: revision, assetRoot: `community/${paper.id}/revisions/${revision}`,
+      assetFiles: [{ path: 'program.json' }, { path: 'sources/open/paper.pdf' }],
+      contributors: [{ name: 'Public Contributor' }], studies,
+      description: '2 studies: First experiment; Second experiment',
+    };
+    const html = renderToStaticMarkup(await PaperDetail({ paper: publishedPaper }));
+    assert.equal((html.match(/>Run experiment<\//g) || []).length, 1);
+    assert.match(html, /<a id="run-experiment"[^>]*href="\/try\?paper=paper_0123456789abcdef01234567&amp;revision=b{64}&amp;intent=run"[^>]*>Run experiment<\/a>/);
+    assert.match(html, /<summary[^>]*>Second experiment<\/summary>/);
+    assert.doesNotMatch(html, /2 studies:|Human Study Program|Interact with paper|Contributed by|Original paper ↗|Research files ↗|Open experiment workspace|Use the desktop app|Prepare and review an experiment/);
+
+    const withSummary = renderToStaticMarkup(await PaperDetail({ paper: {
+      ...publishedPaper, description: 'A summary of the original paper.',
+    } }));
+    assert.match(withSummary, /A summary of the original paper/);
+  } finally {
+    publishedProgram = null;
+  }
+});
+
+test('paper details without a published program keep the build action', async () => {
   const html = renderToStaticMarkup(await PaperDetail({ paper: {
     ...paper, contributors: [{ name: 'Public Contributor', github: 'example' }, { hub: { id: 'private-account-id' } }],
   } }));
   assert.match(html, /Original author · 2024/);
-  assert.match(html, /Build a study<\/a><\/div><p[^>]*>Contributed by Public Contributor/);
-  assert.doesNotMatch(html, /private-account-id|href="\/contributors\//);
+  assert.match(html, /Build a study<\/a>/);
+  assert.doesNotMatch(html, /Public Contributor|private-account-id|href="\/contributors\//);
 });
 
 test('contributor attribution distinguishes team, named collaborators and unknown provenance', () => {
@@ -432,37 +461,25 @@ test('user-submitted protocol details show conditions and suppress uploader fide
   assert.doesNotMatch(html, /High fidelity|signed by Uploader|Validated protocol/);
 });
 
-test('run setup opens the exact online paper, retains Desktop and shows blockers', () => {
+test('protocol-only run setup opens the exact online paper, retains Desktop and shows blockers', () => {
   const RunExperiment = load('components/RunExperiment.tsx').default;
   const html = renderToStaticMarkup(React.createElement(RunExperiment, {
-    paper: { ...paper, currentRevision: 'b'.repeat(64) }, program: { source: { filename: 'supplement.pdf' }, evidence: [], studies: [{ type: 'empirical' }, { type: 'empirical' }], issues: [
-      { id: 'issue', severity: 'blocking', title: 'Missing scenario wording', reason: 'The available paper only summarizes the prompt.' },
-    ] }, protocol: null, validated: false, runnable: false,
+    paper: { ...paper, currentRevision: 'b'.repeat(64) }, hasProgram: false,
+    protocol: { schemaRunnable: true, arms: [{ runnable: true, label: 'Main condition' }], runExcluded: [
+      { what: 'Missing scenario wording', reason: 'The available paper only summarizes the prompt.' },
+    ] }, validated: false,
   }));
   assert.match(html, /id="run-experiment"/);
-  assert.match(html, /Prepare and review an experiment/);
+  assert.match(html, /Open the study workspace to review its supported conditions/);
   assert.match(html, /href="\/try\?paper=paper_0123456789abcdef01234567&amp;revision=b{64}&amp;intent=run"/);
   assert.match(html, /Use the desktop app/);
   assert.match(html, /Fork to my projects/);
-  assert.match(html, /select the experiment you want to run/);
   assert.match(html, /Build the study first/);
   assert.match(html, /Check readiness/);
   assert.match(html, /Run simulation/);
   assert.match(html, /paper_0123456789abcdef01234567/);
-  assert.match(html, /supplement.pdf/);
   assert.match(html, /Missing scenario wording/);
   assert.doesNotMatch(html, />Validated protocol/);
-});
-
-test('run setup recognizes the canonical paper path when its display filename differs', () => {
-  const RunExperiment = load('components/RunExperiment.tsx').default;
-  const html = renderToStaticMarkup(React.createElement(RunExperiment, {
-    paper: { ...paper, assetFiles: [{ path: 'sources/open/paper.pdf' }] },
-    program: { source: { filename: 'Published paper.pdf' }, studies: [], issues: [],
-      evidence: [{ sourceId: 'paper', path: 'sources/open/paper.pdf' }] },
-    protocol: null, validated: false, runnable: false,
-  }));
-  assert.doesNotMatch(html, /does not identify an included copy|has no paper PDF/);
 });
 
 let documentContent;
