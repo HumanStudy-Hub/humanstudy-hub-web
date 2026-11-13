@@ -78,17 +78,26 @@ test('credit follows the accepted immutable revision even after a newer one beco
   const branch = 'community/' + id;
   const row = {id, paper_key:paperKey, pr_number:42, branch, status:'merged'};
   const review = {status:'accepted',proposalId:id,paperKey,revision,headCommit:head};
+  const officialRepo = 'HumanStudy-Hub/HumanStudy-Bench';
+  const pull = {head:{ref:branch,sha:head},base:{ref:'dev',repo:{full_name:officialRepo}}};
   const replies = new Map([
     ['/git/ref/heads/main',{object:{sha:commit}}],
     ['/research_index.json',{schemaVersion:1,papers:[{id:paperId,paperKey,title:'Fixture paper',currentRevision}]}],
     ['/reviews/' + id + '.json',review],
     ['/proposals/' + id + '/CONTRIBUTION.json',{proposalId:id,paperKey,contributor:{name:'Public Contributor'}}],
-    ['/pulls/42',{head:{ref:branch,sha:head}}],
+    ['/pulls/42',pull],
     ['/revisions/' + revision + '/manifest.json',{revision,files}],
   ]);
   const oldFetch = globalThis.fetch;
+  const oldEnv = process.env.VERCEL_ENV;
+  const oldRepo = process.env.COMMUNITY_REPO;
+  const requests = [];
   try {
+    process.env.VERCEL_ENV = 'production';
+    process.env.COMMUNITY_REPO = 'some-user/untrusted-bench';
     globalThis.fetch = async url => {
+      requests.push(String(url));
+      assert.ok(String(url).includes('/' + officialRepo + '/'));
       const entry = [...replies.entries()].find(([suffix]) => String(url).endsWith(suffix));
       if (!entry) return new Response(null, {status:404});
       if (String(url).includes('raw.githubusercontent.com')) assert.ok(String(url).includes('/' + commit + '/'));
@@ -97,6 +106,19 @@ test('credit follows the accepted immutable revision even after a newer one beco
     const verified = await lib.verifyCommunityCredit(row);
     assert.equal(verified.accepted_revision,revision);
     assert.equal(verified.public_name,'Public Contributor');
+    assert.ok(requests[0].endsWith('/git/ref/heads/main'));
+
+    replies.set('/git/ref/heads/dev',{object:{sha:commit}});
+    process.env.VERCEL_ENV = 'preview';
+    requests.length = 0;
+    assert.equal((await lib.verifyCommunityCredit({...row, ref:'main', repository:'some-user/fork'})).source_commit,commit);
+    assert.ok(requests[0].endsWith('/git/ref/heads/dev'));
+    assert.ok(requests.every(url => !url.endsWith('/git/ref/heads/main')));
+    replies.delete('/git/ref/heads/dev');
+    requests.length = 0;
+    assert.equal(await lib.verifyCommunityCredit(row),null,'preview cannot fall back to main');
+    assert.equal(requests.length,1);
+    replies.set('/git/ref/heads/dev',{object:{sha:commit}});
     const movedPaper = {id:paperId,paperKey:'doi:10.0000/new-key',aliases:['community:' + paperKey],title:'Fixture paper',currentRevision};
     replies.set('/research_index.json',{schemaVersion:1,papers:[movedPaper]});
     assert.equal((await lib.verifyCommunityCredit(row)).accepted_revision,revision);
@@ -106,12 +128,22 @@ test('credit follows the accepted immutable revision even after a newer one beco
     replies.set('/reviews/' + id + '.json',{...review,status:'unchanged'});
     assert.equal(await lib.verifyCommunityCredit(row),null);
     replies.set('/reviews/' + id + '.json',review);
-    replies.set('/pulls/42',{head:{ref:branch,sha:'f'.repeat(40)}});
+    replies.set('/pulls/42',{...pull,head:{ref:branch,sha:'f'.repeat(40)}});
     assert.equal(await lib.verifyCommunityCredit(row),null);
-    replies.set('/pulls/42',{head:{ref:branch,sha:head}});
+    replies.set('/pulls/42',{...pull,base:{ref:'dev',repo:{full_name:'some-user/fork'}}});
+    assert.equal(await lib.verifyCommunityCredit(row),null);
+    replies.set('/pulls/42',{...pull,base:{ref:'experiment',repo:{full_name:officialRepo}}});
+    assert.equal(await lib.verifyCommunityCredit(row),null);
+    replies.set('/pulls/42',pull);
     replies.set('/revisions/' + revision + '/manifest.json',{revision,files:[{...files[0],sha256:'f'.repeat(64)}]});
     assert.equal(await lib.verifyCommunityCredit(row),null);
-  } finally { globalThis.fetch = oldFetch; }
+  } finally {
+    globalThis.fetch = oldFetch;
+    if (oldEnv === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = oldEnv;
+    if (oldRepo === undefined) delete process.env.COMMUNITY_REPO;
+    else process.env.COMMUNITY_REPO = oldRepo;
+  }
 });
 
 test('an owned submission recheck uses the current GitHub pull state', async () => {
