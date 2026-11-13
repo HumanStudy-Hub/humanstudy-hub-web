@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { paperWorkspace, paperWorkspacePath } from "@/lib/paper-workspace";
 import ArrowRight from "@/components/ArrowRight";
 import { libraryFilters, libraryAvailability, researchContributorNames, searchLibrary, validateResearchQuery, type LibraryFilter } from "@/lib/research";
 import ValidatedFilter from "./ValidatedFilter";
@@ -92,6 +93,7 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
             {result.items.map(paper => {
               const status = libraryAvailability(paper);
               const href = `/studies/${paper.id}`;
+              const online = paperWorkspace({ paper: paper.id, revision: paper.currentRevision });
               const label = status.program ? "Interact with paper" : "View paper";
               const contributors = researchContributorNames(paper);
               return (
@@ -107,7 +109,7 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
                     {status.userSubmitted && <p className={styles.authors}>User submitted</p>}
                   </div>
                   <div className={styles.actions}>
-                    <Link className={styles.primary} href={status.program ? `${href}#paper-program` : href} aria-label={`${label}: ${paper.title}`}>
+                    <Link className={styles.primary} href={status.program && online ? paperWorkspacePath(online) : href} aria-label={`${label}: ${paper.title}`}>
                       {label} <ArrowRight />
                     </Link>
                     {(status.program || status.publicProtocol) && (

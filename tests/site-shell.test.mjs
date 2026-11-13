@@ -260,7 +260,7 @@ test('program cards open the interactive document and a separate run setup witho
   const html = await renderStudies({ status: 'program' }, {
     ...results, items: [{ ...paper, aliases: ['bench:study_005'], currentRevision: 'a'.repeat(64), assetFiles: [{ path: 'program.json' }], contributors: [{ github: 'assassin808' }] }],
   });
-  assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#paper-program"[^>]*>Interact with paper/);
+  assert.match(html, /href="\/try\?paper=paper_0123456789abcdef01234567&amp;revision=a{64}&amp;intent=read"[^>]*>Interact with paper/);
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567#run-experiment"[^>]*>Run experiment/);
   assert.match(html, /Run experiment<\/a><p[^>]*>Contributed by HumanStudy Hub Team<\/p>/);
   assert.doesNotMatch(html, /HumanStudy-Bench|>Validated protocol<|>Runnable draft</);
