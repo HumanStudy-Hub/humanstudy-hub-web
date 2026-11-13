@@ -32,6 +32,21 @@ const str = (v: unknown, max: number) => (typeof v === "string" && v.trim() && v
 
 type Files = { path: string; content: Buffer }[];
 
+// Deterministic signatures catch accidental credentials/local paths, not all personal data.
+// Keep aligned with Desktop's public export guard. Never include matched text in errors.
+export function publicTextProblem(value: unknown): string | null {
+  if (typeof value === "string") {
+    if (/\b(?:sk-[A-Za-z0-9_-]{12,}|hsk_[A-Za-z0-9_-]{8,}|(?:ghp|gho|github_pat|xox[abp])_[A-Za-z0-9_]{12,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,})\b|\bAuthorization\s*:\s*Bearer\s+[^\s"'<>]{8,}/i.test(value)) return "a credential-like value";
+    const withoutUrls = value.replace(/https?:\/\/[^\s<>"']+/gi, "");
+    if (/(?<![\w:/])(?:file:\/\/[^\s]+|[A-Za-z]:[\\/][^\s]+|\\\\[^\\\s]+\\[^\s]+|(?:~?\/Users\/|~?\/home\/|\/private\/|\/tmp\/|\/var\/folders\/|\/vercel\/sandbox\/)[^\s]+)/i.test(withoutUrls)) return "an absolute local path";
+    return null;
+  }
+  const values = Array.isArray(value) ? value : value && typeof value === "object"
+    ? Object.entries(value).flat() : [];
+  for (const item of values) { const problem = publicTextProblem(item); if (problem) return problem; }
+  return null;
+}
+
 function describe(error: unknown): { status?: number; text: string } {
   const e = error as { status?: number; message?: string };
   return { status: e?.status, text: e?.message || String(error) };
@@ -112,6 +127,22 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
   }
   const pair = paired ? checkPairedContribution(read.files, clientMeta.paper, body.paperMeta) : null;
   if (pair && "error" in pair) return bad(400, "invalid_zip", pair.error);
+
+  // Reject before looking up publishing credentials or writing any public GitHub object.
+  // JSON is decoded so escaped credentials and Windows paths cannot evade the check.
+  const publicMetadata = { contributor: body.contributor, paperMeta: body.paperMeta, clientMeta };
+  let privacyProblem = publicTextProblem(publicMetadata);
+  for (const file of read.files) {
+    if (privacyProblem) break;
+    if (!/\.(?:json|jsonl|md|txt|html?|csv|tsv|py|[cm]?js|tsx?|ya?ml|toml|xml|svg|qsf)$/i.test(file.name)) continue;
+    const text = file.data.toString("utf8");
+    let content: unknown = text;
+    if (/\.(?:json|qsf)$/i.test(file.name)) {
+      try { content = JSON.parse(text); } catch { /* Structural validation owns malformed JSON. */ }
+    }
+    privacyProblem = publicTextProblem(content);
+  }
+  if (privacyProblem) return bad(400, "private_content", "The contribution contains " + privacyProblem + ". Remove it from the public files and export again.");
 
   // 4. Who is the author: the user's own GitHub account, or the Hub bot.
   let userToken: string | null = null, login = "";
