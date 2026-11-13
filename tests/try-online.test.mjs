@@ -269,6 +269,7 @@ test('managed dev firewall credential never goes into guest environment', async 
   assert.deepEqual(calls.find(([name]) => name === 'create'), ['create', networkPolicy]);
   const startEnv = calls.find(([name]) => name === 'start')[1];
   assert.equal(startEnv.HUMANSTUDY_SERVER, hubOrigin);
+  assert.equal(startEnv.HUMANSTUDY_COMMUNITY_BRANCH, 'dev');
   assert.equal(startEnv.NODE_USE_SYSTEM_CA, '1');
   assert.ok(!JSON.stringify(startEnv).includes('fixture-server-secret'));
   assert.ok(calls.some(([name]) => name === 'probe'));

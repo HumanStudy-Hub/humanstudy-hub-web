@@ -161,7 +161,7 @@ const fetchCompressedIndex = unstable_cache(async (url: string): Promise<string>
 }, ["research-index-gzip-v1"], { revalidate: 60 });
 
 export async function getResearchIndex(): Promise<ResearchIndex> {
-  const url = process.env.RESEARCH_INDEX_URL || "https://raw.githubusercontent.com/HumanStudy-Hub/HumanStudy-Bench/main/co_website/data/research_index.json";
+  const url = process.env.RESEARCH_INDEX_URL || `https://raw.githubusercontent.com/HumanStudy-Hub/HumanStudy-Bench/${process.env.VERCEL_ENV === "preview" ? "dev" : "main"}/co_website/data/research_index.json`;
   try {
     const cached = await fetchCompressedIndex(url);
     const raw = await decompressIndex(Buffer.from(cached, "base64"));
