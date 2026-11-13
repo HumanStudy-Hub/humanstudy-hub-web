@@ -6,7 +6,7 @@ export const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{1
 export const REVISION = /^[a-f0-9]{64}$/;
 const COMMIT = /^[a-f0-9]{40}$/;
 const BENCH = "HumanStudy-Hub/HumanStudy-Bench";
-const api = `https://api.github.com/repos/${BENCH}`;
+
 
 export type CommunityCredit = {
   id: string; paper_id: string; paper_title: string; revision: string;
@@ -108,30 +108,47 @@ export async function readCommunitySubmissionStatus(row: ContributionRow): Promi
 export async function verifyCommunityCredit(row: Pick<ContributionRow, "id" | "paper_key" | "pr_number" | "branch">) {
   if (!UUID.test(row.id) || row.branch !== `community/${row.id}` ||
       !row.pr_number || !Number.isSafeInteger(row.pr_number) || row.pr_number < 1) return null;
-  const branch = process.env.VERCEL_ENV === "preview" ? "dev" : "main";
+  const preview = process.env.VERCEL_ENV === "preview";
+  const branch = preview ? "dev" : "main";
+  // Explicit preview-only test boundary. Production always trusts official Bench main.
+  const repo = preview && process.env.COMMUNITY_CREDIT_PREVIEW_REPO || BENCH;
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || (repo !== BENCH && repo !== process.env.COMMUNITY_REPO)) {
+    throw new Error("Preview credit repository must match contribution intake.");
+  }
+  const api = `https://api.github.com/repos/${repo}`;
   const ref = await publicJson<{ object?: { sha?: string } }>(`${api}/git/ref/heads/${branch}`);
   const commit = ref?.object?.sha;
   if (!commit || !COMMIT.test(commit)) return null;
-  const root = `https://raw.githubusercontent.com/${BENCH}/${commit}`;
-  const index = await publicJson<ResearchIndex>(`${root}/co_website/data/research_index.json`);
+  const root = `https://raw.githubusercontent.com/${repo}/${commit}`;
+  async function evidence<T>(path: string): Promise<T | null> {
+    if (repo === BENCH) return publicJson<T>(`${root}/${path}`);
+    const file = await publicJson<{ encoding?: string; content?: string; type?: string }>(
+      `${api}/contents/${path}?ref=${commit}`);
+    if (!file) return null;
+    if (file.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string") {
+      throw new Error("Preview credit evidence is not a GitHub file.");
+    }
+    return JSON.parse(Buffer.from(file.content, "base64").toString("utf8")) as T;
+  }
+  const index = await evidence<ResearchIndex>("co_website/data/research_index.json");
   if (index?.schemaVersion !== 1 || !Array.isArray(index.papers)) return null;
   const matches = index.papers.filter(paper => paper.paperKey === row.paper_key || (paper.aliases?.includes(row.paper_key) || paper.aliases?.includes(`community:${row.paper_key}`)));
   const paper = matches.length === 1 ? matches[0] : undefined;
   if (!paper || !/^paper_[a-f0-9]{24}$/.test(paper.id) || typeof paper.title !== "string") return null;
-  const directory = `${root}/community/${paper.id}`;
-  const review = await publicJson<Review>(`${directory}/reviews/${row.id}.json`);
+  const directory = `community/${paper.id}`;
+  const review = await evidence<Review>(`${directory}/reviews/${row.id}.json`);
   if (review?.status !== "accepted" || review.proposalId !== row.id || review.paperKey !== row.paper_key ||
       typeof review.revision !== "string" || !REVISION.test(review.revision) || !COMMIT.test(review.headCommit ?? "")) return null;
   const [proposal, pull, manifest] = await Promise.all([
-    publicJson<Proposal>(`${directory}/proposals/${row.id}/CONTRIBUTION.json`),
+    evidence<Proposal>(`${directory}/proposals/${row.id}/CONTRIBUTION.json`),
     publicJson<{ head?: { ref?: string; sha?: string }; base?: { ref?: string; repo?: { full_name?: string } } }>(
       `${api}/pulls/${row.pr_number}`),
-    publicJson<{ revision?: string; files?: { path: string; sha256: string }[] }>(
+    evidence<{ revision?: string; files?: { path: string; sha256: string }[] }>(
       `${directory}/revisions/${review.revision}/manifest.json`),
   ]);
   if (proposal?.proposalId !== row.id || proposal.paperKey !== row.paper_key ||
       pull?.head?.ref !== row.branch || pull.head.sha !== review.headCommit ||
-      pull.base?.repo?.full_name?.toLowerCase() !== BENCH.toLowerCase() ||
+      pull.base?.repo?.full_name?.toLowerCase() !== repo.toLowerCase() ||
       (pull.base?.ref !== "main" && pull.base?.ref !== "dev") ||
       manifest?.revision !== review.revision || !Array.isArray(manifest.files)) return null;
   const paths = new Set<string>();

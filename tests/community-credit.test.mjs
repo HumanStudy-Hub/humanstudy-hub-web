@@ -220,3 +220,33 @@ test('cookie-authenticated reads work without Origin but writes retain origin pr
   assert.equal((await auth.requireHubUser(new Request('https://hub.test/api/community/mine',{method:'POST',headers:{Origin:'https://hub.test'}}))).id,owner);
   assert.equal(originChecks,3);
 });
+
+test('private preview credit reads commit-pinned authenticated files; production ignores override', async () => {
+  const lib=load('lib/community-credit.ts',{'./community-store':{}});
+  const keys=['VERCEL_ENV','COMMUNITY_REPO','COMMUNITY_CREDIT_PREVIEW_REPO','GITHUB_TOKEN'];
+  const saved=Object.fromEntries(keys.map(k=>[k,process.env[k]])); const oldFetch=globalThis.fetch;
+  const repo='HumanStudy-Hub/private-acceptance', branch='community/'+id;
+  const row={id,paper_key:paperKey,pr_number:42,branch}; const requests=[];
+  const documents=new Map([
+    ['co_website/data/research_index.json',{schemaVersion:1,papers:[{id:paperId,paperKey,title:'Fixture'}]}],
+    [`community/${paperId}/reviews/${id}.json`,{status:'accepted',proposalId:id,paperKey,revision,headCommit:head}],
+    [`community/${paperId}/proposals/${id}/CONTRIBUTION.json`,{proposalId:id,paperKey,contributor:{name:'Contributor'}}],
+    [`community/${paperId}/revisions/${revision}/manifest.json`,{revision,files}],
+  ]);
+  try {
+    Object.assign(process.env,{VERCEL_ENV:'preview',COMMUNITY_REPO:repo,COMMUNITY_CREDIT_PREVIEW_REPO:repo,GITHUB_TOKEN:'test-only'});
+    globalThis.fetch=async(url,options)=>{
+      const u=new URL(url);requests.push(u.href);
+      assert.equal(u.origin,'https://api.github.com');assert.equal(options.headers.Authorization,'Bearer test-only');
+      if(u.pathname.endsWith('/git/ref/heads/dev'))return Response.json({object:{sha:commit}});
+      if(u.pathname.endsWith('/pulls/42'))return Response.json({head:{ref:branch,sha:head},base:{ref:'dev',repo:{full_name:repo}}});
+      assert.equal(u.searchParams.get('ref'),commit);
+      const value=documents.get(u.pathname.split('/contents/')[1]);assert.ok(value);
+      return Response.json({type:'file',encoding:'base64',content:Buffer.from(JSON.stringify(value)).toString('base64')});
+    };
+    assert.equal((await lib.verifyCommunityCredit(row)).accepted_revision,revision);
+    process.env.COMMUNITY_REPO='other/repo';await assert.rejects(lib.verifyCommunityCredit(row),/must match/);
+    process.env.VERCEL_ENV='production';globalThis.fetch=async url=>{assert.equal(String(url),'https://api.github.com/repos/HumanStudy-Hub/HumanStudy-Bench/git/ref/heads/main');return new Response(null,{status:404});};
+    assert.equal(await lib.verifyCommunityCredit(row),null);
+  }finally{globalThis.fetch=oldFetch;for(const k of keys){if(saved[k]===undefined)delete process.env[k];else process.env[k]=saved[k];}}
+});
