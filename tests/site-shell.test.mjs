@@ -315,7 +315,8 @@ test('the redesigned download page retains actual platform assets and release no
   }
   assert.match(html, /Version 1\.2\.3 \(beta\)/);
   assert.match(html, /<span class="whitespace-nowrap">Windows \(preview\)<\/span>/);
-  assert.doesNotMatch(html, /From paper to experiment|Turn a paper into a study you can inspect/);
+  assert.doesNotMatch(html, /From paper to experiment|Turn a paper into a study you can inspect|>Requirements<\/h2>/);
+  assert.match(html, />Getting access<\/h2>/);
   assert.ok(html.includes(`href="${release.pageUrl}"`));
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
   assert.doesNotMatch(html, /<main\b/);
@@ -424,12 +425,13 @@ test('published paper details provide a single experiment action and use the con
   }
 });
 
-test('paper details without a published program keep the build action', async () => {
+test('paper details without a published program invite the first reconstruction', async () => {
   const html = renderToStaticMarkup(await PaperDetail({ paper: {
     ...paper, contributors: [{ name: 'Public Contributor', github: 'example' }, { hub: { id: 'private-account-id' } }],
   } }));
   assert.match(html, /Original author · 2024/);
-  assert.match(html, /Build a study<\/a>/);
+  assert.match(html, /href="\/contribute">Be the first to contribute a reconstruction<\/a>/);
+  assert.doesNotMatch(html, /href="\/pipeline"/);
   assert.doesNotMatch(html, /Public Contributor|private-account-id|href="\/contributors\//);
 });
 

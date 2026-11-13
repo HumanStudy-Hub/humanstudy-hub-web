@@ -105,7 +105,7 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
       {availability.userSubmitted && <p className="mt-3 text-sm text-[var(--site-muted)]">User submitted</p>}
       {!program && !availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">{availability.publicProtocol ? "A published protocol is available for this study." : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
       {(!canOpenExperiment || participantPreview) && <div className="mt-6 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
-        {!canOpenExperiment && <Link href="/pipeline">Build a study</Link>}
+        {!canOpenExperiment && <Link href="/contribute">Be the first to contribute a reconstruction</Link>}
         {participantPreview && <a href={participantPreview} target="_blank" rel="noopener noreferrer">Participant view ↗</a>}
       </div>}
       {canOpenExperiment && <RunExperiment

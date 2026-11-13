@@ -310,6 +310,7 @@ try {
   await paperLinks.first().click();
   await page.waitForURL(/\/studies\/paper_[a-f0-9]{24}$/);
   await page.getByText(/In development ·/).waitFor();
+  assert.equal(await page.getByRole('link', { name: 'Be the first to contribute a reconstruction', exact: true }).getAttribute('href'), '/contribute');
   report.checks.push('Legacy development view and detail navigation');
 
   await visit('/studies?status=all&offset=1');
