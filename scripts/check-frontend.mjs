@@ -154,6 +154,11 @@ try {
     const body = request.postDataJSON();
     authRequests.push(body);
     report.mockedAuthActions.push(body.action);
+    if (body.action === 'save-profile') {
+      assert.equal(signedIn, true);
+      previewUser.profile = { name: body.name, affiliation: body.affiliation };
+      return route.fulfill({ json: { user: previewUser } });
+    }
     if (body.action === 'forgot-password') return route.fulfill({ json: { sent: true } });
     if (body.action === 'confirm') return route.fulfill({ json: { user: previewUser } });
     if (body.action === 'signup') {
@@ -365,13 +370,32 @@ try {
   await email.fill(previewUser.email);
   await password.fill('preview-only-password');
   await account.getByRole('form', { name: 'Sign in', exact: true }).getByRole('button', { name: 'Sign in', exact: true }).click();
-  await account.getByRole('heading', { name: 'Your account', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Your account', exact: true }).waitFor();
+  await account.getByRole('heading', { name: 'Contributor profile', exact: true }).waitFor();
   assert.equal(await account.getByRole('link', { name: 'Your projects', exact: true }).getAttribute('href'), '/build/projects');
+  assert.ok(await account.getByText(previewUser.email, { exact: false }).isVisible());
+  const profile = account.getByRole('form', { name: 'Contributor profile', exact: true });
+  await profile.getByLabel('Name', { exact: true }).fill('Preview Researcher');
+  await profile.getByLabel('Affiliation (optional)', { exact: true }).fill('Preview Lab');
+  await profile.getByRole('button', { name: 'Save profile', exact: true }).click();
+  await account.getByText('Profile saved.', { exact: true }).waitFor();
+  assert.deepEqual(authRequests.at(-1), { action: 'save-profile', name: 'Preview Researcher', affiliation: 'Preview Lab' });
+  await page.reload();
+  await profile.getByLabel('Name', { exact: true }).waitFor();
+  assert.equal(await profile.getByLabel('Name', { exact: true }).inputValue(), 'Preview Researcher');
+  assert.equal(await profile.getByLabel('Affiliation (optional)', { exact: true }).inputValue(), 'Preview Lab');
+  const contributionTarget = '/contribute?paper=' + interactivePaper.id;
+  await visit(contributionTarget);
+  const contributionName = page.getByLabel('Your name', { exact: true });
+  await contributionName.waitFor();
+  assert.equal(await contributionName.inputValue(), 'Preview Researcher');
+  assert.equal(await page.getByLabel('Affiliation', { exact: true }).inputValue(), 'Preview Lab');
+  assert.ok(await page.getByText('Selected paper', { exact: false }).isVisible());
   await visit('/account?action=logout');
   await account.getByRole('heading', { name: 'Sign out?', exact: true }).waitFor();
   await account.getByRole('button', { name: 'Sign out', exact: true }).click();
   await page.waitForURL(origin + '/');
-  report.checks.push('Mocked account validation, sign-in failure and success, returnTo, signup confirmation, resend cooldown and sign-out');
+  report.checks.push('Mocked account validation, sign-in failure and success, returnTo, signup confirmation, resend cooldown, profile persistence, contribution prefill and sign-out');
 
   await checkRemainingFrontend({ page, origin, root, output, report, accessSecret, setSignedIn: value => { signedIn = value; }, paperPath: indexedLinks[0] });
 

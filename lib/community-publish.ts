@@ -118,7 +118,7 @@ export async function publishContribution(input: { userId: string; zip: Buffer; 
       (paired && (clientMeta.schemaVersion !== 2 || !Array.isArray(clientMeta.files)))) {
     return bad(400, "invalid_zip", "Export a paired protocol ZIP with its exact file list.");
   }
-  if (paired && body.publicReviewed !== true) {
+  if (body.publicReviewed !== true) {
     return bad(400, "public_review_required", "Review the public files and confirm before submitting.");
   }
   if (paired && ((body.baseRevision != null && body.baseRevision !== clientMeta.baseRevision) ||
