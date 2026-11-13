@@ -12,13 +12,6 @@ export default function RunExperiment({
   validated: boolean;
 }) {
   const online = paperWorkspace({ paper: paper.id, revision: paper.currentRevision, intent: "run" });
-  if (hasProgram && online) return (
-    <Link id="run-experiment" href={paperWorkspacePath(online)}
-      className="mt-6 inline-flex min-h-11 scroll-mt-24 items-center rounded-md bg-[var(--site-accent)] px-4 text-sm font-semibold text-white">
-      Run experiment
-    </Link>
-  );
-
   const canRunProtocol = protocol?.schemaRunnable && protocol.arms.some(arm => arm.runnable);
   const scope = canRunProtocol ? protocol.arms.filter(arm => arm.runnable).map(arm => arm.label) : [];
   const run = (paper.studyCapabilities as {
@@ -26,6 +19,19 @@ export default function RunExperiment({
   } | undefined)?.run;
   const runGap = !protocol && (run?.status === "no" || run?.status === "partial") ? run.reason : null;
   const excluded = (protocol?.runExcluded ?? run?.excluded ?? []).filter(item => item.what || item.reason);
+
+  if (hasProgram && online) return <div className="mt-6">
+    <Link id="run-experiment" href={paperWorkspacePath(online)}
+      className="inline-flex min-h-11 scroll-mt-24 items-center rounded-md bg-[var(--site-accent)] px-4 text-sm font-semibold text-white">
+      Run experiment
+    </Link>
+    {validated && <p className="mt-2 text-sm text-[var(--site-accent)]">Validated protocol{scope.length > 0 ? ` · ${scope.join(", ")}` : ""}</p>}
+    {runGap && <p className="mt-2 text-sm text-[var(--site-muted)]">{runGap}</p>}
+    {excluded.length > 0 && <details className="mt-2 text-sm">
+      <summary className="cursor-pointer">Missing materials and decisions to review</summary>
+      <ul className="mt-2 list-disc pl-5">{excluded.map(({ what, reason }, i) => <li key={i}>{[what, reason].filter(Boolean).join(" — ")}</li>)}</ul>
+    </details>}
+  </div>;
 
   return <section id="run-experiment" className="mt-9 scroll-mt-24 border-t border-[var(--site-line)] pt-6">
     <h2 className="text-xl font-semibold font-serif">Run experiment</h2>

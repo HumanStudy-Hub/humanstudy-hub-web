@@ -378,7 +378,47 @@ test('the published Overview preserves study scope, evidence, results and record
   assert.match(experiments, /Experiment A.*Experiment flow.*Present question.*Design and conditions.*A condition.*Reported results.*An experiment result.*Limitations.*Not reported in the available source.*Experiment B.*A scoped prediction.*Experiment C/s);
 });
 
-test('paper details preserve capability caveats and safe source URLs', async () => {
+test('published Programs show original source credit and safe reuse links', () => {
+  const PublishedProgram = load('components/PublishedProgram.tsx').default;
+  const original = {
+    sourceId: 'paper',
+    title: 'Do good actions inspire good actions in others?',
+    url: 'https://doi.org/10.1038/srep07470',
+    attribution: 'Valerio Capraro and Alessandra Marcelletti; Do good actions inspire good actions in others?; DOI 10.1038/srep07470',
+    license: 'CC-BY-4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    changes: 'HumanStudy Hub Team summarized the paper into a reading Program. Original source unchanged; summaries and study organization are new.',
+  };
+  const view = extensions => renderToStaticMarkup(React.createElement(PublishedProgram, {
+    paper, program: { studies: [], nodes: [], evidence: [], steps: [], extensions },
+  }));
+  assert.doesNotMatch(view(undefined), /Sources and reuse/);
+  assert.doesNotMatch(view({ communityExport: { sources: [null, {}, 'bad'] } }), /Sources and reuse/);
+  const html = view({
+    publication: { sources: [original] },
+    communityExport: { sources: [
+      { evidenceIds: ['paper-quote'], ...original, title: undefined, changes: 'Published excerpts were reformatted.' },
+      { ...original, attribution: 'Independent archive authors', license: 'Archive terms', licenseUrl: 'https://example.test/archive-terms' },
+      { evidenceIds: ['survey-quote'], url: 'http://example.test/survey', attribution: 'Survey authors',
+        license: 'Reuse terms apply', licenseUrl: 'javascript:alert(1)', changes: 'Selected questions reformatted.' },
+      { url: 'javascript:alert(1)', licenseUrl: 'data:text/html,example', attribution: 'Original source authors' },
+    ] },
+  });
+  assert.ok(html.includes('<h3>Sources and reuse</h3>'));
+  assert.equal(html.split('href="https://doi.org/10.1038/srep07470"').length, 3);
+  assert.match(html, /Independent archive authors.*Archive terms/s);
+  assert.match(html, /Published excerpts were reformatted/);
+  assert.match(html, /Valerio Capraro and Alessandra Marcelletti/);
+  assert.ok(html.includes('href="https://creativecommons.org/licenses/by/4.0/"'));
+  assert.match(html, /CC-BY-4.0/);
+  assert.match(html, /Original source unchanged; summaries and study organization are new/);
+  assert.ok(html.includes('href="http://example.test/survey"'));
+  assert.match(html, /Survey authors.*Reuse terms apply.*Selected questions reformatted/s);
+  assert.match(html, /Original source authors/);
+  assert.doesNotMatch(html, /href="(?:javascript|data):/i);
+});
+
+test('paper details preserve research links, capability caveats and safe resource URLs', async () => {
   const html = renderToStaticMarkup(await PaperDetail({ paper: {
     ...paper,
     description: 'Original research description.',
@@ -414,7 +454,8 @@ test('published paper details provide a single experiment action and use the con
     assert.equal((html.match(/>Run experiment<\//g) || []).length, 1);
     assert.match(html, /<a id="run-experiment"[^>]*href="\/try\?paper=paper_0123456789abcdef01234567&amp;revision=b{64}&amp;intent=run"[^>]*>Run experiment<\/a>/);
     assert.match(html, /<summary[^>]*>Second experiment<\/summary>/);
-    assert.doesNotMatch(html, /2 studies:|Human Study Program|Interact with paper|Contributed by|Original paper ↗|Research files ↗|Open experiment workspace|Use the desktop app|Prepare and review an experiment/);
+    assert.match(html, /Contributed by Public Contributor/);
+    assert.doesNotMatch(html, /2 studies:|Human Study Program|Interact with paper|Original paper ↗|Research files ↗|Open experiment workspace|Use the desktop app|Prepare and review an experiment/);
 
     const withSummary = renderToStaticMarkup(await PaperDetail({ paper: {
       ...publishedPaper, description: 'A summary of the original paper.',
@@ -430,9 +471,9 @@ test('paper details without a published program invite the first reconstruction'
     ...paper, contributors: [{ name: 'Public Contributor', github: 'example' }, { hub: { id: 'private-account-id' } }],
   } }));
   assert.match(html, /Original author · 2024/);
-  assert.match(html, /href="\/contribute">Be the first to contribute a reconstruction<\/a>/);
+  assert.match(html, /href="\/contribute\?paper=paper_0123456789abcdef01234567">Be the first to contribute a reconstruction<\/a>/);
   assert.doesNotMatch(html, /href="\/pipeline"/);
-  assert.doesNotMatch(html, /Public Contributor|private-account-id|href="\/contributors\//);
+  assert.doesNotMatch(html, /private-account-id|href="\/contributors\//);
 });
 
 test('contributor attribution distinguishes team, named collaborators and unknown provenance', () => {
@@ -558,3 +599,14 @@ test('the collaboration page renders its map and contact details before JavaScri
     }
   }
 });
+
+ test('single experiment entry preserves validated scope and missing-material caveats', () => {
+  const RunExperiment = load('components/RunExperiment.tsx').default;
+  const html = renderToStaticMarkup(React.createElement(RunExperiment, {
+    paper: {...paper, currentRevision: 'b'.repeat(64)}, hasProgram: true, validated: true,
+    protocol: {schemaRunnable: true, arms: [{runnable: true, label: 'Supported arm'}], runExcluded: [{what: 'Follow-up', reason: 'Source not available'}]},
+  }));
+  assert.match(html, /Validated protocol.*Supported arm/);
+  assert.match(html, /Follow-up — Source not available/);
+  assert.equal((html.match(/>Run experiment</g) || []).length, 1);
+ });

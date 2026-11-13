@@ -3,7 +3,7 @@ import Link from "next/link";
 import CreditPagination from "./CreditPagination";
 import { CREDIT_PAGE_SIZE, listCredits } from "@/lib/community-credit";
 import CommunityCreditList from "./CommunityCreditList";
-import { libraryAvailability, paperSource, readProtocol, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
+import { libraryAvailability, paperSource, readProtocol, researchContributorNames, type ResearchPaper, type ResearchProtocol } from "@/lib/research";
 import { getPublishedProgram } from "@/lib/published-program";
 import PublishedProgram from "./PublishedProgram";
 import RunExperiment from "./RunExperiment";
@@ -87,6 +87,7 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
     getPublishedProgram(paper),
     paper.currentRevision ? listCredits({ by: "paper", id: paper.id, revision: paper.currentRevision }, contributionPage).catch(() => []) : [],
   ]);
+  const contributors = researchContributorNames(paper, credits.map(credit => credit.display_name));
   const studies = paper.studies ?? [];
   const studyList = `${studies.length} ${studies.length === 1 ? "study" : "studies"}: ${studies.map(study => study.title).join("; ")}`;
   const canOpenExperiment = availability.program || availability.publicProtocol;
@@ -105,7 +106,7 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
       {availability.userSubmitted && <p className="mt-3 text-sm text-[var(--site-muted)]">User submitted</p>}
       {!program && !availability.inDevelopment && <p className="mt-6 text-sm text-[var(--site-muted)]">{availability.publicProtocol ? "A published protocol is available for this study." : paper.currentRevision ? "This paper has a published research package." : paper.legacyStudyId ? "Study materials are available. Source coverage and execution need to be checked for your research." : "This paper is indexed in the Study Library."}</p>}
       {(!canOpenExperiment || participantPreview) && <div className="mt-6 flex flex-wrap gap-4 text-sm text-[var(--site-accent)]">
-        {!canOpenExperiment && <Link href="/contribute">Be the first to contribute a reconstruction</Link>}
+        {!canOpenExperiment && <Link href={`/contribute?paper=${encodeURIComponent(paper.id)}`}>Be the first to contribute a reconstruction</Link>}
         {participantPreview && <a href={participantPreview} target="_blank" rel="noopener noreferrer">Participant view ↗</a>}
       </div>}
       {canOpenExperiment && <RunExperiment
@@ -114,6 +115,7 @@ export default async function ResearchPaperDetail({ paper, contributionPage = 1 
         protocol={availability.publicProtocol ? protocol : null}
         validated={availability.validated}
       />}
+      {contributors.length > 0 && <p className="mt-2 text-sm text-[var(--site-muted)]">Contributed by {contributors.join(", ")}</p>}
       {program ? <PublishedProgram paper={paper} program={program} /> : availability.program && (
         <p id="paper-program" className="mt-9 scroll-mt-24 text-sm text-[var(--site-muted)]">
           The published study document could not be loaded. Try refreshing the page.
