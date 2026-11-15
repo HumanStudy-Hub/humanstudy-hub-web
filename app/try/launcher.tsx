@@ -16,6 +16,9 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
   const [phase, setPhase] = useState<Phase>("idle");
   const [url, setUrl] = useState("");
   const [message, setMessage] = useState("");
+  const updateAttempted = useRef(false);
+  const [updating, setUpdating] = useState(false);
+  const resumeAfterSave = useRef(false);
   const stopRequested = useRef(false);
   const activeAttempt = useRef<string | null>(null);
   const actionRevision = useRef(0);
@@ -37,6 +40,11 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
       if (data.status !== "running") setUrl("");
       if (data.status === "stopped" || data.status === "new") {
         setPhase(current => current === "cancelling" || current === "saving" ? "idle" : current);
+        if (resumeAfterSave.current) {
+          resumeAfterSave.current = false;
+          void start(true);
+          return data.status;
+        }
         if (stopRequested.current) setMessage("Workspace stopped. Resume it when you are ready.");
       }
       return data.status;
@@ -62,6 +70,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
       const status = await checkStatus(controller.signal);
       if (controller.signal.aborted || status === "stopped" || status === "new" || status === "signed-out") return;
       if (++checks >= 18) {
+        resumeAfterSave.current = false;
         setPhase("idle");
         setMessage("Stopping is taking longer than usual. Check status again before reopening; your workspace may still be saving.");
         return;
@@ -72,7 +81,8 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
     return () => { controller.abort(); if (timer) clearTimeout(timer); };
   }, [phase]);
 
-  async function start() {
+  async function start(recovering = false) {
+    if (!recovering) { updateAttempted.current = false; setUpdating(false); }
     actionRevision.current++;
     setPhase("starting");
     setMessage("");
@@ -96,7 +106,16 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
         setPhase("idle");
         return;
       }
-      if (!response.ok || !data.url) throw Error(data.message || "Could not open the workspace. Please try again.");
+      if (data.error === "build_mismatch" && !stopRequested.current && !updateAttempted.current) {
+        updateAttempted.current = true;
+        activeAttempt.current = null;
+        setUpdating(true);
+        resumeAfterSave.current = true;
+        await stop();
+        return;
+      }
+      if (!response.ok || !data.url) throw Error(data.error === "build_mismatch" ? "The update could not finish. Please try opening your workspace again." : data.message || "Could not open the workspace. Please try again.");
+      setUpdating(false);
       setCodeRequired(false);
       setCode("");
       if (!stopRequested.current) {
@@ -136,6 +155,8 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
         return;
       }
       if (data.ignored) {
+        resumeAfterSave.current = false;
+        setUpdating(false);
         setPhase("idle");
         void checkStatus();
         return;
@@ -144,6 +165,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
       setPhase("saving");
       return;
     } catch (error) {
+      resumeAfterSave.current = false;
       stopRequested.current = false;
       setMessage(error instanceof Error ? error.message : "Could not stop the workspace.");
     }
@@ -158,8 +180,9 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
       <p className={styles.lede}>Open the desktop workspace in your browser. Sessions last up to {sessionMinutes} minutes.</p>
       {target && <p className="mt-4">Opening <strong>{paperTitle}</strong>. You can review it and create your own project; no experiment starts automatically.</p>}
       <div className={styles.section}>
-        {phase === "starting" && <p role="status">Opening your workspace…</p>}
-        {(phase === "stopping" || phase === "saving") && <p role="status">Saving your workspace and stopping… This can take a little while.</p>}
+        {updating && busy && <p role="status">Updating your workspace and preserving your saved projects…</p>}
+        {!updating && phase === "starting" && <p role="status">Opening your workspace…</p>}
+        {!updating && (phase === "stopping" || phase === "saving") && <p role="status">Saving your workspace and stopping… This can take a little while.</p>}
         {phase === "cancelling" && <p role="status">Cancellation requested. The workspace will stop once startup finishes.</p>}
         {message && <p role="status" className="mb-4">{message}</p>}
         {url && <p className="mb-4"><a href={url} target="_blank" rel="noreferrer" className={styles.button}>Open in browser ↗</a></p>}
