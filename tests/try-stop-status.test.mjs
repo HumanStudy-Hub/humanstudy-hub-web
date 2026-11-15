@@ -8,7 +8,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 
 // Execute the actual launcher handlers/effects with deterministic hooks and timers.
 // This does not contact the provider or render a substitute implementation.
-function fixture(states) {
+function fixture(states, launches = [], stopReply = {pending:false}) {
   const slots = []; let index = 0; let effects = []; const timers = []; const calls = []; const redirects = [];
   const React = {
     useState(initial) { const i=index++; if (!(i in slots)) slots[i]=initial; return [slots[i], next=>{ slots[i]=typeof next==='function'?next(slots[i]):next; }]; },
@@ -22,14 +22,18 @@ function fixture(states) {
   }).outputText;
   const fetch = async (_, options={}) => {
     calls.push(options.method || 'GET');
+    if(options.method==='POST') {
+      const body=launches.shift() ?? {error:'build_mismatch'};
+      return {ok:!!body.url,status:body.url?200:502,json:async()=>body};
+    }
     const status=options.method==='DELETE'?null:states.shift() || 'transition';
-    return {ok:status!=='unauthorized',status:status==='unauthorized'?401:200,json:async()=>options.method==='DELETE'?{pending:false}:{status}};
+    return {ok:status!=='unauthorized',status:status==='unauthorized'?401:200,json:async()=>options.method==='DELETE'?stopReply:{status}};
   };
   new Function('require','module','exports','fetch','setTimeout','clearTimeout','window',code)(name=>{
     if(name==='react')return React;
     if(name==='react/jsx-runtime')return {jsx,jsxs:jsx};
     if(name==='next/link')return {default:'a'};
-    if(name.includes('paper-workspace'))return {paperWorkspaceSignIn:()=>'/account?returnTo=%2Ftry'};
+    if(name.includes('paper-workspace'))return {paperWorkspaceSignIn:()=>'/account?returnTo=%2Ftry',workspacePaperUrl:url=>url};
     if(name.endsWith('.css'))return {default:{}};
     throw Error(name);
   },loaded,loaded.exports,fetch,fn=>{timers.push(fn);return fn;},fn=>{const i=timers.indexOf(fn);if(i>=0)timers.splice(i,1);},{location:{assign:url=>redirects.push(url)}});
@@ -39,7 +43,12 @@ function fixture(states) {
     if(tree.type==='button'&&tree.props.children===label)return tree;
     return [tree.props?.children].flat(Infinity).map(x=>button(x,label)).find(Boolean);
   };
-  return {render,button,calls,timers,slots,redirects,effects:()=>effects};
+  const submit=tree=>{
+    if(!tree||typeof tree!=='object')return null;
+    if(tree.type==='form')return tree.props.onSubmit;
+    return [tree.props?.children].flat(Infinity).map(submit).find(Boolean);
+  };
+  return {render,button,submit,calls,timers,slots,redirects,effects:()=>effects};
 }
 
 test('DELETE success waits for confirmed stop, polls without repeating DELETE, and then enables resume', async()=>{
@@ -84,4 +93,28 @@ test('expired authentication during stop confirmation redirects once and ends po
   assert.deepEqual(f.redirects,['/account?returnTo=%2Ftry']);
   assert.equal(f.timers.length,0);assert.equal(f.slots[3],'idle');
   assert.equal(f.calls.filter(x=>x==='DELETE').length,1);cleanup();
+});
+
+
+test('build mismatch saves once and reopens only after confirmed stop, without a new button', async()=>{
+  const f=fixture(['running','transition','stopped'],[{error:'build_mismatch'},{url:'https://workspace.vercel.run'}]);
+  f.render();f.effects()[0]();await tick();
+  f.submit(f.render())({preventDefault(){}});await tick();
+  assert.deepEqual(f.calls,['GET','POST','DELETE']);
+  f.render();const cleanup=f.effects()[1]();await tick();
+  assert.equal(f.calls.filter(x=>x==='POST').length,1);
+  await f.timers.shift()();await tick();
+  assert.deepEqual(f.calls,['GET','POST','DELETE','GET','GET','POST']);
+  assert.equal(f.slots[4],'https://workspace.vercel.run');
+  assert.equal(f.slots[3],'idle');cleanup();
+});
+
+test('a second build mismatch stops recovery rather than restarting in a loop',async()=>{
+  const f=fixture(['running','stopped'],[{error:'build_mismatch'},{error:'build_mismatch'}]);
+  f.render();f.effects()[0]();await tick();
+  f.submit(f.render())({preventDefault(){}});await tick();
+  f.render();const cleanup=f.effects()[1]();await tick();
+  assert.equal(f.calls.filter(x=>x==='DELETE').length,1);
+  assert.equal(f.calls.filter(x=>x==='POST').length,2);
+  assert.equal(f.slots[3],'idle');assert.match(f.slots[5],/update could not finish/);cleanup();
 });
