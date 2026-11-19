@@ -462,10 +462,14 @@ test('Online workspace admits an account invited at sign-up without a code or co
     '@/lib/try-online-config': { tryConfigured: () => true },
   });
   const request = code => new Request('https://hub.test/api/try', { method: 'POST', body: JSON.stringify({ code, attempt }) });
-  const refused = await route.POST(request(undefined));
-  assert.equal(refused.status, 403);
-  assert.equal((await refused.json()).error, 'code_required');
-  assert.deepEqual(calls, [['invited', user.id]]);
+  for (const code of [undefined, '   ']) {
+    const refused = await route.POST(request(code));
+    assert.equal(refused.status, 403);
+    assert.equal((await refused.json()).error, 'code_required', 'a whitespace-only code counts as missing');
+  }
+  const wrong = await route.POST(request('wrong-code'));
+  assert.equal((await wrong.json()).error, 'invalid_code');
+  assert.deepEqual(calls, [['invited', user.id], ['invited', user.id], ['invited', user.id]]);
   calls.length = 0;
   assert.equal((await route.POST(request('valid-code'))).status, 200);
   assert.deepEqual(calls, [['invited', user.id], ['grant', user.id], ['remember', user.id, 'valid-code'], ['cookie'], ['launch', user.id, attempt]]);

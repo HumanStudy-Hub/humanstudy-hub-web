@@ -50,3 +50,10 @@ test('desktop invite codes from the environment match case-insensitively', t => 
   for (const code of ['humanstudy', 'HumanStudy', ' HUMANSTUDY ', 'Beta-1']) assert.equal(invited.promoMatches(code), true, code);
   for (const code of ['human study', 'humanstudy2', '']) assert.equal(invited.promoMatches(code), false, code);
 });
+
+test('codeEquals is the shared trimmed, case-insensitive check used by /api/access', () => {
+  assert.equal(lib.codeEquals(' Open-Sesame ', 'OPEN-SESAME'), true);
+  assert.equal(lib.codeEquals('open', 'OPEN-SESAME'), false);
+  assert.equal(lib.codeEquals('  ', ''), false);
+  assert.equal(lib.codeEquals(undefined, 'OPEN-SESAME'), false);
+});

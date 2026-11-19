@@ -30,7 +30,7 @@ test('an account is invited by its sign-up code or by an existing production gra
   assert.equal(await lib.accountInvited({ id: user, user_metadata: { invitation_code: 'HumanStudy' } }), true);
   assert.equal(requests.length, 0, 'signup metadata from the verified session needs no service call');
   assert.equal(await lib.accountInvited({ id: user, user_metadata: { invitation_code: 'retired' } }), false);
-  assert.match(requests.at(-1).url, /\/rest\/v1\/online_dev_model_budget\?select=budget_key&budget_key=eq\.production%3Aaccount%3A11111111-/);
+  assert.match(requests.at(-1).url, /\/rest\/v1\/online_dev_model_budget\?select=budget_key&budget_key=eq\.production%3Aaccount%3A11111111-1111-4111-8111-111111111111&revoked=is\.false$/, 'a revoked grant does not count as an invitation');
   assert.equal(requests.at(-1).auth, 'Bearer service-fixture');
   rows = [{ budget_key: `production:account:${user}` }];
   assert.equal(await lib.accountInvited({ id: user, user_metadata: {} }), true, 'an earlier redemption is durable');

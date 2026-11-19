@@ -4,7 +4,7 @@ import { tryServiceKey } from "./try-online-config";
 
 // An account enters its invitation code once, at sign-up (stored as user metadata
 // `invitation_code`) or at its first redemption (which creates the production budget
-// row). Either record admits the account on any device without asking again.
+// row, unless revoked). Either record admits the account on any device without asking again.
 
 type InvitableUser = { id: string; user_metadata?: { invitation_code?: unknown } | null };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -29,7 +29,7 @@ async function call(path: string, init: RequestInit = {}): Promise<Response | nu
 }
 
 async function hasProductionGrant(id: string): Promise<boolean> {
-  const response = await call(`/rest/v1/online_dev_model_budget?select=budget_key&budget_key=eq.${encodeURIComponent(`production:account:${id}`)}`);
+  const response = await call(`/rest/v1/online_dev_model_budget?select=budget_key&budget_key=eq.${encodeURIComponent(`production:account:${id}`)}&revoked=is.false`);
   if (!response?.ok) return false;
   const rows = await response.json().catch(() => null);
   return Array.isArray(rows) && rows.length > 0;

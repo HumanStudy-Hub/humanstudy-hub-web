@@ -55,12 +55,15 @@ function sameCode(a: string, b: string): boolean {
 
 const normalCode = (code: string) => code.trim().toLowerCase();
 
+/** Constant-time comparison of two codes, ignoring surrounding spaces and letter case. */
+export function codeEquals(given: unknown, expected: string): boolean {
+  if (typeof given !== "string" || !given.trim() || !expected.trim()) return false;
+  return sameCode(normalCode(given), normalCode(expected));
+}
+
 /** Constant-time invitation code check; surrounding spaces and letter case are ignored. */
 export function promoMatches(code: unknown): boolean {
-  if (typeof code !== "string") return false;
-  const given = normalCode(code);
-  if (!given) return false;
-  return [PROMO_CODE, ...DESKTOP_INVITE_CODES].some((c) => Boolean(c.trim()) && sameCode(given, normalCode(c)));
+  return [PROMO_CODE, ...DESKTOP_INVITE_CODES].some((c) => codeEquals(code, c));
 }
 
 export function bearer(request: Request): string | null {

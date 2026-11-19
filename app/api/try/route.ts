@@ -45,7 +45,8 @@ export async function POST(request: Request) {
     const alreadyInvited = hasAccess(user.id, jar.get(TRY_ACCESS_COOKIE)?.value) || await accountInvited(user);
     const redeemed = !alreadyInvited && promoMatches(body?.code);
     if (!alreadyInvited && !redeemed) {
-      return reply({ error: body?.code ? "invalid_code" : "code_required", message: body?.code ? "That code is not valid." : "Enter your invitation code." }, 403);
+      const given = typeof body?.code === "string" && body.code.trim() !== "";
+      return reply({ error: given ? "invalid_code" : "code_required", message: given ? "That code is not valid." : "Enter your invitation code." }, 403);
     }
     if (!(await grantHostedInvitation(user.id))) return reply({ error: "hosted_allowance_unavailable", message: "Hosted access could not be activated. Please try again later." }, 503);
     if (redeemed) await rememberInvitation(user.id, body?.code as string);
