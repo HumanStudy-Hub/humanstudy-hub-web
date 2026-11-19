@@ -24,7 +24,7 @@ function PartnerLogos({ duplicate = false }: { duplicate?: boolean }) {
               height={50}
               loading="eager"
               unoptimized
-              className={partner.logo === "unil.svg" ? styles.unil : undefined}
+              className={styles[partner.id]}
             />
           </div>
         </li>

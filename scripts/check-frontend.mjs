@@ -211,11 +211,9 @@ try {
       const run = Number(await tour.getAttribute('data-playing'));
       await tour.locator('section').first().hover();
       await page.waitForFunction(previous => Number(document.querySelector('figure[data-playing]')?.dataset.playing) > previous, run);
-      const timings = await tour.locator('section > [aria-hidden="true"]').evaluateAll(guides => guides.map(guide => {
-        const style = getComputedStyle(guide);
-        return [style.animationDelay, style.animationDuration];
-      }));
-      assert.deepEqual(timings, [['1s', '0.5s'], ['1s', '0.5s'], ['1s', '0.5s']]);
+      assert.equal(await tour.locator('section > [aria-hidden="true"]').count(), 0, 'The tour opens without panel labels.');
+      const questionDelay = await tour.getByText('Where is the first hypothesis in the paper?').evaluate(element => getComputedStyle(element).animationDelay);
+      assert.equal(questionDelay, '0.3s');
     }
     assert.ok(await page.getByRole('heading', { name: 'From paper to protocol' }).isVisible());
     assert.equal(await page.locator('#partner-logo-list').getByRole('img').count(), 7);
