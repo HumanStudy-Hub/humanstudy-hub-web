@@ -31,7 +31,7 @@
   line-height: 1.45;
 }
 
-.invitation a, .email, .links a {
+.invitation a, .website {
   color: var(--site-accent);
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -85,28 +85,18 @@
   letter-spacing: -0.045em;
 }
 
-.team p {
-  margin-top: 0.2rem;
-  font-size: 1.05rem;
+.name:hover, .name:focus-visible {
+  color: var(--site-accent);
+  text-decoration: underline;
+  text-underline-offset: .15em;
+  text-decoration-thickness: 1px;
 }
 
-.email, .links {
-  font-size: 0.97rem;
-  line-height: 1.5;
-}
-
-.email {
+.website {
   display: inline-block;
-  margin-top: 0.65rem;
-  overflow-wrap: anywhere;
-}
-
-.links {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 0.2rem 1rem;
-  margin-top: 0.12rem;
+  margin-top: .3rem;
+  font-size: .97rem;
+  line-height: 1.5;
 }
 
 .community { margin-top: clamp(48px, 6vw, 80px); }

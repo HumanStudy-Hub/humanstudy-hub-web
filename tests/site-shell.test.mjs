@@ -621,9 +621,13 @@ test('the collaboration page renders its map and contact details before JavaScri
   assert.ok(header);
   assert.match(header, /AI tools for social science/);
   assert.match(header, /href="mailto:xul049@ucsd.edu"/);
-  for (const email of ['xul049@ucsd.edu', 'info.breathingcore@gmail.com', 'yuanjun.feng@unil.ch']) {
-    assert.ok(html.includes(`href="mailto:${email}"`));
+  const team = html.match(/<section aria-labelledby="team-title">(.*?)<\/section>/s)?.[1];
+  assert.ok(team);
+  for (const email of ['xul049@ucsd.edu', 'hs5533@nyu.edu', 'yuanjun.feng@unil.ch']) {
+    assert.ok(team.includes(`href="mailto:${email}"`));
   }
+  assert.equal((team.match(/>Personal website<\/a>/g) || []).length, 3);
+  assert.doesNotMatch(team, /Google Scholar|University of Lausanne|UC San Diego|University of British Columbia/);
   assert.equal((html.match(/<img\b[^>]*\bsrc="\/images\/team\//g) || []).length, 3);
   assert.doesNotMatch(html, /Work with HumanStudy-Hub/);
   assert.match(html, /<svg\b[^>]*role="img"/);

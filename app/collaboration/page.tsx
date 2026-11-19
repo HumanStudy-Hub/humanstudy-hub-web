@@ -9,29 +9,20 @@ const team = [
   {
     name: "Xuan Liu",
     portrait: "xuan-liu",
-    affiliation: "UC San Diego",
     email: "xul049@ucsd.edu",
     website: "https://xuanl17.github.io/",
-    websiteLabel: "Personal website",
-    scholar: "AyzRO-wAAAAJ",
   },
   {
     name: "Haoyang Shang",
     portrait: "haoyang-shang",
-    affiliation: "University of British Columbia",
-    email: "info.breathingcore@gmail.com",
+    email: "hs5533@nyu.edu",
     website: "https://github.com/assassin808",
-    websiteLabel: "GitHub",
-    scholar: "eAfoYDIAAAAJ",
   },
   {
     name: "Yuanjun Feng",
     portrait: "yuanjun-feng",
-    affiliation: "University of Lausanne",
     email: "yuanjun.feng@unil.ch",
     website: "https://yuanjun-feng.github.io/",
-    websiteLabel: "Personal website",
-    scholar: "mR7VyEwAAAAJ",
   },
 ];
 
@@ -50,7 +41,7 @@ export default function CollaborationPage() {
         <ul className={styles.team}>
           {team.map(member => (
             <li key={member.name}>
-              <a className={styles.portrait} href={member.website} aria-label={`${member.name} — ${member.websiteLabel}`}>
+              <a className={styles.portrait} href={member.website} aria-label={`${member.name} — Personal website`}>
                 <Image
                   src={`/images/team/${member.portrait}.webp`}
                   alt=""
@@ -59,13 +50,13 @@ export default function CollaborationPage() {
                   unoptimized
                 />
               </a>
-              <h3>{member.name}</h3>
-              <p>{member.affiliation}</p>
-              <a className={styles.email} href={`mailto:${member.email}`}>{member.email}</a>
-              <div className={styles.links}>
-                <a href={member.website}>{member.websiteLabel}</a>
-                <a href={`https://scholar.google.com/citations?user=${member.scholar}`}>Google Scholar</a>
-              </div>
+              <h3>
+                <a className={styles.name} href={`mailto:${member.email}`}
+                  aria-label={`Email ${member.name} at ${member.email}`} title={member.email}>
+                  {member.name}
+                </a>
+              </h3>
+              <a className={styles.website} href={member.website} aria-label={`${member.name} — Personal website`}>Personal website</a>
             </li>
           ))}
         </ul>
