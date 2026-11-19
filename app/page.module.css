@@ -32,7 +32,7 @@
   margin: clamp(16px, 1.8vw, 24px) auto 0;
   color: var(--site-muted);
   font-family: var(--site-font-serif);
-  font-size: clamp(1.2rem, 1.65vw, 1.5rem);
+  font-size: clamp(1.3rem, 1.95vw, 1.75rem);
   line-height: 1.42;
   text-wrap: balance;
 }

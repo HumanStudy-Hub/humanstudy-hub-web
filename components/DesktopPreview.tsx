@@ -1,43 +1,21 @@
 "use client";
 
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import usePreviewPlayback from "./usePreviewPlayback";
 import SiteLogo from "@/components/SiteLogo";
 import styles from "./desktop-preview.module.css";
 
-const guideIcons = {
-  chat: "M5 5h18v12H12l-5 4v-4H5z M9 9h10m-10 4h6",
-  materials: "M6 6V4h13l4 4v14H8V6z M19 4v5h4 M11 12h8m-8 4h6 M5 8H3v17h16",
-  reader: "M14 7C10 4 6 4 2 5v15c4-1 8-1 12 2m0-15c4-3 8-3 12-2v15c-4-1-8-1-12 2V7z",
-};
-
 type PanelProps = {
   name: string;
-  detail: string;
-  icon: keyof typeof guideIcons;
   className: string;
   run: number;
   children: ReactNode;
 };
 
-function PreviewPanel({ name, detail, icon, className, run, children }: PanelProps) {
-  const [visit, setVisit] = useState(0);
+function PreviewPanel({ name, className, run, children }: PanelProps) {
   return (
-    <section className={className} aria-label={name} onPointerEnter={event => {
-      if (event.pointerType === "mouse" || event.pointerType === "pen") setVisit(value => value + 1);
-    }}>
-      <Fragment key={run}>
-        <div key={visit} className={styles.guide} aria-hidden="true">
-          <div className={styles.note}>
-            <svg width="30" height="30" viewBox="0 0 28 28" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round">
-              <path d={guideIcons[icon]} />
-            </svg>
-            <strong>{name}</strong>
-            <span>{detail}</span>
-          </div>
-        </div>
-        {children}
-      </Fragment>
+    <section className={className} aria-label={name}>
+      <Fragment key={run}>{children}</Fragment>
     </section>
   );
 }
@@ -57,7 +35,7 @@ export default function DesktopPreview() {
         <span className={styles.appName}><SiteLogo />HumanStudy Desktop</span>
       </div>
       <div className={styles.workspace}>
-        <PreviewPanel run={run} className={styles.chat} icon="chat" name="Study agent" detail="Ask about the study">
+        <PreviewPanel run={run} className={styles.chat} name="Study agent">
           <div className={styles.panelBar}>Study agent</div>
           <div className={styles.conversation}>
             <p className={styles.question}>Where is the first hypothesis in the paper?</p>
@@ -73,7 +51,7 @@ export default function DesktopPreview() {
             </div>
           </div>
         </PreviewPanel>
-        <PreviewPanel run={run} className={styles.study} icon="materials" name="Study materials" detail="Explore hypotheses and measures">
+        <PreviewPanel run={run} className={styles.study} name="Study materials">
           <div className={styles.panelBar}>
             <span className={styles.tab}>Study</span><span className={styles.otherTab}>Paper</span>
           </div>
@@ -91,7 +69,7 @@ export default function DesktopPreview() {
             <p>Participants reported their own choice and estimated how many others would make the same one.</p>
           </div>
         </PreviewPanel>
-        <PreviewPanel run={run} className={styles.source} icon="reader" name="Paper reader" detail="Follow a finding to its source">
+        <PreviewPanel run={run} className={styles.source} name="Paper reader">
           <div className={styles.panelBar}>Original paper <span className={styles.pageNumber}>p. 5</span></div>
           <div className={styles.sheet}>
             <div className={styles.folio}><span>The false consensus effect</span><span>283</span></div>

@@ -1,6 +1,6 @@
 .articles {
   margin-top: 16px;
-  max-width: 72ch;
+  max-width: 880px;
 }
 
 .article {
@@ -13,6 +13,7 @@
 
 .article h3 {
   font-size: clamp(23px, 3vw, 30px);
+  text-wrap: pretty;
 }
 
 .article h3 a {
@@ -40,6 +41,7 @@
 }
 
 .description {
+  max-width: 72ch;
   margin-top: 12px;
   color: var(--site-muted);
   line-height: 1.6;

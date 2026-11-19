@@ -26,31 +26,34 @@
 
 .logos > li {
   display: flex;
-  width: clamp(12rem, 23vw, 15rem);
   flex-direction: column;
   align-items: center;
-  padding: 1.1rem 1rem 1.25rem;
+  padding: 1.1rem clamp(1.5rem, 3vw, 2.5rem) 1.25rem;
   text-align: center;
 }
 
 .mark {
   display: grid;
   place-items: center;
-  width: 100%;
-  height: 4.25rem;
+  height: 3.5rem;
 }
 
+/* Logos share one optical size: compact wordmarks sit lower, emblem lockups with small text sit taller. */
 .mark img {
-  width: min(100%, 10.5rem);
-  height: 3rem;
-  object-fit: contain;
+  width: auto;
+  height: 2rem;
 }
+
+.mark img.cmu { height: 1.7rem; }
+.mark img.stanford { height: 1.8rem; }
+.mark img.hku { height: 2.75rem; }
+.mark img.ubc { height: 2.75rem; }
+.mark img.irides { height: 3.1rem; }
 
 .mark img.unil {
   box-sizing: content-box;
-  width: auto;
-  height: 2.1rem;
-  padding: 0.4rem 0.6rem;
+  height: 1.55rem;
+  padding: 0.3rem 0.45rem;
   background: #00549f;
 }
 

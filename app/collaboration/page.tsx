@@ -75,7 +75,7 @@ export default function CollaborationPage() {
         </ul>
       </section>
       <section className={styles.community} aria-labelledby="collaborators-title">
-        <h2 id="collaborators-title">Our research community</h2>
+        <h2 id="collaborators-title">Collaborators</h2>
         <CollaborationMap />
       </section>
     </div>

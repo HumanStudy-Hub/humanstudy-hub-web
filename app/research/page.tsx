@@ -60,7 +60,7 @@ export default function ResearchPage() {
       <ul className="grid gap-6">
         {papers.map((paper) => (
           <li key={paper.slug}>
-            <article className="grid items-center gap-8 rounded-[2px] bg-[var(--site-surface)] p-5 sm:p-8 lg:grid-cols-[minmax(0,6fr)_minmax(0,5fr)] lg:gap-12">
+            <article className="grid items-center gap-8 rounded-[2px] bg-[var(--site-surface)] p-5 sm:p-8 lg:grid-cols-2 lg:gap-12">
               <div className="min-w-0">
                 <Visual slug={paper.slug} />
               </div>
@@ -70,7 +70,7 @@ export default function ResearchPage() {
                   <span aria-hidden="true">·</span>
                   <time>{paper.date}</time>
                 </div>
-                <h2 className="mt-4 !text-[26px] !leading-[1.25] tracking-[-0.01em] sm:!text-[30px]">
+                <h2 className="mt-4 !text-[26px] !leading-[1.25] tracking-[-0.01em] sm:!text-[28px] lg:!text-[clamp(24px,2.34vw,28px)]">
                   <Link href={`/research/${paper.slug}`} className="hover:text-[var(--site-accent)]">
                     {paper.title}
                   </Link>

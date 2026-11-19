@@ -1,4 +1,4 @@
-import PartnerUniversities, { collaborators } from "./PartnerUniversities";
+import { collaborators } from "./PartnerUniversities";
 import styles from "./collaboration-map.module.css";
 import world from "@/public/data/maps/world_110m.json";
 
@@ -73,7 +73,6 @@ const campuses = collaborators.map(partner => {
 export default function CollaborationMap() {
   return (
     <div className="mt-6 w-full">
-      <PartnerUniversities />
       <figure className={styles.atlas} role="img" aria-labelledby="collaboration-map-title"
         aria-describedby="collaboration-map-description">
         <figcaption className="sr-only">

@@ -11,10 +11,15 @@ export const collaborators = [
   { id: "mit", name: "Massachusetts Institute of Technology", logo: "mit.svg", city: "Cambridge, United States", lat: 42.3601, lon: -71.0942 },
 ] as const;
 
+// UBC is shown in the logo strip (right after UCSD) but is not on the collaborators map yet.
+const ubc = { id: "ubc", name: "The University of British Columbia", logo: "ubc.png" } as const;
+const [ucsd, ...otherCollaborators] = collaborators;
+const institutions = [ucsd, ubc, ...otherCollaborators];
+
 function PartnerLogos({ duplicate = false }: { duplicate?: boolean }) {
   return (
     <ul className={styles.logos} aria-hidden={duplicate || undefined}>
-      {collaborators.map(partner => (
+      {institutions.map(partner => (
         <li key={partner.name}>
           <div className={styles.mark}>
             <Image
@@ -24,7 +29,7 @@ function PartnerLogos({ duplicate = false }: { duplicate?: boolean }) {
               height={50}
               loading="eager"
               unoptimized
-              className={partner.logo === "unil.svg" ? styles.unil : undefined}
+              className={styles[partner.id]}
             />
           </div>
         </li>
@@ -33,9 +38,9 @@ function PartnerLogos({ duplicate = false }: { duplicate?: boolean }) {
   );
 }
 
-export default function PartnerUniversities() {
+export default function PartnerUniversities({ label = "Partner universities" }: { label?: string }) {
   return (
-    <div className={styles.viewport} id="partner-logo-list" role="region" aria-label="Partner universities">
+    <div className={styles.viewport} id="partner-logo-list" role="region" aria-label={label}>
       <div className={styles.track}>
         <PartnerLogos />
         <PartnerLogos duplicate />
