@@ -2,9 +2,7 @@
   position: relative;
   --preview-rule: #d4ded0;
   --preview-muted: #54675c;
-  --guide-hold: 1s;
-  --guide-fade: 0.5s;
-  --content-start: calc(var(--guide-hold) + var(--guide-fade));
+  --content-start: .3s;
   overflow: hidden;
   margin: 0;
   border: 1px solid #c3cfbf;
@@ -61,7 +59,7 @@
 .agentName { gap: 7px; font-size: .81rem; font-weight: 600; color: var(--site-accent); }
 .agentName svg { width: 13px; height: 13px; }
 .response { position: relative; }
-.typing, .guide { display: none; }
+.typing { display: none; }
 .reply p { margin: .35rem 0 .7rem; }
 .cite, .ref { color: var(--site-accent); font-size: .78rem; font-weight: 550; }
 .cite { display: inline-block; padding: 1px 8px; border: 1px solid #bacbb5; border-radius: 4px; }
@@ -96,45 +94,6 @@
   mix-blend-mode: multiply;
 }
 @media (prefers-reduced-motion: no-preference) {
-  .window[data-playing] .guide {
-    position: absolute;
-    z-index: 1;
-    inset: 43px 0 0;
-    display: grid;
-    align-items: center;
-    padding: clamp(12px, 1.8vw, 26px);
-    background: linear-gradient(180deg, transparent, rgb(241 243 234 / 45%) 36%, rgb(241 243 234 / 60%) 70%, transparent);
-    pointer-events: none;
-    animation: uncover var(--guide-fade) var(--guide-hold) ease-in-out both;
-  }
-  .chat { --note-accent: #416c58; --note-paper: #e6efe3; }
-  .study { --note-accent: #876038; --note-paper: #f6edd7; }
-  .source { --note-accent: #486676; --note-paper: #e6eff1; }
-  .note {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    column-gap: clamp(8px, 1vw, 14px);
-    row-gap: .3rem;
-    align-items: center;
-    padding: clamp(14px, 1.55vw, 23px);
-    color: var(--note-accent);
-    background: var(--note-paper);
-    box-shadow: inset 3px 0 var(--note-accent), 0 5px 14px -8px #243a3040;
-    border-radius: 2px 8px 8px 2px;
-  }
-  .note svg { width: clamp(20px, 2.2vw, 30px); height: auto; }
-  .note strong {
-    color: #273e35;
-    font: 500 clamp(1.35rem, 2.2vw, 2rem)/1.14 var(--site-font-serif);
-    letter-spacing: -.035em;
-  }
-  .note span {
-    grid-column: 2;
-    font: 400 clamp(.92rem, 1.1vw, 1rem)/1.4 var(--site-font-sans);
-    color: #405348;
-    text-wrap: pretty;
-  }
-
   .window[data-playing] .question { animation: messageIn .4s var(--content-start) both; }
   .window[data-playing] .reply { animation: messageIn .4s calc(var(--content-start) + .5s) both; }
   .window[data-playing] .typing {
@@ -148,10 +107,6 @@
   .window[data-playing] .answer { animation: messageIn .48s calc(var(--content-start) + 1.2s) both; }
   .window[data-playing] .finding { animation: selectFinding .56s calc(var(--content-start) + 1.85s) backwards; }
   .window[data-playing] .passage mark { animation: highlight 2.8s calc(var(--content-start) + 2.45s) linear both; }
-}
-@keyframes uncover {
-  from { opacity: 1; }
-  to { opacity: 0; }
 }
 @keyframes thinking { 0%, 100% { opacity: 0; } 25%, 70% { opacity: .8; } }
 @keyframes messageIn { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
