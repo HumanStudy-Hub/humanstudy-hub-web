@@ -162,6 +162,8 @@ try {
     if (body.action === 'forgot-password') return route.fulfill({ json: { sent: true } });
     if (body.action === 'confirm') return route.fulfill({ json: { user: previewUser } });
     if (body.action === 'signup') {
+      // Mirrors /api/studio/auth: the invitation code is checked before sign-up.
+      if (String(body.invitationCode ?? '').trim().toLowerCase() !== 'humanstudy') return route.fulfill({ status: 400, json: { error: 'invalid_invitation_code' } });
       return route.fulfill({ json: { requiresEmailConfirmation: true } });
     }
     if (body.action === 'signin') {
@@ -371,9 +373,21 @@ try {
 
   await account.getByRole('navigation', { name: 'Account action', exact: true }).getByRole('button', { name: 'Create account', exact: true }).click();
   assert.equal(await password.getAttribute('autocomplete'), 'new-password');
-  await account.getByRole('form', { name: 'Create account', exact: true }).getByRole('button', { name: 'Create account', exact: true }).click();
+  const signup = account.getByRole('form', { name: 'Create account', exact: true });
+  const invitation = signup.getByRole('textbox', { name: 'Invitation code', exact: true });
+  const requestsBeforeSignup = authRequests.length;
+  await signup.getByRole('button', { name: 'Create account', exact: true }).click();
+  assert.equal(authRequests.length, requestsBeforeSignup, 'The required invitation code blocks an empty sign-up.');
+  await invitation.fill('not-the-code');
+  await signup.getByRole('button', { name: 'Create account', exact: true }).click();
+  await account.getByText('That invitation code is not valid.', { exact: true }).waitFor();
+  assert.equal(authRequests.at(-1).invitationCode, 'not-the-code');
+  await password.fill('preview-only-password');
+  await invitation.fill(' HumanStudy ');
+  await signup.getByRole('button', { name: 'Create account', exact: true }).click();
   await account.getByText('Check your email to confirm your account, then continue here.', { exact: true }).waitFor();
   assert.equal(authRequests.at(-1).action, 'signup');
+  assert.equal(authRequests.at(-1).invitationCode, ' HumanStudy ');
   assert.equal(authRequests.at(-1).returnTo, returnTo);
   assert.equal(await password.inputValue(), '');
   assert.ok(await account.getByRole('button', { name: /^Resend in \d+s$/ }).isDisabled());
@@ -409,7 +423,7 @@ try {
   await account.getByRole('heading', { name: 'Sign out?', exact: true }).waitFor();
   await account.getByRole('button', { name: 'Sign out', exact: true }).click();
   await page.waitForURL(origin + '/');
-  report.checks.push('Mocked account validation, sign-in failure and success, returnTo, signup confirmation, resend cooldown, profile persistence, contribution prefill and sign-out');
+  report.checks.push('Mocked account validation, sign-in failure and success, returnTo, signup invitation code, signup confirmation, resend cooldown, profile persistence, contribution prefill and sign-out');
 
   await checkRemainingFrontend({ page, origin, root, output, report, accessSecret, setSignedIn: value => { signedIn = value; }, paperPath: indexedLinks[0] });
 

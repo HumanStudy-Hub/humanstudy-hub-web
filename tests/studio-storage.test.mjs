@@ -117,17 +117,28 @@ test("rejected refresh clears both cookies and does not create a session", async
   assert.equal(jarValues.size, 0);
 }));
 
+const invite = { promoMatches: code => typeof code === "string" && code.trim().toLowerCase() === "humanstudy" };
+
 test("signup without a Supabase session asks for confirmation without setting cookies", async () => withService(async () => {
   const route = load("app/api/studio/auth/route.ts", {
     "next/server": nextServer, "next/headers": { cookies: async () => jar },
-    "@/lib/studio/auth": auth, "@/lib/studio/http": http,
+    "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/desktop-access": invite,
   });
-  global.fetch = async url => {
+  const sent = [];
+  global.fetch = async (url, options) => {
     assert.equal(new URL(url).pathname, "/auth/v1/signup");
     assert.equal(new URL(url).searchParams.get("redirect_to"), "https://app.example.test/auth/confirm");
+    sent.push(JSON.parse(options.body));
     return Response.json({ user: { id: userId, email: "owner@example.test" }, session: null });
   };
-  const response = await route.POST(jsonRequest({ action: "signup", email: "owner@example.test", password: "correct-horse" }));
+  for (const invitationCode of [undefined, "", "wrong"]) {
+    const refused = await route.POST(jsonRequest({ action: "signup", email: "owner@example.test", password: "correct-horse", invitationCode }));
+    assert.equal(refused.status, 400);
+    assert.equal(refused.body.error, "invalid_invitation_code");
+  }
+  assert.equal(sent.length, 0, "an invalid invitation code never reaches the auth provider");
+  const response = await route.POST(jsonRequest({ action: "signup", email: "owner@example.test", password: "correct-horse", invitationCode: " HumanStudy " }));
+  assert.deepEqual(sent[0].data, { invitation_code: "HumanStudy" });
   assert.equal(response.status, 200);
   assert.deepEqual(response.body, { user: null, requiresEmailConfirmation: true });
   assert.equal(jarValues.size, 0);
@@ -135,7 +146,7 @@ test("signup without a Supabase session asks for confirmation without setting co
 
 const authRoute = load("app/api/studio/auth/route.ts", {
   "next/server": nextServer, "next/headers": { cookies: async () => jar },
-  "@/lib/studio/auth": auth, "@/lib/studio/http": http,
+  "@/lib/studio/auth": auth, "@/lib/studio/http": http, "@/lib/desktop-access": invite,
 });
 const confirmation = { action: "confirm", tokenHash: "a".repeat(64), type: "email" };
 

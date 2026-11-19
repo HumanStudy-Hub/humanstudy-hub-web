@@ -188,7 +188,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
         {url && <p className="mb-4"><a href={url} target="_blank" rel="noreferrer" className={styles.button}>Open in browser ↗</a></p>}
         {!busy && !url && workspace !== "transition" && <form onSubmit={event => { event.preventDefault(); void start(); }} className="mb-4">
           {codeRequired && <label className="mb-3 block">
-            <span className="block">Invitation code</span>
+            <span className="block">Invitation code (asked once for this account)</span>
             <input value={code} onChange={event => setCode(event.target.value)} autoComplete="off"
               className="mt-1 max-w-full border border-[var(--site-line)] bg-[var(--background)] px-3 py-2" />
           </label>}

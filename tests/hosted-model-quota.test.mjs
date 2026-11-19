@@ -190,6 +190,7 @@ test('Desktop key uses verified owner and valid invitation before creating allow
       mintDesktopKey: account => { calls.push(['key', account]); return { key: 'test', expiresAt: 'later' }; },
     },
     '@/lib/hosted-model-quota': { grantHostedInvitation: async account => { calls.push(['grant', account]); return allowed; } },
+    '@/lib/account-invitation': { accountInvited: async () => false, rememberInvitation: async () => {} },
   });
   t.mock.method(globalThis, 'fetch', async () => Response.json({ id: user }));
   const request = (code, signedIn = true) => new Request('https://hub.test/api/desktop/key', {
@@ -203,4 +204,51 @@ test('Desktop key uses verified owner and valid invitation before creating allow
   allowed = true;
   assert.equal((await route.POST(request('valid-code'))).status, 200);
   assert.deepEqual(calls.slice(1), [['grant', user], ['key', user]]);
+});
+
+test('Desktop key needs no code for an account invited at sign-up, and code_required otherwise', async t => {
+  const saved = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_PUBLISHABLE_KEY };
+  process.env.SUPABASE_URL = 'https://db.test';
+  process.env.SUPABASE_PUBLISHABLE_KEY = 'fixture-public';
+  t.after(() => {
+    if (saved.url === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = saved.url;
+    if (saved.key === undefined) delete process.env.SUPABASE_PUBLISHABLE_KEY; else process.env.SUPABASE_PUBLISHABLE_KEY = saved.key;
+  });
+  const calls = [];
+  let invited = false;
+  const route = load('app/api/desktop/key/route.ts', {
+    'next/server': { NextResponse: { json: Response.json } },
+    '@/lib/desktop-access': {
+      bearer: request => request.headers.get('authorization'),
+      desktopConfigured: () => true,
+      promoMatches: code => typeof code === 'string' && code.trim().toLowerCase() === 'humanstudy',
+      mintDesktopKey: account => { calls.push(['key', account]); return { key: 'test', expiresAt: 'later' }; },
+    },
+    '@/lib/hosted-model-quota': { grantHostedInvitation: async account => { calls.push(['grant', account]); return true; } },
+    '@/lib/account-invitation': {
+      accountInvited: async account => { calls.push(['invited', account.id]); return invited; },
+      rememberInvitation: async (account, code) => { calls.push(['remember', account, code]); },
+    },
+  });
+  t.mock.method(globalThis, 'fetch', async () => Response.json({ id: user, user_metadata: {} }));
+  const request = body => new Request('https://hub.test/api/desktop/key', { method: 'POST', headers: { authorization: 'verified-session' }, body });
+  for (const body of [undefined, '', '{}', JSON.stringify({ code: '  ' })]) {
+    const response = await route.POST(request(body));
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { error: 'code_required' });
+  }
+  const wrong = await route.POST(request(JSON.stringify({ code: 'nope' })));
+  assert.equal(wrong.status, 403);
+  assert.deepEqual(await wrong.json(), { error: 'invalid_code' });
+  assert.ok(!calls.some(([name]) => name === 'grant' || name === 'key'), 'an uninvited account never receives an allowance or key');
+  calls.length = 0;
+  const redeemed = await route.POST(request(JSON.stringify({ code: 'HumanStudy' })));
+  assert.equal(redeemed.status, 200);
+  assert.deepEqual(calls, [['grant', user], ['remember', user, 'HumanStudy'], ['key', user]], 'a valid code is remembered for the account');
+  calls.length = 0;
+  invited = true;
+  const empty = await route.POST(request(undefined));
+  assert.equal(empty.status, 200);
+  assert.deepEqual(await empty.json(), { key: 'test', expiresAt: 'later', email: null });
+  assert.deepEqual(calls, [['invited', user], ['grant', user], ['key', user]]);
 });

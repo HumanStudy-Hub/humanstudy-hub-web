@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createHmac, timingSafeEqual } from "crypto";
+import { createHmac } from "crypto";
+import { codeEquals } from "@/lib/desktop-access";
 import {
   ACCESS_SECRET,
   COOKIE_NAME,
@@ -38,11 +39,8 @@ export async function POST(request: Request) {
     );
   }
 
-  const presented = Buffer.from(code);
-  const expected = Buffer.from(PROMO_CODE);
-  const match =
-    presented.length === expected.length &&
-    timingSafeEqual(presented, expected);
+  // Same trimmed, case-insensitive constant-time check as the invitation code.
+  const match = codeEquals(code, PROMO_CODE);
 
   if (!match) {
     return NextResponse.json({ ok: false, error: "invalid_code" }, { status: 403 });

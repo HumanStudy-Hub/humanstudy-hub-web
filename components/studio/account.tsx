@@ -15,6 +15,7 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [invitationCode, setInvitationCode] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [name, setName] = useState('');
@@ -45,7 +46,7 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
   async function authenticate(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('');
     try {
-      const result = await studioApi<{ user?: StudioUser; requiresEmailConfirmation?: boolean }>('/api/studio/auth', { method: 'POST', body: JSON.stringify({ action: mode, email, password, returnTo }) });
+      const result = await studioApi<{ user?: StudioUser; requiresEmailConfirmation?: boolean }>('/api/studio/auth', { method: 'POST', body: JSON.stringify({ action: mode, email, password, returnTo, ...(mode === 'signup' ? { invitationCode } : {}) }) });
       setPassword('');
       if (result.user && !result.requiresEmailConfirmation) {
         window.location.replace(returnTo || '/account');
@@ -197,6 +198,20 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
                   disabled={busy}
                 />
               </label>
+              {mode === 'signup' && (
+                <label>
+                  Invitation code
+                  <input
+                    name="invitation-code"
+                    required
+                    maxLength={200}
+                    autoComplete="off"
+                    value={invitationCode}
+                    onChange={event => setInvitationCode(event.target.value)}
+                    disabled={busy}
+                  />
+                </label>
+              )}
               <button className={s.button} disabled={busy}>
                 {busy ? 'Please wait…' : mode === 'signin' ? 'Sign in' : 'Create account'} <ArrowRight />
               </button>

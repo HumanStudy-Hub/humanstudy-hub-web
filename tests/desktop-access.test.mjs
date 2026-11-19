@@ -31,11 +31,29 @@ test('tampered, foreign or malformed keys are rejected', () => {
   assert.equal(other.verifyDesktopKey(key), null);
 });
 
-test('the promo code must match exactly, and bearer tokens are read case-insensitively', () => {
+test('invitation codes ignore case and surrounding spaces, and bearer tokens are read case-insensitively', () => {
   assert.equal(lib.promoMatches('OPEN-SESAME'), true);
   assert.equal(lib.promoMatches(' OPEN-SESAME '), true);
-  assert.equal(lib.promoMatches('open-sesame'), false);
+  assert.equal(lib.promoMatches('open-sesame'), true);
+  assert.equal(lib.promoMatches('open-sesam'), false);
+  assert.equal(lib.promoMatches('   '), false);
   assert.equal(lib.promoMatches(undefined), false);
   assert.equal(lib.bearer(new Request('http://x', { headers: { Authorization: 'bearer abc' } })), 'abc');
   assert.equal(lib.bearer(new Request('http://x')), null);
+});
+
+test('desktop invite codes from the environment match case-insensitively', t => {
+  const saved = process.env.DESKTOP_INVITE_CODES;
+  t.after(() => { if (saved === undefined) delete process.env.DESKTOP_INVITE_CODES; else process.env.DESKTOP_INVITE_CODES = saved; });
+  process.env.DESKTOP_INVITE_CODES = 'beta-1, humanstudy';
+  const invited = load('lib/desktop-access.ts', { './access': access });
+  for (const code of ['humanstudy', 'HumanStudy', ' HUMANSTUDY ', 'Beta-1']) assert.equal(invited.promoMatches(code), true, code);
+  for (const code of ['human study', 'humanstudy2', '']) assert.equal(invited.promoMatches(code), false, code);
+});
+
+test('codeEquals is the shared trimmed, case-insensitive check used by /api/access', () => {
+  assert.equal(lib.codeEquals(' Open-Sesame ', 'OPEN-SESAME'), true);
+  assert.equal(lib.codeEquals('open', 'OPEN-SESAME'), false);
+  assert.equal(lib.codeEquals('  ', ''), false);
+  assert.equal(lib.codeEquals(undefined, 'OPEN-SESAME'), false);
 });

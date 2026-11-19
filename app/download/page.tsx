@@ -126,7 +126,7 @@ function Shot({ src, alt, width, height, priority }: { src: string; alt: string;
 const faq: [string, React.ReactNode][] = [
   [
     "Who can use the app?",
-    <>Access is by invitation. Create a HumanStudy Hub account and sign in with an invitation code from the team.</>,
+    <>Access is by invitation. Enter your invitation code once, when you create your HumanStudy Hub account; after that, just sign in.</>,
   ],
   [
     "Do I need an API key or a model subscription?",
@@ -152,7 +152,7 @@ const faq: [string, React.ReactNode][] = [
   ],
   [
     "Can I use it without installing anything?",
-    <>Yes: “Open in browser” opens the same app in your browser. It runs in a workspace of your own in the cloud, which keeps your projects between visits. It needs your HumanStudy-Hub account and an invitation code. The launcher shows the session limit. You can resume your workspace later.</>,
+    <>Yes: “Open in browser” opens the same app in your browser. It runs in a workspace of your own in the cloud, which keeps your projects between visits. It needs your HumanStudy-Hub account. The launcher shows the session limit. You can resume your workspace later.</>,
   ],
   [
     "Is there a Windows version?",
@@ -201,19 +201,19 @@ export default async function DownloadPage() {
         <div className="max-w-3xl">
           <h2 className="font-serif text-2xl font-bold sm:text-3xl">Getting access</h2>
           <p className="mt-4 text-base leading-7 text-[var(--foreground)]">
-            Access is by invitation. You need a HumanStudy Hub account and an invitation code.
+            Access is by invitation. You enter the invitation code once, when you create your account.
           </p>
           <ol className="mt-6 space-y-5">
             {[
               <>
-                <Link href={SIGN_UP} className="font-semibold text-[var(--site-accent)] underline decoration-[var(--site-accent)]/30 underline-offset-2 hover:text-[var(--site-accent)]">Create a HumanStudy-Hub account</Link>{" "}
-                and confirm your email address.
-              </>,
-              <>
                 Ask the team for an invitation code. Contact details are on the{" "}
                 <Link href={CONTACT} className="font-semibold text-[var(--site-accent)] underline decoration-[var(--site-accent)]/30 underline-offset-2 hover:text-[var(--site-accent)]">Partnerships page</Link>.
               </>,
-              <>Install the app, sign in with your account, enter the code and accept the research-data agreement.</>,
+              <>
+                <Link href={SIGN_UP} className="font-semibold text-[var(--site-accent)] underline decoration-[var(--site-accent)]/30 underline-offset-2 hover:text-[var(--site-accent)]">Create a HumanStudy-Hub account</Link>{" "}
+                with the code and confirm your email address.
+              </>,
+              <>Install the app, sign in with your account and accept the research-data agreement. You will not be asked for the code again.</>,
             ].map((step, i) => (
               <li key={i} className="grid grid-cols-[2rem_1fr] gap-2 text-base leading-7 text-[var(--foreground)]">
                 <span className="font-serif text-xl font-bold text-[var(--site-accent)]">{i + 1}</span>

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { migrateStudioSession, clearStudioSession, establishStudioSession, requireStudioUser, studioConfirmationUrl } from "@/lib/studio/auth";
 import { assertSameOrigin, readJsonBody, routeError, studioConfig, studioFetch, upstreamJson, StudioError } from "@/lib/studio/http";
 import type { StudioUser } from "@/lib/studio/types";
+import { promoMatches } from "@/lib/desktop-access";
 
 async function checkAuthResponse(response: Response): Promise<void> {
   if (response.ok) return;
@@ -126,8 +127,11 @@ export async function POST(request: Request) {
     if (typeof password !== "string" || password.length < 8 || password.length > 128) {
       throw new StudioError(400, "invalid_credentials");
     }
+    // The invitation code is entered once, here; the account keeps it as signup metadata.
+    const { invitationCode } = body as Record<string, unknown>;
+    if (action === "signup" && !promoMatches(invitationCode)) throw new StudioError(400, "invalid_invitation_code");
     const response = await studioFetch(action === "signup" ? `/auth/v1/signup?redirect_to=${encodeURIComponent(studioConfirmationUrl(request, "confirm", returnTo))}` : "/auth/v1/token?grant_type=password", {
-      method: "POST", body: { email: email.trim(), password },
+      method: "POST", body: action === "signup" ? { email: email.trim(), password, data: { invitation_code: (invitationCode as string).trim() } } : { email: email.trim(), password },
     });
     await checkAuthResponse(response);
     const result = await upstreamJson<{ access_token?: string; refresh_token?: string; expires_in?: number; user?: StudioUser }>(response);

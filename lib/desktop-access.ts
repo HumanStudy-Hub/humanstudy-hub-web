@@ -44,7 +44,6 @@ export function verifyDesktopKey(key: string | null | undefined, now = Date.now(
   }
 }
 
-/** Constant-time promo code check. */
 /** Extra desktop-only invitation codes (comma-separated), accepted alongside the site's PROMO_CODE.
  *  Lets the team hand out and retire beta codes without touching PROMO_CODE, which also signs web access. */
 const DESKTOP_INVITE_CODES = (process.env.DESKTOP_INVITE_CODES ?? "").split(",").map((c) => c.trim()).filter(Boolean);
@@ -54,11 +53,17 @@ function sameCode(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+const normalCode = (code: string) => code.trim().toLowerCase();
+
+/** Constant-time comparison of two codes, ignoring surrounding spaces and letter case. */
+export function codeEquals(given: unknown, expected: string): boolean {
+  if (typeof given !== "string" || !given.trim() || !expected.trim()) return false;
+  return sameCode(normalCode(given), normalCode(expected));
+}
+
+/** Constant-time invitation code check; surrounding spaces and letter case are ignored. */
 export function promoMatches(code: unknown): boolean {
-  if (typeof code !== "string") return false;
-  const given = code.trim();
-  if (!given) return false;
-  return [PROMO_CODE, ...DESKTOP_INVITE_CODES].some((c) => Boolean(c) && sameCode(given, c));
+  return [PROMO_CODE, ...DESKTOP_INVITE_CODES].some((c) => codeEquals(code, c));
 }
 
 export function bearer(request: Request): string | null {
