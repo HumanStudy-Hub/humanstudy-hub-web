@@ -9,31 +9,34 @@ const team = [
   {
     name: "Xuan Liu",
     portrait: "xuan-liu",
-    affiliation: "UC San Diego",
     email: "xul049@ucsd.edu",
     website: "https://xuanl17.github.io/",
-    websiteLabel: "Personal website",
-    scholar: "AyzRO-wAAAAJ",
   },
   {
     name: "Haoyang Shang",
     portrait: "haoyang-shang",
-    affiliation: "University of British Columbia",
-    email: "info.breathingcore@gmail.com",
+    email: "hs5533@nyu.edu",
     website: "https://github.com/assassin808",
-    websiteLabel: "GitHub",
-    scholar: "eAfoYDIAAAAJ",
   },
   {
     name: "Yuanjun Feng",
     portrait: "yuanjun-feng",
-    affiliation: "University of Lausanne",
     email: "yuanjun.feng@unil.ch",
     website: "https://yuanjun-feng.github.io/",
-    websiteLabel: "Personal website",
-    scholar: "mR7VyEwAAAAJ",
   },
 ];
+
+function TeamIcon({ kind }: { kind: "website" | "email" }) {
+  const path = kind === "website"
+    ? "M4 17c5 .8 9-2.5 13.4-12M9.7 6.4l8.1-2.1.8 8.3"
+    : "M3 6.4l17.2-.9.8 12.6-17.4.8L3 6.4Zm1.1.7 7.8 5.6 7.5-6.4";
+  return (
+    <svg className={styles.inkIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false"
+      fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d={path} />
+    </svg>
+  );
+}
 
 export default function CollaborationPage() {
   return (
@@ -50,7 +53,7 @@ export default function CollaborationPage() {
         <ul className={styles.team}>
           {team.map(member => (
             <li key={member.name}>
-              <a className={styles.portrait} href={member.website} aria-label={`${member.name} — ${member.websiteLabel}`}>
+              <a className={styles.portrait} href={member.website} aria-label={`${member.name} — Personal website`}>
                 <Image
                   src={`/images/team/${member.portrait}.webp`}
                   alt=""
@@ -58,14 +61,15 @@ export default function CollaborationPage() {
                   height={320}
                   unoptimized
                 />
+                <span className={styles.websiteTab}><TeamIcon kind="website" /></span>
               </a>
-              <h3>{member.name}</h3>
-              <p>{member.affiliation}</p>
-              <a className={styles.email} href={`mailto:${member.email}`}>{member.email}</a>
-              <div className={styles.links}>
-                <a href={member.website}>{member.websiteLabel}</a>
-                <a href={`https://scholar.google.com/citations?user=${member.scholar}`}>Google Scholar</a>
-              </div>
+              <h3>
+                <a className={styles.name} href={`mailto:${member.email}`}
+                  aria-label={`Email ${member.name} at ${member.email}`} title={member.email}>
+                  {member.name}
+                  <TeamIcon kind="email" />
+                </a>
+              </h3>
             </li>
           ))}
         </ul>

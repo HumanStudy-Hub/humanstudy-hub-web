@@ -1,0 +1,32 @@
+.atlas {
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  border-block: 1px solid #aab8a3;
+  padding-block: 4px;
+}
+.definitions { position: absolute; pointer-events: none; }
+.world, .regions svg { display: block; height: auto; width: 100%; overflow: hidden; }
+.regions { display: none; }
+.campusLabel {
+  fill: #284a3b;
+  stroke: #f4f5ed;
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+  font: 550 13px var(--site-font-serif);
+  text-anchor: middle;
+}
+.building { filter: drop-shadow(1px 2px 1px #37423238); }
+.sea {
+  fill: #738a80;
+  font: italic 13px Georgia, serif;
+  letter-spacing: 1.25px;
+  text-anchor: middle;
+}
+.north { font: 10px var(--site-font-serif); }
+@media (max-width: 700px) {
+  .world, .sea, .compass { display: none; }
+  .regions { display: grid; gap: 4px; }
+  .regions svg + svg { border-top: 1px solid #cbd6c6; }
+}

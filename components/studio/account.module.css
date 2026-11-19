@@ -31,8 +31,9 @@
 
 .illustration {
   display: block;
-  width: 100%;
+  width: min(100%, 34rem);
   height: auto;
+  margin-inline: auto;
 }
 
 .card {
@@ -197,6 +198,6 @@
   }
 
   .illustration {
-    max-width: 360px;
+    width: min(64vw, 18rem);
   }
 }

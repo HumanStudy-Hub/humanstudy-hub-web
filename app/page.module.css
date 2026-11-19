@@ -29,7 +29,6 @@
 }
 
 .introduction {
-  max-width: 53ch;
   margin: clamp(16px, 1.8vw, 24px) auto 0;
   color: var(--site-muted);
   font-family: var(--site-font-serif);
