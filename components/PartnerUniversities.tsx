@@ -33,9 +33,9 @@ function PartnerLogos({ duplicate = false }: { duplicate?: boolean }) {
   );
 }
 
-export default function PartnerUniversities() {
+export default function PartnerUniversities({ label = "Partner universities" }: { label?: string }) {
   return (
-    <div className={styles.viewport} id="partner-logo-list" role="region" aria-label="Partner universities">
+    <div className={styles.viewport} id="partner-logo-list" role="region" aria-label={label}>
       <div className={styles.track}>
         <PartnerLogos />
         <PartnerLogos duplicate />

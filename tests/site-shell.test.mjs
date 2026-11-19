@@ -165,7 +165,8 @@ test('the homepage pairs the research scene with the Desktop preview and partner
   assert.match(html, /Scientists exploring study data/);
   assert.doesNotMatch(html, /collaboration-map-title/);
   assert.match(html, /From paper to protocol/);
-  assert.match(html, /Our research community/);
+  assert.match(html, /Used by researchers at/);
+  assert.match(html, /aria-label="Institutions of researchers who use HumanStudy-Hub"/);
   assert.match(html, /alt="University of Lausanne"/);
 });
 

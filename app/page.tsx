@@ -23,8 +23,8 @@ export default function Home() {
       </section>
 
       <section className={styles.community} aria-labelledby="community-heading">
-        <h2 id="community-heading">Our research community</h2>
-        <PartnerUniversities />
+        <h2 id="community-heading">Used by researchers at</h2>
+        <PartnerUniversities label="Institutions of researchers who use HumanStudy-Hub" />
       </section>
     </div>
   );
