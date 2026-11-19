@@ -247,6 +247,7 @@ test('ordinary Hub logout revokes only the current browser session', async () =>
   const calls = [];
   const route = load('app/api/studio/auth/route.ts', {
     'next/server': { NextResponse: { json: body => Response.json(body) } },
+    '@/lib/desktop-access': { promoMatches: () => false },
     '@/lib/studio/auth': {
       requireStudioUser: async () => ({ accessToken: 'browser-access' }),
       clearStudioSession: async () => { calls.push('clear-browser-cookies'); },
@@ -360,6 +361,7 @@ test('hosted bodyless Stop and JSON cancellation both preserve owner-scoped beha
     'next/server': { NextResponse: { json: (body, init) => Response.json(body, init) } },
     '@/lib/desktop-access': {},
     '@/lib/hosted-model-quota': {},
+    '@/lib/account-invitation': {},
     '@/lib/studio/auth': { requireStudioUser: async () => ({ user }) },
     '@/lib/studio/http': {
       assertSameOrigin: request => assert.equal(request.headers.get('origin'), 'https://dev.example.test'),
@@ -417,6 +419,7 @@ test('Online invitation grants only after verified code and before workspace lau
     'next/headers': { cookies: async () => ({ get: () => existingInvite ? { value: 'verified-owner-cookie' } : undefined, set: () => calls.push(['cookie']) }) },
     '@/lib/desktop-access': { promoMatches: code => code === 'valid-code' },
     '@/lib/hosted-model-quota': { grantHostedInvitation: async id => { calls.push(['grant', id]); return allow; } },
+    '@/lib/account-invitation': { accountInvited: async () => false, rememberInvitation: async () => {} },
     '@/lib/studio/auth': { requireStudioUser: async () => ({ user }) },
     '@/lib/studio/http': { assertSameOrigin() {}, readJsonBody: request => request.json(), isUuid: value => value === attempt },
     '@/lib/try-online': {
@@ -436,6 +439,44 @@ test('Online invitation grants only after verified code and before workspace lau
   existingInvite = true;
   assert.equal((await route.POST(request(undefined))).status, 200);
   assert.deepEqual(calls.slice(-2), [['grant', user.id], ['launch', user.id, attempt]], 'a verified existing owner cookie preserves access without redeeming again');
+});
+
+test('Online workspace admits an account invited at sign-up without a code or cookie', async () => {
+  const calls = [];
+  let invited = false;
+  const route = load('app/api/try/route.ts', {
+    'next/server': { NextResponse: { json: Response.json } },
+    'next/headers': { cookies: async () => ({ get: () => undefined, set: () => calls.push(['cookie']) }) },
+    '@/lib/desktop-access': { promoMatches: code => code === 'valid-code' },
+    '@/lib/hosted-model-quota': { grantHostedInvitation: async id => { calls.push(['grant', id]); return true; } },
+    '@/lib/account-invitation': {
+      accountInvited: async account => { calls.push(['invited', account.id]); return invited; },
+      rememberInvitation: async (id, code) => { calls.push(['remember', id, code]); },
+    },
+    '@/lib/studio/auth': { requireStudioUser: async () => ({ user }) },
+    '@/lib/studio/http': { assertSameOrigin() {}, readJsonBody: request => request.json(), isUuid: value => value === attempt },
+    '@/lib/try-online': {
+      hasAccess: () => false, accessCookieFor: () => 'fixture-cookie',
+      launchTryOnline: async (account, id) => { calls.push(['launch', account.id, id]); return { url: 'https://workspace.test' }; },
+    },
+    '@/lib/try-online-config': { tryConfigured: () => true },
+  });
+  const request = code => new Request('https://hub.test/api/try', { method: 'POST', body: JSON.stringify({ code, attempt }) });
+  for (const code of [undefined, '   ']) {
+    const refused = await route.POST(request(code));
+    assert.equal(refused.status, 403);
+    assert.equal((await refused.json()).error, 'code_required', 'a whitespace-only code counts as missing');
+  }
+  const wrong = await route.POST(request('wrong-code'));
+  assert.equal((await wrong.json()).error, 'invalid_code');
+  assert.deepEqual(calls, [['invited', user.id], ['invited', user.id], ['invited', user.id]]);
+  calls.length = 0;
+  assert.equal((await route.POST(request('valid-code'))).status, 200);
+  assert.deepEqual(calls, [['invited', user.id], ['grant', user.id], ['remember', user.id, 'valid-code'], ['cookie'], ['launch', user.id, attempt]]);
+  calls.length = 0;
+  invited = true;
+  assert.equal((await route.POST(request(undefined))).status, 200);
+  assert.deepEqual(calls, [['invited', user.id], ['grant', user.id], ['cookie'], ['launch', user.id, attempt]]);
 });
 
 

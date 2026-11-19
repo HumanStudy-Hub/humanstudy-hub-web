@@ -26,7 +26,7 @@ function fixture() {
     studioConfirmationUrl: (_req, type = 'confirm') => `https://hub.test/auth/${type}`,
   };
   const deps = {
-    'next/server': { NextResponse }, 'next/headers': { cookies: async () => cookie }, '@/lib/studio/auth': auth,
+    'next/server': { NextResponse }, 'next/headers': { cookies: async () => cookie }, '@/lib/studio/auth': auth, '@/lib/desktop-access': { promoMatches: () => false },
     '@/lib/studio/http': { ...http, studioConfig: () => ({}), studioFetch: async (path, options = {}) => {
       calls.push({ path, options });
       if (path === '/auth/v1/verify') return NextResponse.json({ access_token: token });

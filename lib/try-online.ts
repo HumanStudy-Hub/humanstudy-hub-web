@@ -6,8 +6,8 @@
 // and restores it on the next visit, so projects, conversations and the sign-in carry over. The base
 // image is a snapshot made with app/web/image/setup.sh (TRY_SNAPSHOT_ID).
 //
-// Who may start one: a signed-in user who has entered an invitation code (the rule of /api/desktop/key),
-// remembered per user in a signed cookie. At most TRY_MAX_RUNNING sandboxes run at once.
+// Who may start one: a signed-in account invited at sign-up or by an earlier redemption
+// (lib/account-invitation.ts, the rule of /api/desktop/key); a signed cookie caches it per browser. At most TRY_MAX_RUNNING sandboxes run at once.
 import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { APIError, Sandbox } from "@vercel/sandbox";
 import { mintDesktopKey } from "./desktop-access";
