@@ -642,7 +642,8 @@ test('the collaboration page renders its map and contact details before JavaScri
   assert.equal((html.match(/<circle\b/g) || []).length, 7);
   assert.match(html, /University of California San Diego/);
   assert.match(html, /University of Lausanne/);
-  assert.match(html, /alt="University of Lausanne"/);
+  assert.match(html, /<h2 id="collaborators-title">Collaborators<\/h2>/);
+  assert.doesNotMatch(html, /id="partner-logo-list"/);
   assert.doesNotMatch(html, /Pause and show all universities/);
   assert.doesNotMatch(html, /(?:NaN|Infinity|undefined)/);
   for (const [, pathData] of html.matchAll(/\bd="([^"]+)"/g)) {

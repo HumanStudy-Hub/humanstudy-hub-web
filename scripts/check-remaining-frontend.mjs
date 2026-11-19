@@ -137,7 +137,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
     ['/pipeline?legacy=1', 'legacy-pipeline'], [paperPath, 'paper'], ['/studies/study_005', 'legacy-study'],
   ];
 
-  // The map and native partner list must remain usable without client-side JavaScript.
+  // The map must remain usable without client-side JavaScript.
   const noScriptContext = await page.context().browser().newContext({
     javaScriptEnabled: false, viewport: { width: 390, height: 1000 },
   });
@@ -154,9 +154,9 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
     const map = noScriptPage.getByRole('img', { name: /World map of HumanStudy-Hub partnerships/ });
     assert.ok(await map.isVisible());
     assert.equal(await map.locator('circle').count(), 7);
-    assert.equal(await noScriptPage.locator('#partner-logo-list').getByRole('img').count(), 7);
+    assert.equal(await noScriptPage.locator('#partner-logo-list').count(), 0);
     await noScriptPage.screenshot({ path: path.join(output, 'collaboration-no-javascript.png'), fullPage: true });
-    checked('Collaboration map and partner list work with JavaScript disabled');
+    checked('Collaboration map works with JavaScript disabled');
   } finally {
     await noScriptContext.close();
   }
