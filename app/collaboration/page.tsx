@@ -26,6 +26,18 @@ const team = [
   },
 ];
 
+function TeamIcon({ kind }: { kind: "website" | "email" }) {
+  const path = kind === "website"
+    ? "M4 17c5 .8 9-2.5 13.4-12M9.7 6.4l8.1-2.1.8 8.3"
+    : "M3 6.4l17.2-.9.8 12.6-17.4.8L3 6.4Zm1.1.7 7.8 5.6 7.5-6.4";
+  return (
+    <svg className={styles.inkIcon} viewBox="0 0 24 24" aria-hidden="true" focusable="false"
+      fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d={path} />
+    </svg>
+  );
+}
+
 export default function CollaborationPage() {
   return (
     <div className={styles.page}>
@@ -37,7 +49,13 @@ export default function CollaborationPage() {
         </div>
       </header>
       <section aria-labelledby="team-title">
-        <h2 id="team-title">Meet the team</h2>
+        <div className={styles.teamHeading}>
+          <h2 id="team-title">Meet the team</h2>
+          <p className={styles.key}>
+            <span><TeamIcon kind="website" />Portraits open websites</span>
+            <span><TeamIcon kind="email" />Names open email</span>
+          </p>
+        </div>
         <ul className={styles.team}>
           {team.map(member => (
             <li key={member.name}>
@@ -49,11 +67,13 @@ export default function CollaborationPage() {
                   height={320}
                   unoptimized
                 />
+                <span className={styles.websiteTab}><TeamIcon kind="website" /></span>
               </a>
               <h3>
                 <a className={styles.name} href={`mailto:${member.email}`}
                   aria-label={`Email ${member.name} at ${member.email}`} title={member.email}>
                   {member.name}
+                  <TeamIcon kind="email" />
                 </a>
               </h3>
             </li>
