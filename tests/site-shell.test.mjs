@@ -629,6 +629,9 @@ test('the collaboration page renders its map and contact details before JavaScri
   }
   assert.doesNotMatch(team, />Personal website<\/a>/);
   assert.equal((team.match(/<a\b[^>]*href="https:[^"]+"[^>]*aria-label="[^"]+ — Personal website"[^>]*><img\b/g) || []).length, 3);
+  for (const [name, website] of [['Xuan Liu', 'https://xuanl17.github.io/'], ['Haoyang Shang', 'https://assassin808.github.io/'], ['Yuanjun Feng', 'https://yuanjun-feng.github.io/']]) {
+    assert.ok(team.includes(`href="${website}">${name}</a>`), name + ' links to their website');
+  }
   assert.doesNotMatch(team, /Google Scholar|University of Lausanne|UC San Diego|University of British Columbia/);
   assert.equal((html.match(/<img\b[^>]*\bsrc="\/images\/team\//g) || []).length, 3);
   assert.doesNotMatch(html, /Work with HumanStudy-Hub/);
