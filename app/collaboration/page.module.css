@@ -40,19 +40,6 @@
   margin-top: 0.55rem;
 }
 
-.teamHeading, .key, .key span {
-  display: flex;
-  align-items: center;
-}
-
-.teamHeading { flex-wrap: wrap; align-items: baseline; gap: .5rem 2rem; }
-.key {
-  flex-wrap: wrap;
-  gap: .2rem 1rem;
-  color: var(--site-accent);
-  font: 700 1.25rem/1.2 var(--site-font-hand);
-}
-.key span { gap: .25rem; }
 .inkIcon { width: 1em; height: 1em; flex: none; color: var(--site-accent); }
 
 .team {

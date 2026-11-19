@@ -96,7 +96,7 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
         <h1 id="account-title">{user && !logout ? 'Your account' : 'Your HumanStudy account'}</h1>
         <p>{user && !logout ? 'Manage your sign-in details and contribution credit.' : 'Keep sources, studies and your next question together.'}</p>
         <Image
-          src="/images/folio-account.jpg"
+          src="/images/folio-account.webp"
           alt="A sage paper folder keeps source papers, data and charts together beside a notebook and pencil."
           width={1774}
           height={887}

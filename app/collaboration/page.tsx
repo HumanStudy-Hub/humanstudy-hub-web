@@ -49,13 +49,7 @@ export default function CollaborationPage() {
         </div>
       </header>
       <section aria-labelledby="team-title">
-        <div className={styles.teamHeading}>
-          <h2 id="team-title">Meet the team</h2>
-          <p className={styles.key}>
-            <span><TeamIcon kind="website" />Portraits open websites</span>
-            <span><TeamIcon kind="email" />Names open email</span>
-          </p>
-        </div>
+        <h2 id="team-title">Meet the team</h2>
         <ul className={styles.team}>
           {team.map(member => (
             <li key={member.name}>

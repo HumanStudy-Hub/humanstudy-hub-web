@@ -631,8 +631,13 @@ test('the collaboration page renders its map and contact details before JavaScri
   assert.doesNotMatch(team, /Google Scholar|University of Lausanne|UC San Diego|University of British Columbia/);
   assert.equal((html.match(/<img\b[^>]*\bsrc="\/images\/team\//g) || []).length, 3);
   assert.doesNotMatch(html, /Work with HumanStudy-Hub/);
-  assert.match(html, /<svg\b[^>]*role="img"/);
+  assert.doesNotMatch(team, /Portraits open websites|Names open email/);
+  assert.match(html, /<figure\b[^>]*role="img"/);
   assert.match(html, /World map of HumanStudy-Hub partnerships/);
+  for (const id of ['ucsd', 'stanford', 'cmu', 'mit', 'unil', 'hku', 'irides']) {
+    assert.ok(html.includes(`href="/images/campuses/${id}.webp"`));
+    assert.ok(fs.existsSync(path.join(root, 'public/images/campuses', id + '.webp')));
+  }
   assert.equal((html.match(/<circle\b/g) || []).length, 7);
   assert.match(html, /University of California San Diego/);
   assert.match(html, /University of Lausanne/);
