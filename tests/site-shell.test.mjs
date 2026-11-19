@@ -626,7 +626,8 @@ test('the collaboration page renders its map and contact details before JavaScri
   for (const email of ['xul049@ucsd.edu', 'hs5533@nyu.edu', 'yuanjun.feng@unil.ch']) {
     assert.ok(team.includes(`href="mailto:${email}"`));
   }
-  assert.equal((team.match(/>Personal website<\/a>/g) || []).length, 3);
+  assert.doesNotMatch(team, />Personal website<\/a>/);
+  assert.equal((team.match(/<a\b[^>]*href="https:[^"]+"[^>]*aria-label="[^"]+ — Personal website"[^>]*><img\b/g) || []).length, 3);
   assert.doesNotMatch(team, /Google Scholar|University of Lausanne|UC San Diego|University of British Columbia/);
   assert.equal((html.match(/<img\b[^>]*\bsrc="\/images\/team\//g) || []).length, 3);
   assert.doesNotMatch(html, /Work with HumanStudy-Hub/);

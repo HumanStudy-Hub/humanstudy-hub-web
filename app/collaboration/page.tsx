@@ -56,7 +56,6 @@ export default function CollaborationPage() {
                   {member.name}
                 </a>
               </h3>
-              <a className={styles.website} href={member.website} aria-label={`${member.name} — Personal website`}>Personal website</a>
             </li>
           ))}
         </ul>

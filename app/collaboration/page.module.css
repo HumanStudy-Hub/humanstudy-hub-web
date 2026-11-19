@@ -31,14 +31,11 @@
   line-height: 1.45;
 }
 
-.invitation a, .website {
+.invitation a {
   color: var(--site-accent);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.23em;
-}
-
-.invitation a {
   display: inline-block;
   margin-top: 0.55rem;
 }
@@ -90,13 +87,6 @@
   text-decoration: underline;
   text-underline-offset: .15em;
   text-decoration-thickness: 1px;
-}
-
-.website {
-  display: inline-block;
-  margin-top: .3rem;
-  font-size: .97rem;
-  line-height: 1.5;
 }
 
 .community { margin-top: clamp(48px, 6vw, 80px); }
