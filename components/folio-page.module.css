@@ -6,8 +6,7 @@
 }
 
 .page h1 {
-  max-width: 22ch;
-  font-family: var(--site-font-serif);
+  font-family: var(--site-font-display);
   font-size: clamp(40px, 4.8vw, 60px);
   font-weight: 400;
   line-height: 1.12;
@@ -16,7 +15,7 @@
 }
 
 .page h2 {
-  font-family: var(--site-font-serif);
+  font-family: var(--site-font-display);
   font-size: clamp(26px, 2.5vw, 34px);
   font-weight: 400;
   line-height: 1.25;

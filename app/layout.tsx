@@ -7,7 +7,7 @@ import Footer from "@/components/Footer";
 
 export const metadata: Metadata = {
   title: "HumanStudy-Hub",
-  description: "Open infrastructure for turning published human studies into reusable datasets, runnable experiments, and AI-agent evaluations.",
+  description: "Open infrastructure for turning human studies into reusable datasets, runnable experiments, and AI-agent evaluations.",
   icons: {
     icon: [{ url: "/favicon.svg?v=2", type: "image/svg+xml" }],
     shortcut: "/favicon.svg?v=2",

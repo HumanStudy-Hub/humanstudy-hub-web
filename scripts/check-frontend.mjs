@@ -66,7 +66,7 @@ const fixtureServer = createServer((request, response) => {
 });
 const report = { passed: false, views: [], checks: [], runtimeErrors: [], runtimeErrorDetails: [], blockedWrites: [], mockedAuthActions: [], checkedAt: new Date().toISOString() };
 const navigation = [
-  ['Forum', '/forum'], ['Study Library', '/studies'], ['Desktop app', '/download'],
+  ['Forum', '/forum'], ['Study Library', '/studies'], ['Product', '/download'],
   ['Research', '/research'], ['Partnerships', '/collaboration'], ['Account', '/account'],
 ];
 let server;
@@ -189,16 +189,35 @@ try {
       width: document.documentElement.scrollWidth,
       headingFont: getComputedStyle(document.querySelector('h1')).fontFamily,
       background: getComputedStyle(document.body).backgroundColor,
-      fontsLoaded: [...document.fonts].filter(font => ['Newsreader', 'IBM Plex Sans'].includes(font.family.replaceAll('"', ''))).every(font => font.status === 'loaded'),
+      fontsLoaded: ['Josefin Sans', 'IBM Plex Sans', 'Newsreader'].every(family =>
+        [...document.fonts].some(font => font.family.replaceAll('"', '') === family && font.status === 'loaded')),
     }));
     assert.ok(layout.width <= layout.viewport + 1, 'No horizontal overflow at ' + width);
-    assert.match(layout.headingFont, /Newsreader/);
+    assert.match(layout.headingFont, /Josefin Sans/);
     assert.equal(layout.background, 'rgb(243, 245, 239)');
     assert.ok(layout.fontsLoaded, 'Local fonts load.');
-    const actions = page.getByRole('navigation', { name: 'Explore HumanStudy Hub', exact: true });
-    assert.deepEqual(await actions.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/download', '/forum', '/collaboration', '/studies']);
-    assert.equal(await page.getByText('Questions we’re exploring.', { exact: true }).count(), 0);
-    assert.equal(await page.getByText('Join the conversation.', { exact: true }).count(), 0);
+    assert.equal(await page.locator('main header a').count(), 0);
+    const scene = page.getByRole('img', { name: 'Scientists exploring study data' });
+    await scene.focus();
+    assert.equal(await scene.locator('img').count(), 3);
+    assert.equal(await page.locator('main figure button').count(), 0);
+    if (width === 1280) {
+      const tour = page.locator('figure').filter({ hasText: 'HumanStudy Desktop demonstration' });
+      await tour.scrollIntoViewIfNeeded();
+      await page.mouse.move(0, 0);
+      await page.waitForSelector('figure[data-playing]');
+      const run = Number(await tour.getAttribute('data-playing'));
+      await tour.locator('section').first().hover();
+      await page.waitForFunction(previous => Number(document.querySelector('figure[data-playing]')?.dataset.playing) > previous, run);
+      const timings = await tour.locator('section > [aria-hidden="true"]').evaluateAll(guides => guides.map(guide => {
+        const style = getComputedStyle(guide);
+        return [style.animationDelay, style.animationDuration];
+      }));
+      assert.deepEqual(timings, [['1s', '0.5s'], ['1s', '0.5s'], ['1s', '0.5s']]);
+    }
+    assert.ok(await page.getByRole('heading', { name: 'From paper to protocol' }).isVisible());
+    assert.equal(await page.locator('#partner-logo-list').getByRole('img').count(), 7);
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
 
     const nav = page.getByRole('navigation', { name: 'Main navigation', exact: true });
     if (width < 1024) await nav.locator('summary').click();
@@ -217,7 +236,7 @@ try {
     await page.screenshot({ path: path.join(output, `home-${width}.png`), fullPage: true });
     report.views.push({ page: '/', width, ...layout });
   }
-  report.checks.push('Responsive homepage, four grouped actions and all six navigation destinations');
+  report.checks.push('Responsive homepage, interactive research scene and all six navigation destinations');
 
   for (const width of [1280, 820, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -262,15 +281,8 @@ try {
   const paperLinks = page.locator('main article h2 a');
   const listedLinks = () => paperLinks.evaluateAll(links => links.map(link => link.getAttribute('href')));
   const paperViews = page.getByRole('navigation', { name: 'Paper views', exact: true });
-  assert.deepEqual(await paperViews.getByRole('link').allTextContents(), ['Interactive papers', 'All papers']);
-  assert.equal(await paperViews.getByRole('link', { name: 'Interactive papers', exact: true }).getAttribute('aria-current'), 'page');
-  assert.deepEqual(await listedLinks(), [interactiveLink], 'The default view lists interactive papers.');
-  const attribution = page.getByText('Contributed by HumanStudy Hub Team', { exact: true });
-  assert.ok(await attribution.isVisible());
-  assert.equal(await attribution.evaluate(element => element.previousElementSibling.textContent), 'Run experiment');
-  await paperViews.getByRole('link', { name: 'All papers', exact: true }).click();
-  await page.waitForURL(url => url.searchParams.get('status') === 'all');
-  assert.deepEqual(await listedLinks(), indexedLinks.slice(0, 30), 'All papers lists the complete catalog.');
+  assert.equal(await paperViews.count(), 0);
+  assert.deepEqual(await listedLinks(), indexedLinks.slice(0, 30), 'The library opens on the complete catalog.');
   assert.ok(indexedLinks.length > 1, 'The bundled catalog can exercise pagination with an offset.');
   await visit('/studies?status=all&offset=1');
   assert.deepEqual(await listedLinks(), indexedLinks.slice(1, 31), 'The existing offset contract still applies.');
@@ -289,8 +301,10 @@ try {
   }
   report.checks.push('Catalog contents and real pagination');
 
-  await paperViews.getByRole('link', { name: 'Interactive papers', exact: true }).click();
-  await page.waitForURL(url => url.searchParams.get('status') === 'program');
+  await visit('/studies?status=program');
+  const attribution = page.getByText('Contributed by HumanStudy Hub Team', { exact: true });
+  assert.ok(await attribution.isVisible());
+  assert.equal(await attribution.evaluate(element => element.previousElementSibling.textContent), 'Run experiment');
   await page.waitForLoadState('networkidle');
   assert.deepEqual(await listedLinks(), [interactiveLink]);
   assert.equal(await page.getByRole('link', { name: /^Interact with paper/ }).getAttribute('href'), '/try?paper=' + interactivePaper.id + '&revision=' + interactivePaper.currentRevision + '&intent=read');
@@ -434,7 +448,7 @@ try {
     await preview.evaluate(img => img.decode());
     assert.ok(await preview.isVisible());
     assert.equal(await preview.evaluate(img => img.closest('a')?.href), 'https://forum.humanstudy-hub.com/');
-    assert.equal(await page.getByRole('link', { name: 'Open the forum', exact: true }).getAttribute('href'), 'https://forum.humanstudy-hub.com/');
+    assert.equal(await page.getByRole('link', { name: 'Join the discussion', exact: true }).getAttribute('href'), 'https://forum.humanstudy-hub.com/');
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'Forum stays within the viewport.');
     await page.screenshot({ path: path.join(output, `forum-${width}.png`), fullPage: true });
   }

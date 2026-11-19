@@ -35,6 +35,51 @@ test('pagination has stable totals and validation rejects malformed filters',()=
   for(const q of ['offset=-1','limit=0','limit=101','capability=admin','concept=unsafe%29','offset=1.2'])
     assert.throws(()=>validateResearchQuery(new URLSearchParams(q)));
 });
+
+test('library facets use the full matching catalog before pagination', async () => {
+  const previous = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify(index));
+  try {
+    const {searchLibrary, libraryAvailability} = mod.exports;
+    const first = await searchLibrary({limit:1}, 'program');
+    assert.equal(first.total, index.papers.filter(paper => libraryAvailability(paper).program).length);
+    assert.equal(first.disciplines.reduce((sum, facet) => sum + facet.count, 0), first.total);
+    const economic = first.disciplines.find(facet => facet.id === 'behavioral-economics');
+    assert.ok(economic.count > 1);
+    const second = await searchLibrary({discipline:economic.id, offset:1, limit:1}, 'program');
+    assert.equal(second.total, economic.count);
+    assert.equal(second.items[0].discipline.id, economic.id);
+    assert.equal(second.nextOffset, 2);
+    const author = await searchLibrary({author:'TVERSKÝ, A.', query:'framing', discipline:'decision-science'}, 'program');
+    assert.ok(author.items.some(paper => paper.aliases.includes('bench:study_003')));
+    assert.ok(author.items.every(paper => paper.authors.some(name => /tversky/i.test(name))));
+    const crossAuthor = await searchLibrary({author:'Eldar Tversky'}, 'program');
+    assert.equal(crossAuthor.total, 0, 'all author tokens must match one person');
+    const wrongBranch = await searchLibrary({author:'Amos Tversky', discipline:'education'}, 'program');
+    assert.equal(wrongBranch.total, 0);
+    assert.ok(wrongBranch.disciplines.find(facet => facet.id === 'decision-science').count > 0);
+    assert.equal(wrongBranch.disciplines.find(facet => facet.id === 'education').count, 0);
+  } finally {
+    globalThis.fetch = previous;
+  }
+});
+
+test('library discipline falls back to identifiable source venues and collections', async () => {
+  const previous = globalThis.fetch;
+  const seed = { ...index.papers[0], title:'Library facet fixture', aliases:[], currentRevision:null };
+  const papers = [
+    { ...seed, id:'paper_' + 'a'.repeat(24), sourceMetadata:{corpus:'multi100', sourceId:'Platt_Boustan_AmEcoJourn_2012_PVQK'} },
+    { ...seed, id:'paper_' + 'b'.repeat(24), sourceMetadata:{corpus:'Psych-201'} },
+    { ...seed, id:'paper_' + 'c'.repeat(24), sourceMetadata:{corpus:'score', researchType:'Experimental'} },
+  ];
+  globalThis.fetch = async () => new Response(JSON.stringify({...index, papers}));
+  try {
+    const result = await mod.exports.searchLibrary({query:'Library facet fixture'}, 'indexed');
+    assert.deepEqual(result.items.map(paper => paper.discipline.id), ['economics', 'psychology', 'unclassified']);
+  } finally {
+    globalThis.fetch = previous;
+  }
+});
 test('unavailable database falls back explicitly, while empty initialized results remain authoritative',async()=>{
   const previous=globalThis.fetch,oldUrl=process.env.SUPABASE_URL,oldKey=process.env.SUPABASE_PUBLISHABLE_KEY;
   process.env.SUPABASE_URL='https://test.supabase.co';process.env.SUPABASE_PUBLISHABLE_KEY='public-test';

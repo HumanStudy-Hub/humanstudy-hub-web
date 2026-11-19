@@ -154,8 +154,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
     const map = noScriptPage.getByRole('img', { name: /World map of HumanStudy-Hub partnerships/ });
     assert.ok(await map.isVisible());
     assert.equal(await map.locator('circle').count(), 7);
-    await noScriptPage.getByText('View research partners', { exact: true }).click();
-    assert.ok(await noScriptPage.getByText('University of Lausanne', { exact: true }).isVisible());
+    assert.equal(await noScriptPage.locator('#partner-logo-list').getByRole('img').count(), 7);
     await noScriptPage.screenshot({ path: path.join(output, 'collaboration-no-javascript.png'), fullPage: true });
     checked('Collaboration map and partner list work with JavaScript disabled');
   } finally {
@@ -187,9 +186,8 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
           assert.equal(await map.locator('circle').count(), 7);
           assert.equal(await page.locator('main header a[href="mailto:xul049@ucsd.edu"]').count(), 1);
           assert.equal(await page.getByRole('heading', { name: 'Work with HumanStudy-Hub' }).count(), 0);
-          await page.getByText('View research partners', { exact: true }).click();
-          assert.ok(await page.getByText('University of Lausanne', { exact: true }).isVisible());
-          await page.getByText('View research partners', { exact: true }).click();
+          assert.equal(await page.locator('#partner-logo-list').getByRole('img').count(), 7);
+          assert.equal(await page.locator('#partner-logo-list').innerText(), '');
         }
         await checkLayout(route, width, name);
       }
