@@ -14,7 +14,6 @@ export const collaborators = [
 // Institutions whose researchers use HumanStudy-Hub but that are not on the collaborators map.
 const otherInstitutions = [
   { id: "hkust", name: "The Hong Kong University of Science and Technology", logo: "hkust.svg" },
-  { id: "polyu", name: "The Hong Kong Polytechnic University", logo: "polyu.png" },
 ] as const;
 
 const institutions = [...collaborators, ...otherInstitutions];

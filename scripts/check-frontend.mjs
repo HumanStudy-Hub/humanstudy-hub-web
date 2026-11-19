@@ -216,7 +216,7 @@ try {
       assert.equal(questionDelay, '0.3s');
     }
     assert.ok(await page.getByRole('heading', { name: 'From paper to protocol' }).isVisible());
-    assert.equal(await page.locator('#partner-logo-list').getByRole('img').count(), 9);
+    assert.equal(await page.locator('#partner-logo-list').getByRole('img').count(), 8);
     await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
 
     const nav = page.getByRole('navigation', { name: 'Main navigation', exact: true });
