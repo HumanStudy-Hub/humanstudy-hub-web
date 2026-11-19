@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { requireStudioUser } from "@/lib/studio/auth";
 import { hasAccess, TRY_ACCESS_COOKIE } from "@/lib/try-online";
+import { accountInvited } from "@/lib/account-invitation";
 import { trySettings } from "@/lib/try-online-config";
 import { paperWorkspace, paperWorkspaceSignIn } from "@/lib/paper-workspace";
 import { getResearchPaper } from "@/lib/research";
@@ -35,12 +36,12 @@ export default async function TryPage({ searchParams }: { searchParams: Promise<
     <p className={styles.lede}>Online workspaces are unavailable on this deployment.</p>
     <Link href="/download" className={styles.back}>Get the desktop app</Link>
   </div>;
-  let userId: string;
+  let user: Awaited<ReturnType<typeof requireStudioUser>>["user"];
   try {
-    userId = (await requireStudioUser()).user.id;
+    user = (await requireStudioUser()).user;
   } catch {
     redirect(paperWorkspaceSignIn(target));
   }
-  const needsCode = !hasAccess(userId, (await cookies()).get(TRY_ACCESS_COOKIE)?.value);
+  const needsCode = !hasAccess(user.id, (await cookies()).get(TRY_ACCESS_COOKIE)?.value) && !(await accountInvited(user));
   return <TryLauncher needsCode={needsCode} sessionMinutes={config.sessionMinutes} target={target} paperTitle={paper?.title} />;
 }

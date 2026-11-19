@@ -1,6 +1,7 @@
 import type { StudioDocument } from "@/lib/studio/types";
 
 const messages:Record<string,string>={
+ invalid_invitation_code:'That invitation code is not valid.',
  invalid_profile:'Enter a name of up to 200 characters and an optional affiliation of up to 300 characters.',
  invalid_new_email:'Enter a valid email address different from your current one.',
  email_change_failed:'The email change could not be requested. Check the address and try again.',
