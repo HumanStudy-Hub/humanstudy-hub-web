@@ -11,12 +11,10 @@ export const collaborators = [
   { id: "mit", name: "Massachusetts Institute of Technology", logo: "mit.svg", city: "Cambridge, United States", lat: 42.3601, lon: -71.0942 },
 ] as const;
 
-// Institutions whose researchers use HumanStudy-Hub but that are not on the collaborators map.
-const otherInstitutions = [
-  { id: "ubc", name: "The University of British Columbia", logo: "ubc.png" },
-] as const;
-
-const institutions = [...collaborators, ...otherInstitutions];
+// UBC is shown in the logo strip (right after UCSD) but is not on the collaborators map yet.
+const ubc = { id: "ubc", name: "The University of British Columbia", logo: "ubc.png" } as const;
+const [ucsd, ...otherCollaborators] = collaborators;
+const institutions = [ucsd, ubc, ...otherCollaborators];
 
 function PartnerLogos({ duplicate = false }: { duplicate?: boolean }) {
   return (
