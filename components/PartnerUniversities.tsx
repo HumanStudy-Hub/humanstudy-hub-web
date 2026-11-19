@@ -11,10 +11,18 @@ export const collaborators = [
   { id: "mit", name: "Massachusetts Institute of Technology", logo: "mit.svg", city: "Cambridge, United States", lat: 42.3601, lon: -71.0942 },
 ] as const;
 
+// Institutions whose researchers use HumanStudy-Hub but that are not on the collaborators map.
+const otherInstitutions = [
+  { id: "hkust", name: "The Hong Kong University of Science and Technology", logo: "hkust.svg" },
+  { id: "polyu", name: "The Hong Kong Polytechnic University", logo: "polyu.png" },
+] as const;
+
+const institutions = [...collaborators, ...otherInstitutions];
+
 function PartnerLogos({ duplicate = false }: { duplicate?: boolean }) {
   return (
     <ul className={styles.logos} aria-hidden={duplicate || undefined}>
-      {collaborators.map(partner => (
+      {institutions.map(partner => (
         <li key={partner.name}>
           <div className={styles.mark}>
             <Image
