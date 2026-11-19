@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { gzip, gunzip } from "node:zlib";
 import { unstable_cache } from "next/cache";
 import development from "../data/studies-in-development.json";
+import libraryDisciplines from "../data/library-disciplines.json";
 
 type ResearchPublication = { kind: "user-submitted" | "maintainer-reviewed-protocol"; revision: string };
 
@@ -176,11 +177,11 @@ export function searchSnapshot(index: ResearchIndex, input: ResearchQuery) {
   const matchingConcepts = index.taxonomy.concepts.filter(c => c.status === "reviewed"
     && [c.label, ...c.aliases].some(s => normalise(s) === q));
   const concepts = matchingConcepts.map(c => c.id);
-  const matched = index.papers.filter(p => (!concept || p.conceptIds.includes(concept))
-      && (!capability || p.capabilities[capability] === true))
+  const matched = index.papers.filter(p => (!concept || p.conceptIds?.includes(concept))
+      && (!capability || p.capabilities?.[capability] === true))
     .map(p => {
-      const conceptMatch = p.conceptIds.some(id => concepts.includes(id));
-      const title = normalise(p.title), body = normalise([p.description, p.searchText, ...p.authors].join("\n"));
+      const conceptMatch = p.conceptIds?.some(id => concepts.includes(id));
+      const title = normalise(p.title), body = normalise([p.description, p.searchText, ...(p.authors ?? [])].join("\n"));
       const identity = p.id === query || p.aliases.includes(query);
       const aliasContent = matchingConcepts.some(c => normalise(c.label).split(' ').every(w => title.includes(w) || body.includes(w)));
       const textMatch = words.every(w => title.includes(w) || body.includes(w));
@@ -234,6 +235,39 @@ export function paperSource(paper: Pick<ResearchPaper, "aliases">): string | nul
 
 export const libraryFilters = ["all", "program", "runnable", "protocol", "development", "indexed"] as const;
 export type LibraryFilter = (typeof libraryFilters)[number];
+
+export type LibraryDiscipline = { id: string; label: string };
+const unclassified: LibraryDiscipline = { id: "unclassified", label: "Unclassified" };
+const disciplinesByPaper = new Map<string, LibraryDiscipline>();
+const disciplinesByVenue = new Map<string, LibraryDiscipline>();
+const disciplinesByCorpus = new Map<string, LibraryDiscipline>();
+for (const { id, label, papers, venues, corpora } of libraryDisciplines) {
+  const discipline = { id, label };
+  for (const alias of papers ?? []) disciplinesByPaper.set(alias, discipline);
+  for (const venue of venues ?? []) disciplinesByVenue.set(venue, discipline);
+  for (const corpus of corpora ?? []) disciplinesByCorpus.set(corpus, discipline);
+}
+
+// A primary browsing branch: prefer the paper-specific editorial assignment, then the
+// venue encoded by Multi100, then a subject-specific collection. SCORE alone has no discipline.
+function libraryDiscipline(paper: ResearchPaper): LibraryDiscipline {
+  for (const alias of paper.aliases) {
+    const discipline = disciplinesByPaper.get(alias.toLowerCase());
+    if (discipline) return discipline;
+  }
+  const source = paper.sourceMetadata as { sourceId?: string; corpus?: string } | undefined;
+  if (source?.corpus === "multi100" && typeof source.sourceId === "string") {
+    for (const token of source.sourceId.split("_")) {
+      const discipline = disciplinesByVenue.get(token);
+      if (discipline) return discipline;
+    }
+  }
+  return disciplinesByCorpus.get(source?.corpus ?? "") ?? unclassified;
+}
+
+function authorWords(name: string) {
+  return normalise(name).normalize("NFD").replace(/\p{M}/gu, "").split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+}
 
 export function researchContributorNames(paper: ResearchPaper, creditedNames: readonly string[] = []): string[] {
   const catalogNames = Array.isArray(paper.contributors) ? paper.contributors.map(item => {
@@ -304,7 +338,7 @@ export function includeDevelopment(index: ResearchIndex): ResearchIndex {
   return { ...index, papers: [...papers.values()] };
 }
 
-export async function searchLibrary(input: ResearchQuery, filter: LibraryFilter, validatedOnly = false) {
+export async function searchLibrary(input: ResearchQuery & { author?: string; discipline?: string }, filter: LibraryFilter, validatedOnly = false) {
   const index = includeDevelopment(await getResearchIndex());
   const buckets: Record<LibraryFilter, ResearchPaper[]> = {
     all: [], program: [], runnable: [], protocol: [], development: [], indexed: [],
@@ -321,8 +355,28 @@ export async function searchLibrary(input: ResearchQuery, filter: LibraryFilter,
   const papers = validatedOnly ? buckets[filter].filter(paper => libraryAvailability(paper).validated) : buckets[filter];
   const counts = Object.fromEntries(libraryFilters.map(key => [key, buckets[key].length])) as Record<LibraryFilter, number>;
   const { offset = 0, limit = 30 } = input;
-  const result = searchSnapshot({ ...index, papers }, input);
-  return { ...result, counts, offset, limit, nextOffset: offset + limit < result.total ? offset + limit : null };
+  const author = authorWords(input.author ?? "");
+  const facets = new Map<string, LibraryDiscipline & { count: number }>();
+  const paperDisciplines = new Map<string, LibraryDiscipline>();
+  const candidates = papers.filter(paper => {
+    const discipline = libraryDiscipline(paper);
+    paperDisciplines.set(paper.id, discipline);
+    if (!facets.has(discipline.id)) facets.set(discipline.id, { ...discipline, count: 0 });
+    return author.length === 0 || (paper.authors ?? []).some(name => {
+      const words = authorWords(name);
+      return author.every(term => words.some(word => word.startsWith(term)));
+    });
+  });
+  const result = searchSnapshot({ ...index, papers: candidates }, { ...input, offset: 0, limit: candidates.length });
+  const matches = result.items.flatMap(paper => {
+    const discipline = paperDisciplines.get(paper.id)!;
+    facets.get(discipline.id)!.count++;
+    return !input.discipline || input.discipline === discipline.id ? [{ ...paper, discipline }] : [];
+  });
+  const total = matches.length;
+  const disciplines = [...facets.values()].sort((a, b) => a.label.localeCompare(b.label, "en"));
+  return { ...result, items: matches.slice(offset, offset + limit), total, counts, disciplines, offset, limit,
+    nextOffset: offset + limit < total ? offset + limit : null };
 }
 
 export async function getResearchPaper(identity: string): Promise<ResearchPaper | null> {

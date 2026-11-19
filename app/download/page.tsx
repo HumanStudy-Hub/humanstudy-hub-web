@@ -9,20 +9,20 @@ import { tryListed } from "@/lib/try-online-config";
 export const revalidate = 300;
 
 const description =
-  "Explore research papers, reproduce study procedures with AI participants, and design new experiments.";
+  "Run human studies with AI participants";
 
 export const metadata: Metadata = {
-  title: "Desktop app | HumanStudy-Hub",
+  title: "Product | HumanStudy-Hub",
   description,
   alternates: { canonical: "/download" },
   openGraph: {
-    title: "HumanStudy Hub desktop app",
+    title: "HumanStudy Desktop",
     description,
     type: "website",
     url: "/download",
     images: [{ url: "/desktop/og.png", width: 1200, height: 630, alt: "A reconstructed study shown next to the original paper" }],
   },
-  twitter: { card: "summary_large_image", title: "HumanStudy Hub desktop app", description, images: ["/desktop/og.png"] },
+  twitter: { card: "summary_large_image", title: "HumanStudy Desktop", description, images: ["/desktop/og.png"] },
 };
 
 const SIGN_UP = "/account";
@@ -174,7 +174,7 @@ export default async function DownloadPage() {
     <div className={styles.page}>
       <section>
         <div className="max-w-4xl">
-          <h1>HumanStudy Hub desktop app</h1>
+          <h1>HumanStudy Desktop</h1>
           <p className={styles.lede}>
             {description}
           </p>

@@ -19,10 +19,10 @@ export default function ForumPage() {
         <header className={styles.forumHeader}>
           <div>
             <h1 id="forum-title">Community forum</h1>
-            <p className={folio.lede}>Ask questions, share findings, and discuss human behavior, research methods, and AI.</p>
+            <p className={folio.lede}>Share the result you didn’t expect</p>
           </div>
           <a className={folio.button} href="https://forum.humanstudy-hub.com/">
-            Open the forum <ArrowRight />
+            Join the discussion <ArrowRight />
           </a>
         </header>
         <a className={styles.previewLink} href="https://forum.humanstudy-hub.com/" aria-label="Open the HumanStudy Forum from its preview">

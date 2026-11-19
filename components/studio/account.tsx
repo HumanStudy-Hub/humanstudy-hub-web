@@ -93,14 +93,14 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
   return (
     <div className={s.page}>
       <section className={s.story} aria-labelledby="account-title">
-        <h1 id="account-title">{user && !logout ? 'Your account' : <>A place for<br />your research.</>}</h1>
+        <h1 id="account-title">{user && !logout ? 'Your account' : 'Your HumanStudy account'}</h1>
         <p>{user && !logout ? 'Manage your sign-in details and contribution credit.' : 'Keep sources, studies and your next question together.'}</p>
         <Image
           src="/images/folio-account.jpg"
           alt="A sage paper folder keeps source papers, data and charts together beside a notebook and pencil."
           width={1774}
           height={887}
-          sizes="(max-width: 700px) 100vw, 650px"
+          sizes="(max-width: 900px) 100vw, 650px"
           className={s.illustration}
         />
       </section>

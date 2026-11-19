@@ -1,0 +1,86 @@
+[
+  {
+    "id": "decision-science", "label": "Decision science",
+    "papers": [
+      "doi:10.1098/rsos.250669", "doi:10.1016/0010-0285(92)90015-t", "doi:10.1177/01461672952111004",
+      "doi:10.1016/j.socec.2023.102103", "doi:10.1126/science.7455683", "doi:10.1016/0010-0285(72)90016-3",
+      "doi:10.15626/mp.2020.2470", "doi:10.1073/pnas.2412015122", "doi:10.1098/rsos.250290",
+      "doi:10.31234/osf.io/wfven_v4", "doi:10.15626/mp.2020.2474", "doi:10.1525/collabra.126266",
+      "doi:10.15626/mp.2022.3108", "doi:10.1017/s1930297500008299", "doi:10.5334/irsp.751",
+      "doi:10.1525/collabra.74817", "doi:10.1525/collabra.77859", "doi:10.1098/rsos.250367",
+      "doi:10.1098/rsos.240687", "doi:10.3389/fpsyg.2018.01461", "doi:10.1038/s41562-022-01392-w"
+    ]
+  },
+  {
+    "id": "social-psychology", "label": "Social psychology", "venues": ["JournExpSocPsych", "JournPerSocPsy", "EurJournPersonality"],
+    "papers": [
+      "doi:10.1037/0022-3514.64.2.243", "doi:10.1037/a0037037", "doi:10.1016/0022-1031(77)90049-x",
+      "doi:10.1037/h0055756", "doi:10.1098/rsos.211152", "doi:10.1177/0956797620939054",
+      "doi:10.1002/ejsp.2420030103", "doi:10.5334/irsp.571", "doi:10.5334/irsp.522",
+      "doi:10.15626/mp.2021.2932", "doi:10.1525/collabra.155069", "doi:10.1525/collabra.23443",
+      "doi:10.5334/irsp.946", "doi:10.1098/rsos.250441", "doi:10.5334/irsp.932",
+      "doi:10.1017/s1930297500009189", "doi:10.1525/collabra.77610", "doi:10.1016/j.jesp.2023.104456",
+      "doi:10.1525/collabra.18738", "doi:10.1017/s1930297500003752", "doi:10.1017/s1930297500008470",
+      "doi:10.5334/irsp.871", "doi:10.1126/sciadv.adj5778", "doi:10.1038/srep07470"
+    ]
+  },
+  {
+    "id": "behavioral-economics", "label": "Behavioral economics", "venues": ["ExpEco"],
+    "papers": [
+      "doi:10.1287/mnsc.1100.1258", "doi:10.1006/game.1994.1021", "doi:10.1098/rsos.250979",
+      "doi:10.2307/2950991", "doi:10.1006/game.1995.1027", "doi:10.1525/collabra.32572",
+      "doi:10.1098/rsos.170238", "doi:10.3390/g13060076", "doi:10.1073/pnas.2215572120",
+      "doi:10.3390/g9020030", "doi:10.1038/s41598-019-48094-4", "doi:10.1371/journal.pone.0096654",
+      "doi:10.1017/s1930297500008433", "doi:10.1017/s1930297500003430", "doi:10.1371/journal.pone.0115419",
+      "doi:10.1007/s10683-020-09674-8", "doi:10.1371/journal.pone.0060966", "doi:10.1017/s1930297500007336"
+    ]
+  },
+  {
+    "id": "cognitive-science", "label": "Cognitive science", "venues": ["Cognition"],
+    "papers": [
+      "doi:10.1371/journal.pone.0154854", "psych201:tesslerfranke2018notunreasonable", "doi:10.1016/j.cognition.2021.104939",
+      "doi:10.1525/collabra.147499", "doi:10.1177/2515245918785165", "doi:10.1525/collabra.192",
+      "doi:10.1017/s1930297500007622", "doi:10.1017/s1930297500004642", "doi:10.1002/bdm.2213",
+      "doi:10.3389/fpsyg.2018.00908", "doi:10.1162/opmi_a_00042"
+    ]
+  },
+  {
+    "id": "experimental-philosophy", "label": "Experimental philosophy",
+    "papers": [
+      "doi:10.1093/analys/63.3.190", "doi:10.1098/rsos.250908", "doi:10.1073/pnas.2105365118",
+      "doi:10.1525/collabra.128423", "doi:10.15626/mp.2019.2134", "doi:10.1007/s11229-023-04291-3"
+    ]
+  },
+  {
+    "id": "metascience", "label": "Metascience",
+    "papers": [
+      "doi:10.1177/2515245918810225", "doi:10.1027/1864-9335/a000178", "doi:10.1177/2515245920919667",
+      "doi:10.1007/s10683-017-9527-2"
+    ]
+  },
+  {
+    "id": "education", "label": "Education", "papers": ["doi:10.2378/peu2026.art12d"]
+  },
+  {
+    "id": "management", "label": "Management", "venues": ["AcaManageJourn"], "papers": ["doi:10.1111/1540-8520.00003"]
+  },
+  {
+    "id": "political-science", "label": "Political science", "papers": [
+      "doi:10.1017/xps.2014.22", "doi:10.1017/xps.2022.18"
+    ],
+    "venues": ["AmJourPoliSci", "AmPoliSciRev", "BritJournPoliSci", "CompPolitStu", "JournConflictRes", "JournExpPoliSci", "WorldPolitics"]
+  },
+  {
+    "id": "economics", "label": "Economics",
+    "venues": ["AmEcoJourn", "AmEcoRev", "Econometrica", "JournLabEco", "JournPoliEco", "QuartJournEco"]
+  },
+  {
+    "id": "sociology", "label": "Sociology", "venues": ["AmSocioRev", "EurSocioRev", "SocialForces"]
+  },
+  {
+    "id": "marketing", "label": "Marketing", "venues": ["JournConsRes", "JournMarket", "JournMarketRes"]
+  },
+  {
+    "id": "psychology", "label": "Psychology", "venues": ["ClinPsychSci", "JournEnvPsych", "PsychologSci"], "corpora": ["Psych-201"]
+  }
+]
