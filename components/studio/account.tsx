@@ -96,11 +96,11 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
         <h1 id="account-title">{user && !logout ? 'Your account' : 'Your HumanStudy account'}</h1>
         <p>{user && !logout ? 'Manage your sign-in details and contribution credit.' : 'Keep sources, studies and your next question together.'}</p>
         <Image
-          src="/images/folio-account.webp"
-          alt="A sage paper folder keeps source papers, data and charts together beside a notebook and pencil."
-          width={1774}
-          height={887}
-          sizes="(max-width: 900px) 100vw, 650px"
+          src="/images/account-study-archive.webp"
+          alt="A researcher files a study chart in a green card catalog with two participant figures on top."
+          width={1080}
+          height={720}
+          sizes="(max-width: 450px) 64vw, (max-width: 900px) 288px, (max-width: 1100px) 48vw, 544px"
           className={s.illustration}
         />
       </section>
