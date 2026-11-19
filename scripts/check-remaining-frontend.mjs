@@ -186,8 +186,7 @@ export async function checkRemainingFrontend({ page, origin, root, output, repor
           assert.equal(await map.locator('circle').count(), 7);
           assert.equal(await page.locator('main header a[href="mailto:xul049@ucsd.edu"]').count(), 1);
           assert.equal(await page.getByRole('heading', { name: 'Work with HumanStudy-Hub' }).count(), 0);
-          assert.equal(await page.locator('#partner-logo-list').getByRole('img').count(), 7);
-          assert.equal(await page.locator('#partner-logo-list').innerText(), '');
+          assert.equal(await page.locator('#partner-logo-list').count(), 0);
         }
         await checkLayout(route, width, name);
       }
