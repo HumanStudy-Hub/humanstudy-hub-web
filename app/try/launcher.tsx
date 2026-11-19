@@ -197,7 +197,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
         {(phase === "starting" || phase === "cancelling" || (!busy && (workspace === "running" || workspace === "transition"))) &&
           <button type="button" className="mr-4 underline" onClick={() => void stop()}>{phase === "starting" ? "Cancel startup" : phase === "cancelling" ? "Retry stop" : "Stop workspace"}</button>}
         {(!busy || phase === "cancelling") && <button type="button" className="mr-4 underline" onClick={() => { setMessage(""); void checkStatus(); }}>Check status</button>}
-        <Link href="/download" className="underline">Desktop app</Link>
+        <Link href="/download" className="underline">Product</Link>
       </div>
     </div>
   );

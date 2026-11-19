@@ -92,16 +92,13 @@ test('workspace pages retain their own navigation and footer', () => {
   assert.match(render(Footer), /All rights reserved/);
 });
 
-test('the real homepage retains its original actions and has one main heading', () => {
+test('the homepage introduces the project with one main heading', () => {
   const html = render(Home);
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
   assert.doesNotMatch(html, /<main\b/);
-  for (const href of ['/forum', '/studies', '/download']) {
-    assert.match(html, new RegExp(`href="${href}"`));
-  }
   assert.match(html, /Open infrastructure for/);
-  assert.match(html, /human-study research/);
-  assert.match(html, /Turn published human studies into executable programs that others can reuse and build upon\./);
+  assert.match(html.replace(/<[^>]+>/g, ''), /human-study research/);
+  assert.match(html, /Turn human studies into programs you and others can run, reuse and build on<\/p>/);
 });
 
 test('Forum introduces the community before its two original featured posts', async () => {
@@ -163,12 +160,13 @@ test('contributor profiles show an unavailable state during storage errors', asy
   assert.match(html, /href="\/studies"/);
 });
 
-test('the homepage groups all four actions in the requested order without secondary sections', () => {
+test('the homepage pairs the research scene with the Desktop preview and partner institutions', () => {
   const html = render(Home);
-  const links = [...html.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(match => match[1]);
-  assert.deepEqual(links, ['/download', '/forum', '/collaboration', '/studies']);
-  assert.match(html, /aria-label="Explore HumanStudy Hub"/);
-  assert.doesNotMatch(html, /Questions we’re exploring|Join the conversation|<h2/);
+  assert.match(html, /Scientists exploring study data/);
+  assert.doesNotMatch(html, /collaboration-map-title/);
+  assert.match(html, /From paper to protocol/);
+  assert.match(html, /Our research community/);
+  assert.match(html, /alt="University of Lausanne"/);
 });
 
 const { libraryFilters, libraryAvailability, researchContributorNames, validateResearchQuery } = load('lib/research.ts');
@@ -196,18 +194,19 @@ async function renderStudies(params, result, error) {
 const paper = {
   id: 'paper_0123456789abcdef01234567',
   title: 'Published study',
+  discipline: { id: 'social-psychology', label: 'Social psychology' },
   authors: ['Original author'],
   year: 2024,
   currentRevision: null,
   legacyStudyId: 'study_005',
   aliases: [],
 };
-const results = { items: [paper], total: 1, counts: { all: 336, program: 34, runnable: 9, protocol: 0, development: 20, indexed: 282 }, offset: 0, limit: 30, nextOffset: null };
+const results = { items: [paper], total: 1, disciplines: [{ ...paper.discipline, count: 1 }], counts: { all: 336, program: 34, runnable: 9, protocol: 0, development: 20, indexed: 282 }, offset: 0, limit: 30, nextOffset: null };
 
 test('the styled study library uses the real search contract and retains paper metadata', async () => {
   const html = await renderStudies({ q: 'knobe' }, results);
   assert.equal(libraryCalls.length, 1);
-  assert.equal(libraryCalls[0].pool, 'program');
+  assert.equal(libraryCalls[0].pool, 'all');
   assert.equal(libraryCalls[0].input.query, 'knobe');
   assert.match(html, /href="\/studies\/paper_0123456789abcdef01234567"/);
   assert.match(html, /Published study/);
@@ -217,8 +216,7 @@ test('the styled study library uses the real search contract and retains paper m
   assert.doesNotMatch(html, />Run experiment</);
   assert.match(html, /<h1>Study Library<\/h1>/);
   assert.match(html, /1 paper\b/);
-  assert.match(html, /href="\/studies\?q=knobe&amp;status=all"[^>]*>All papers/);
-  assert.match(html, /href="\/studies\?q=knobe&amp;status=program"[^>]*>Interactive papers/);
+  assert.doesNotMatch(html, /Paper views|Interactive papers|Search all papers/);
   assert.match(html, /name="validated"[^>]*>Validated protocols only/);
   assert.doesNotMatch(html, /Awaiting extraction|In development|Runnable experiments|Human Study Programs/);
   assert.doesNotMatch(html, /Study collections|name="pool"/);
@@ -231,12 +229,12 @@ test('the old pending link opens the awaiting-extraction filter', async () => {
   assert.equal(libraryCalls[0].pool, 'indexed');
   assert.match(html, /<h1>Study Library<\/h1>/);
   assert.match(html, /name="status" value="indexed"/);
-  assert.match(html, /href="\/studies\?q=knobe&amp;status=all"[^>]*>All papers/);
+  assert.match(html, /href="\/studies\?q=knobe&amp;status=all"[^>]*>Search all papers/);
   assert.doesNotMatch(html, /more indexed/);
 });
 
-test('library pagination preserves the search query and the selected pool', async () => {
-  const html = await renderStudies({ q: 'choice & risk', status: 'all', validated: '1', offset: '30' }, {
+test('library pagination preserves the search, author, discipline, and selected pool', async () => {
+  const html = await renderStudies({ q: 'choice & risk', author: 'Original', discipline: 'social-psychology', status: 'all', validated: '1', offset: '30' }, {
     ...results, total: 90, offset: 30, nextOffset: 60,
   });
   assert.equal(libraryCalls[0].pool, 'all');
@@ -251,6 +249,8 @@ test('library pagination preserves the search query and the selected pool', asyn
     const url = links.find(link => link.searchParams.get('offset') === offset);
     assert.ok(url, 'Pagination exposes offset ' + offset);
     assert.equal(url.searchParams.get('q'), 'choice & risk');
+    assert.equal(url.searchParams.get('author'), 'Original');
+    assert.equal(url.searchParams.get('discipline'), 'social-psychology');
     assert.equal(url.searchParams.get('status'), 'all');
     assert.equal(url.searchParams.get('validated'), '1');
   }
@@ -621,14 +621,28 @@ test('the collaboration page renders its map and contact details before JavaScri
   assert.ok(header);
   assert.match(header, /AI tools for social science/);
   assert.match(header, /href="mailto:xul049@ucsd.edu"/);
-  assert.equal((html.match(/mailto:/g) || []).length, 1);
+  const team = html.match(/<section aria-labelledby="team-title">(.*?)<\/section>/s)?.[1];
+  assert.ok(team);
+  for (const email of ['xul049@ucsd.edu', 'hs5533@nyu.edu', 'yuanjun.feng@unil.ch']) {
+    assert.ok(team.includes(`href="mailto:${email}"`));
+  }
+  assert.doesNotMatch(team, />Personal website<\/a>/);
+  assert.equal((team.match(/<a\b[^>]*href="https:[^"]+"[^>]*aria-label="[^"]+ — Personal website"[^>]*><img\b/g) || []).length, 3);
+  assert.doesNotMatch(team, /Google Scholar|University of Lausanne|UC San Diego|University of British Columbia/);
+  assert.equal((html.match(/<img\b[^>]*\bsrc="\/images\/team\//g) || []).length, 3);
   assert.doesNotMatch(html, /Work with HumanStudy-Hub/);
-  assert.match(html, /<svg\b[^>]*role="img"/);
+  assert.doesNotMatch(team, /Portraits open websites|Names open email/);
+  assert.match(html, /<figure\b[^>]*role="img"/);
   assert.match(html, /World map of HumanStudy-Hub partnerships/);
+  for (const id of ['ucsd', 'stanford', 'cmu', 'mit', 'unil', 'hku', 'irides']) {
+    assert.ok(html.includes(`href="/images/campuses/${id}.webp"`));
+    assert.ok(fs.existsSync(path.join(root, 'public/images/campuses', id + '.webp')));
+  }
   assert.equal((html.match(/<circle\b/g) || []).length, 7);
   assert.match(html, /University of California San Diego/);
   assert.match(html, /University of Lausanne/);
-  assert.match(html, /<details\b/);
+  assert.match(html, /alt="University of Lausanne"/);
+  assert.doesNotMatch(html, /Pause and show all universities/);
   assert.doesNotMatch(html, /(?:NaN|Infinity|undefined)/);
   for (const [, pathData] of html.matchAll(/\bd="([^"]+)"/g)) {
     for (const [ring] of pathData.matchAll(/M[^MZ]+Z/g)) {

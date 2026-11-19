@@ -15,7 +15,7 @@ export default function Footer() {
         </p>
         <nav aria-label="Footer navigation" className={styles.footerLinks}>
           <Link href="/forum">Forum</Link>
-          <Link href="/download">Desktop app</Link>
+          <Link href="/download">Product</Link>
           <Link href="/collaboration">Contact</Link>
         </nav>
       </div>

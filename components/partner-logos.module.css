@@ -1,0 +1,77 @@
+.viewport {
+  overflow: hidden;
+  margin-bottom: clamp(1.5rem, 4vw, 3rem);
+  border-block: 1px solid var(--site-line);
+}
+
+.track,
+.logos {
+  display: flex;
+  width: max-content;
+}
+
+.track {
+  animation: partner-scroll 52s linear infinite;
+}
+
+.viewport:hover .track {
+  animation-play-state: paused;
+}
+
+.logos {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.logos > li {
+  display: flex;
+  width: clamp(12rem, 23vw, 15rem);
+  flex-direction: column;
+  align-items: center;
+  padding: 1.1rem 1rem 1.25rem;
+  text-align: center;
+}
+
+.mark {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 4.25rem;
+}
+
+.mark img {
+  width: min(100%, 10.5rem);
+  height: 3rem;
+  object-fit: contain;
+}
+
+.mark img.unil {
+  box-sizing: content-box;
+  width: auto;
+  height: 2.1rem;
+  padding: 0.4rem 0.6rem;
+  background: #00549f;
+}
+
+@keyframes partner-scroll {
+  to { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce), print {
+  .logos[aria-hidden] {
+    display: none;
+  }
+
+  .track {
+    display: block;
+    width: 100%;
+    animation: none;
+  }
+
+  .logos {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}

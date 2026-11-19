@@ -1,23 +1,21 @@
 import Link from "next/link";
 import { paperWorkspace, paperWorkspacePath } from "@/lib/paper-workspace";
-import ArrowRight from "@/components/ArrowRight";
 import { libraryFilters, libraryAvailability, researchContributorNames, searchLibrary, validateResearchQuery, type LibraryFilter } from "@/lib/research";
+import LibrarySearch from "./LibrarySearch";
+import PaperExplorer, { type ExplorerPaper } from "./PaperExplorer";
 import ValidatedFilter from "./ValidatedFilter";
 import styles from "./page.module.css";
 
-type SearchParams = { q?: string; offset?: string; pool?: string; status?: string; validated?: string };
-const views = [
-  ["program", "Interactive papers"],
-  ["all", "All papers"],
-] as const;
-
+type SearchParams = { q?: string; author?: string; discipline?: string; offset?: string; pool?: string; status?: string; validated?: string };
 export default async function StudiesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
   const filter = libraryFilters.find(key => key === params.status)
-    ?? (params.pool === "pending" ? "indexed" : "program");
+    ?? (params.pool === "pending" ? "indexed" : "all");
   const validatedOnly = params.validated === "1";
-  const raw = new URLSearchParams();
-  if (typeof params.q === "string") raw.set("q", params.q);
+  const author = typeof params.author === "string" ? params.author.trim() : "";
+  const discipline = typeof params.discipline === "string" ? params.discipline : "";
+  const query = typeof params.q === "string" ? params.q.trim() : "";
+  const raw = new URLSearchParams({ q: query });
   if (typeof params.offset === "string") raw.set("offset", params.offset);
 
   let error = "";
@@ -25,7 +23,7 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
   try {
     const input = validateResearchQuery(raw);
     try {
-      result = await searchLibrary(input, filter, validatedOnly);
+      result = await searchLibrary({ ...input, author, discipline }, filter, validatedOnly);
     } catch {
       error = "The research library could not be loaded. Try again shortly.";
     }
@@ -34,102 +32,52 @@ export default async function StudiesPage({ searchParams }: { searchParams: Prom
   }
 
   const link = (status: LibraryFilter, offset?: number) => {
-    const query = new URLSearchParams();
-    if (params.q) query.set("q", params.q);
-    query.set("status", status);
-    if (validatedOnly) query.set("validated", "1");
-    if (offset !== undefined) query.set("offset", String(offset));
-    return `/studies?${query}`;
+    const next = new URLSearchParams();
+    if (query) next.set("q", query);
+    next.set("status", status);
+    if (author) next.set("author", author);
+    if (discipline) next.set("discipline", discipline);
+    if (validatedOnly) next.set("validated", "1");
+    if (offset !== undefined) next.set("offset", String(offset));
+    return `/studies?${next}`;
   };
+
+  const papers: ExplorerPaper[] = (result?.items ?? []).map(paper => {
+    const status = libraryAvailability(paper);
+    const workspace = paperWorkspace({ paper: paper.id, revision: paper.currentRevision });
+    return {
+      id: paper.id, title: paper.title, authors: paper.authors ?? [], year: paper.year,
+      description: paper.description ?? "", discipline: paper.discipline.label,
+      programHref: status.program && workspace ? paperWorkspacePath(workspace) : null,
+      canRun: status.program || status.publicProtocol, validated: status.validated,
+      userSubmitted: status.userSubmitted, contributors: researchContributorNames(paper),
+    };
+  });
 
   return (
     <div className={styles.page}>
       <header className={styles.heading}>
         <h1>Study Library</h1>
-        <Link href="/contribute" className="mt-3 inline-block text-sm text-[var(--site-accent)] underline">Contribute a study</Link>
+        <Link href="/contribute">Contribute a study</Link>
       </header>
-
-      <form id="study-search" action="/studies" className={styles.search} role="search">
-        <input type="hidden" name="status" value={filter} />
-        <label className={styles.searchField}>
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <circle cx="10.5" cy="10.5" r="6.5" />
-            <path d="m16 16 5 5" />
-          </svg>
-          <input
-            name="q"
-            defaultValue={params.q || ""}
-            aria-label="Search papers"
-            placeholder="Search a topic, paper or author"
-          />
-        </label>
-        <button type="submit">Search <ArrowRight /></button>
-      </form>
-
+      <LibrarySearch key={JSON.stringify([query, author, discipline, filter])} query={query} author={author}
+        discipline={discipline} status={filter} disciplines={result?.disciplines ?? []} />
       {error && <p role="alert" className={styles.error}>{error}</p>}
       {result && (
         <>
           <div className={styles.toolbar}>
-            <nav aria-label="Paper views" className={styles.filters}>
-              {views.map(([key, label]) => (
-                <Link key={key} href={link(key)} aria-current={filter === key ? "page" : undefined}>
-                  {label}
-                </Link>
-              ))}
-            </nav>
+            {filter !== "all" && <Link className={styles.allPapers} href={link("all")}>Search all papers</Link>}
             <ValidatedFilter checked={validatedOnly} />
+            <p className={styles.count}>{result.total} {result.total === 1 ? "paper" : "papers"}</p>
           </div>
-          <p className={styles.count}>{result.total} {result.total === 1 ? "paper" : "papers"}</p>
-          <div className={styles.studyList}>
-            {result.items.map(paper => {
-              const status = libraryAvailability(paper);
-              const href = `/studies/${paper.id}`;
-              const online = paperWorkspace({ paper: paper.id, revision: paper.currentRevision });
-              const label = status.program ? "Interact with paper" : "View paper";
-              const contributors = researchContributorNames(paper);
-              return (
-                <article key={paper.id} className={styles.study}>
-                  <div>
-                    <h2><Link href={href}>{paper.title}</Link></h2>
-                    {((paper.authors ?? []).length > 0 || paper.year) && (
-                      <p className={styles.authors}>
-                        {[(paper.authors ?? []).join(", "), paper.year].filter(Boolean).join(" · ")}
-                      </p>
-                    )}
-                    {status.validated && <p className={styles.validated}>Validated protocol</p>}
-                    {status.userSubmitted && <p className={styles.authors}>User submitted</p>}
-                  </div>
-                  <div className={styles.actions}>
-                    <Link className={styles.primary} href={status.program && online ? paperWorkspacePath(online) : href} aria-label={`${label}: ${paper.title}`}>
-                      {label} <ArrowRight />
-                    </Link>
-                    {(status.program || status.publicProtocol) && (
-                      <Link href={`${href}#run-experiment`} aria-label={`Run experiment: ${paper.title}`}>Run experiment</Link>
-                    )}
-                    {contributors.length > 0 && <p className={styles.attribution}>Contributed by {contributors.join(", ")}</p>}
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-
-          {result.total === 0 && <p className={styles.empty}>No papers match this view.</p>}
-
-          {(result.offset > 0 || result.nextOffset !== null) && <nav aria-label="Research pages" className={styles.pagination}>
-            {result.offset > 0 ? (
-              <Link href={link(filter, Math.max(0, result.offset - result.limit))}>← Previous</Link>
-            ) : <span />}
-            {result.nextOffset !== null && <Link href={link(filter, result.nextOffset)}>Next →</Link>}
-          </nav>}
+          {papers.length > 0 && <PaperExplorer key={link(filter, result.offset)} papers={papers}
+            previousHref={result.offset > 0 ? link(filter, Math.max(0, result.offset - result.limit)) : null}
+            nextHref={result.nextOffset !== null ? link(filter, result.nextOffset) : null} />}
+          {papers.length === 0 && <div className={styles.empty}>
+            <p>No papers match this view.</p>
+            <Link href={`/studies?status=${filter}`}>Reset filters</Link>
+            {result.offset > 0 && <Link href={link(filter, 0)}>Back to first page</Link>}
+          </div>}
         </>
       )}
     </div>

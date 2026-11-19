@@ -8,28 +8,32 @@
   gap: clamp(32px, 5vw, 72px);
 }
 
+.story {
+  container-type: inline-size;
+}
+
 .story h1 {
   margin: 0;
-  font-family: var(--site-font-serif);
-  font-size: clamp(44px, 4.7vw, 64px);
+  font-family: var(--site-font-display);
+  font-size: min(3.75rem, 8.6cqi);
+  white-space: nowrap;
   font-weight: 400;
   line-height: 1.08;
   letter-spacing: -0.03em;
 }
 
 .story p {
-  max-width: 34ch;
   margin: 24px 0 32px;
   color: var(--site-muted);
-  font-family: var(--site-font-serif);
-  font-size: 21px;
+  font-size: clamp(1.05rem, 1.55vw, 1.25rem);
   line-height: 1.6;
 }
 
 .illustration {
   display: block;
-  width: 100%;
+  width: min(100%, 34rem);
   height: auto;
+  margin-inline: auto;
 }
 
 .card {
@@ -40,7 +44,7 @@
 
 .card h2 {
   margin: 0 0 14px;
-  font-family: var(--site-font-serif);
+  font-family: var(--site-font-display);
   font-size: 36px;
   font-weight: 400;
   line-height: 1.15;
@@ -181,15 +185,11 @@
   outline-offset: 4px;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 900px) {
   .page {
     grid-template-columns: minmax(0, 1fr);
     padding-block: 40px 48px;
     gap: 36px;
-  }
-
-  .story h1 {
-    font-size: 44px;
   }
 
   .story p {
@@ -198,6 +198,6 @@
   }
 
   .illustration {
-    max-width: 360px;
+    width: min(64vw, 18rem);
   }
 }

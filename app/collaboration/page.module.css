@@ -1,0 +1,138 @@
+.page {
+  width: min(100%, 1248px);
+  margin-inline: auto;
+  padding: clamp(40px, 5vw, 76px) clamp(20px, 4vw, 52px) 64px;
+}
+
+.page :where(a, input):focus-visible {
+  outline: 2px solid var(--site-accent);
+  outline-offset: 5px;
+}
+
+.intro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  margin-bottom: clamp(32px, 4vw, 54px);
+}
+
+.intro h1 {
+  font-family: var(--site-font-display);
+  font-size: clamp(3rem, 5.8vw, 5.4rem);
+  font-weight: 400;
+  line-height: 1.03;
+  letter-spacing: -0.055em;
+}
+
+.invitation {
+  max-width: 35ch;
+  font-size: 1.075rem;
+  line-height: 1.45;
+}
+
+.invitation a {
+  color: var(--site-accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.23em;
+  display: inline-block;
+  margin-top: 0.55rem;
+}
+
+.inkIcon { width: 1em; height: 1em; flex: none; color: var(--site-accent); }
+
+.team {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(16px, 2vw, 32px);
+  margin-top: clamp(1.5rem, 3.5vw, 3rem);
+  padding: 0;
+  list-style: none;
+  text-align: center;
+}
+
+.team li {
+  --tilt: -4deg;
+  min-width: 0;
+}
+
+.team li:nth-child(2) { --tilt: 3deg; }
+.team li:nth-child(3) { --tilt: -2deg; }
+
+.portrait {
+  position: relative;
+  display: block;
+  width: min(100%, 230px);
+  margin: 0 auto 0.55rem;
+  transform: rotate(var(--tilt));
+  transition: transform 180ms ease;
+}
+
+.websiteTab {
+  position: absolute;
+  right: 4%;
+  bottom: 9%;
+  display: grid;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.15rem;
+  border: 1.5px solid var(--site-accent);
+  border-radius: 48% 53% 45% 51%;
+  background: #fffaf0;
+  box-shadow: 2px 2px 0 #4e44322a;
+  font-size: 1.6rem;
+  transform: rotate(5deg);
+}
+.portrait:is(:hover, :focus-visible) .websiteTab { background: #e4ecdf; }
+
+.portrait img {
+  display: block;
+  width: 100%;
+  height: auto;
+  filter: drop-shadow(3px 5px 0 #4e443237);
+}
+
+.portrait:focus-visible, .portrait:hover {
+  transform: translateY(-4px) rotate(0);
+}
+
+.team h3 {
+  font: 700 clamp(2rem, 3.15vw, 2.8rem)/1.1 var(--site-font-hand);
+  letter-spacing: -0.045em;
+}
+
+.name { display: inline-flex; align-items: center; gap: .38rem; min-height: 44px; }
+.name .inkIcon { font-size: .56em; }
+.name:hover, .name:focus-visible {
+  color: var(--site-accent);
+  text-decoration: underline;
+  text-underline-offset: .15em;
+  text-decoration-thickness: 1px;
+}
+
+.community { margin-top: clamp(48px, 6vw, 80px); }
+
+.page h2 {
+  scroll-margin-top: 7rem;
+  font-family: var(--site-font-display);
+  font-size: clamp(2rem, 3.3vw, 2.8rem);
+  letter-spacing: -0.045em;
+  line-height: 1.12;
+}
+
+@media (max-width: 800px) {
+  .intro { flex-direction: column; align-items: flex-start; gap: 15px; }
+  .invitation { max-width: 50ch; }
+}
+
+@media (max-width: 650px) {
+  .team { grid-template-columns: 1fr; gap: 32px; }
+  .team li + li { border-top: 1px dashed var(--site-line); padding-top: 28px; }
+  .portrait { width: min(80%, 210px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portrait { transition: none; }
+  .portrait:focus-visible, .portrait:hover { transform: rotate(var(--tilt)); }
+}
