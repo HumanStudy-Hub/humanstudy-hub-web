@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { paperWorkspaceSignIn, workspacePaperUrl, type PaperWorkspace } from "@/lib/paper-workspace";
 import styles from "@/components/folio-page.module.css";
+import { ModelAllowance } from "@/components/model-allowance";
 
 type Workspace = "new" | "running" | "stopped" | "transition";
 type Phase = "idle" | "starting" | "stopping" | "saving" | "cancelling";
@@ -179,6 +180,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
       <h1>HumanStudy Hub online</h1>
       <p className={styles.lede}>Open the desktop workspace in your browser. Sessions last up to {sessionMinutes} minutes.</p>
       {target && <p className="mt-4">Opening <strong>{paperTitle}</strong>. You can review it and create your own project; no experiment starts automatically.</p>}
+      <ModelAllowance className="mt-4" />
       <div className={styles.section}>
         {updating && busy && <p role="status">Updating your workspace and preserving your saved projects…</p>}
         {!updating && phase === "starting" && <p role="status">Opening your workspace…</p>}

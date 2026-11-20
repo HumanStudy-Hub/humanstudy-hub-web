@@ -35,6 +35,7 @@ function fixture(states, launches = [], stopReply = {pending:false}) {
     if(name==='next/link')return {default:'a'};
     if(name.includes('paper-workspace'))return {paperWorkspaceSignIn:()=>'/account?returnTo=%2Ftry',workspacePaperUrl:url=>url};
     if(name.endsWith('.css'))return {default:{}};
+    if(name.endsWith('model-allowance'))return {ModelAllowance:()=>null};
     throw Error(name);
   },loaded,loaded.exports,fetch,fn=>{timers.push(fn);return fn;},fn=>{const i=timers.indexOf(fn);if(i>=0)timers.splice(i,1);},{location:{assign:url=>redirects.push(url)}});
   const render=()=>{index=0;effects=[];return loaded.exports.default({needsCode:false,sessionMinutes:45});};
