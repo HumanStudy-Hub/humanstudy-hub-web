@@ -1,4 +1,5 @@
 import "server-only";
+import { hostedQuotaEnvironment } from "./hosted-model-quota";
 import { tryServiceKey } from "./try-online-config";
 
 /** Current per-account hosted model grant (supabase/migrations/20261119120000_invitation_allowance_v2.sql).
@@ -15,7 +16,8 @@ const NONE: Allowance = { available: false, percentLeft: 0, requestsLeft: 0, rev
 const count = (value: unknown) => { const n = Number(value); return Number.isFinite(n) && n > 0 ? n : 0; };
 const percent = (left: number, total: number) => Math.max(0, Math.min(100, Math.floor((left / total) * 100)));
 
-/** Percent left = the smaller of dollar% and request% left, floored and clamped to 0–100. Revoked or expired = 0. */
+/** Percent left = the smaller of dollar% and request% left, floored and clamped to 0–100; at least 1 while both
+ *  remaining values are positive (never "0% left" while still usable). Revoked or expired = 0. */
 export function summarizeAllowance(row: AllowanceRow | null | undefined, now = Date.now()): Allowance {
   if (!row) return NONE;
   const revoked = row.revoked !== false;
@@ -25,18 +27,22 @@ export function summarizeAllowance(row: AllowanceRow | null | undefined, now = D
   const microusd = count(row.remaining_microusd), requests = Math.floor(count(row.remaining_requests));
   return {
     available: true,
-    percentLeft: Math.min(percent(microusd, ALLOWANCE_TOTAL_MICROUSD), percent(requests, ALLOWANCE_TOTAL_REQUESTS)),
+    percentLeft: microusd > 0 && requests > 0
+      ? Math.max(1, Math.min(percent(microusd, ALLOWANCE_TOTAL_MICROUSD), percent(requests, ALLOWANCE_TOTAL_REQUESTS)))
+      : 0,
     requestsLeft: requests, revoked, expired,
   };
 }
 
-/** Reads the account's production grant row with the service role. Missing row or lookup failure = not available. */
+/** Reads the account's grant row for the active quota environment (`<env>:account:<uuid>`) with the service role.
+ *  Quotas off, missing row or lookup failure = not available. */
 export async function accountAllowance(userId: string): Promise<Allowance> {
-  if (!UUID.test(userId)) return NONE;
+  const environment = hostedQuotaEnvironment();
+  if (!environment || !UUID.test(userId)) return NONE;
   try {
     const key = tryServiceKey(), url = new URL(process.env.SUPABASE_URL || "");
     if (!key || url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) return NONE;
-    const budgetKey = encodeURIComponent(`production:account:${userId}`);
+    const budgetKey = encodeURIComponent(`${environment}:account:${userId}`);
     const response = await fetch(`${url.origin}/rest/v1/online_dev_model_budget?select=remaining_microusd,remaining_requests,expires_at,revoked&budget_key=eq.${budgetKey}&limit=1`, {
       redirect: "error", cache: "no-store", signal: AbortSignal.timeout(5000),
       headers: { apikey: key, Authorization: `Bearer ${key}` },

@@ -8,10 +8,15 @@ export function ModelAllowance({ className, strongLabel = false }: { className?:
   const [allowance, setAllowance] = useState<Allowance | null>(null);
   useEffect(() => {
     const controller = new AbortController();
-    fetch('/api/desktop/allowance', { cache: 'no-store', signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) })
-      .then(response => response.ok ? response.json() as Promise<Allowance> : null)
-      .then(result => { if (!controller.signal.aborted) setAllowance(result?.available ? result : null); })
-      .catch(() => {});
+    try {
+      // AbortSignal.any / timeout are missing in older Safari; fall back to the unmount signal alone.
+      let signal: AbortSignal = controller.signal;
+      try { signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]); } catch {}
+      fetch('/api/desktop/allowance', { cache: 'no-store', signal })
+        .then(response => response.ok ? response.json() as Promise<Allowance> : null)
+        .then(result => { if (!controller.signal.aborted) setAllowance(result?.available ? result : null); })
+        .catch(() => {});
+    } catch {}
     return () => controller.abort();
   }, []);
   if (!allowance) return null;

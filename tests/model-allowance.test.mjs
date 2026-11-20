@@ -8,7 +8,8 @@ function load(file, deps = {}) {
   const m = { exports: {} }; new Function('require', 'module', 'exports', js)((n) => deps[n] ?? require(n), m, m.exports); return m.exports;
 }
 const user = '11111111-1111-4111-8111-111111111111';
-const lib = load('lib/model-allowance.ts', { 'server-only': {}, './try-online-config': { tryServiceKey: () => 'service-fixture' } });
+let quotaEnvironment = 'production';
+const lib = load('lib/model-allowance.ts', { 'server-only': {}, './hosted-model-quota': { hostedQuotaEnvironment: () => quotaEnvironment }, './try-online-config': { tryServiceKey: () => 'service-fixture' } });
 const now = Date.parse('2026-11-20T00:00:00Z'), future = '2027-01-01T00:00:00Z', past = '2026-11-01T00:00:00Z';
 const row = (microusd, requests, extra = {}) => ({ remaining_microusd: microusd, remaining_requests: requests, expires_at: future, revoked: false, ...extra });
 
@@ -17,7 +18,10 @@ test('percent left is the smaller of dollar and request share, floored', () => {
   assert.deepEqual(lib.summarizeAllowance(row(10_000_000, 500), now), { available: true, percentLeft: 100, requestsLeft: 500, revoked: false, expired: false });
   assert.equal(lib.summarizeAllowance(row(8_700_000, 490), now).percentLeft, 87);
   assert.equal(lib.summarizeAllowance(row(9_900_000, 250), now).percentLeft, 50);
-  assert.equal(lib.summarizeAllowance(row(9_999, 500), now).percentLeft, 0);
+  assert.equal(lib.summarizeAllowance(row(9_999, 500), now).percentLeft, 1); // still usable: never show 0%
+  assert.equal(lib.summarizeAllowance(row(10_000_000, 1), now).percentLeft, 1);
+  assert.equal(lib.summarizeAllowance(row(0, 500), now).percentLeft, 0);
+  assert.equal(lib.summarizeAllowance(row(10_000_000, 0), now).percentLeft, 0);
   assert.equal(lib.summarizeAllowance(row('5000000', '400'), now).percentLeft, 50); // bigint columns may arrive as strings
 });
 
@@ -45,6 +49,12 @@ test('accountAllowance reads only this account production row with the service r
   assert.match(urls[0], new RegExp(`budget_key=eq\\.${encodeURIComponent(`production:account:${user}`)}`));
   rows = []; assert.equal((await lib.accountAllowance(user)).available, false);
   assert.equal((await lib.accountAllowance('not-a-uuid')).available, false); assert.equal(urls.length, 2);
+  quotaEnvironment = 'dev'; rows = [row(10_000_000, 500)];
+  assert.equal((await lib.accountAllowance(user)).percentLeft, 100);
+  assert.match(urls[2], new RegExp(`budget_key=eq\\.${encodeURIComponent(`dev:account:${user}`)}`));
+  quotaEnvironment = null;
+  assert.deepEqual(await lib.accountAllowance(user), { available: false, percentLeft: 0, requestsLeft: 0, revoked: false, expired: false });
+  assert.equal(urls.length, 3); quotaEnvironment = 'production';
 });
 
 function route({ desktopUser = null, sessionUser = null, sessionError = null } = {}) {
