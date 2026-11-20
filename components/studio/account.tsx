@@ -7,6 +7,7 @@ import { accountPath } from '@/lib/studio/auth-policy';
 import { studioApi } from './client';
 import ArrowRight from '@/components/ArrowRight';
 import s from './account.module.css';
+import { ModelAllowance } from '@/components/model-allowance';
 
 export default function Account({ returnTo, logout }: { returnTo?: string; logout: boolean }) {
   const [user, setUser] = useState<StudioUser | null>(null);
@@ -124,6 +125,7 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
               <div className={s.accountLinks} aria-label="Sign-in details">
                 <h3>Sign-in details</h3>
                 <p><strong>Current email</strong> {user.email}</p>
+                <ModelAllowance strongLabel />
                 {user.email && <details>
                   <summary>Change email</summary>
                   <form onSubmit={changeEmail} aria-label="Change email">
