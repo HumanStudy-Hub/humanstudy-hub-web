@@ -62,6 +62,11 @@ function fixture(t, options = {}) {
           calls.push(['visit-probe']);
           return { exitCode: 0, stdout: async () => options.serverVisit ?? '' };
         }
+        if (input.args[1].includes('servers(process.argv[1]).length')) {
+          calls.push(['server-count']);
+          if (options.countFails) throw new Error('fixture probe failed');
+          return { exitCode: 0, stdout: async () => String(options.serverProcesses ?? (options.deadServer ? 0 : 1)) };
+        }
         if (input.args[1].includes('"SIGTERM"')) {
           calls.push(['signal-stop', ...input.args.slice(2)]);
           return { exitCode: 0, stdout: async () => JSON.stringify({ visit: options.serverVisit ?? null, servers: 1, exited: true }) };
@@ -86,6 +91,10 @@ function fixture(t, options = {}) {
     async get(input) {
       calls.push(['get', input.name, input.resume]);
       if (!exists) throw new APIError(404);
+      if (input.resume) {
+        sandbox.status = 'running';
+        if (options.resumedExpiresAt) sandbox.expiresAt = options.resumedExpiresAt;
+      }
       if (stopFailed) {
         if (options.stopReadback === 'unreachable') throw new Error('fixture provider readback failed');
         if (options.stopReadback === 'missing') throw new APIError(404);
@@ -126,7 +135,7 @@ function fixture(t, options = {}) {
     if (path.endsWith('online_finish_workspace')) {
       return Response.json(options.cancelled ? Boolean(data.release_slot) : true);
     }
-    if (path === '/healthz' && options.deadServer && !calls.some(([name]) => name === 'start')) return new Response(null, { status: 502 });
+    if (path === '/healthz' && (options.deadServer || options.slowServer) && !calls.some(([name]) => name === 'start')) return new Response(null, { status: 502 });
     if (path === '/healthz') return Response.json({ ready: true, build: options.build ?? build });
     if (path === '/ipc/account:status') return Response.json({ value: { signedIn: true, email: options.storedEmail ?? user.email } });
     if (path === '/auth/v1/admin/generate_link') {
@@ -594,6 +603,45 @@ test('a running sandbox whose server is gone gets a fresh server and visit', asy
   assert.notEqual(visit, visitId);
   assert.equal(calls.find(([name]) => name === 'start')[1].HS_VISIT_ID, visit);
   assert.ok(!calls.some(([name]) => name === 'visit-probe'));
+});
+
+test('a running server that is only slow to answer health is retried and never replaced', async t => {
+  for (const options of [{ slowServer: true, serverVisit: visitId }, { slowServer: true, countFails: true }]) {
+    const { calls, lib } = fixture(t, options);
+    await assert.rejects(lib.launchTryOnline(user, attempt), { code: 'workspace_busy' });
+    assert.equal(calls.filter(([path]) => path === '/healthz').length, 3, 'three health checks before giving up');
+    assert.ok(calls.some(([name]) => name === 'server-count'));
+    assert.ok(!calls.some(([name]) => name === 'start'), 'the live server is not restarted');
+    assert.ok(!calls.includes('stop'));
+  }
+});
+
+test('a stopped workspace is resumed before its deadline and visit expiry are read', async t => {
+  const stale = new Date(Date.now() + 60_000); // what a stopped sandbox reports: the previous session
+  const resumedExpiresAt = new Date(Date.now() + 44 * 60_000);
+  const { calls, lib } = fixture(t, { stopped: true, expiresAt: stale, resumedExpiresAt });
+  const result = await lib.launchTryOnline(user, attempt);
+  const resume = calls.findIndex(([name, , resume]) => name === 'get' && resume === true);
+  assert.ok(resume >= 0 && resume < calls.findIndex(([path]) => path.endsWith?.('online_visit_begin')), 'resumed before the visit is recorded');
+  assert.equal(result.deadlineAt, resumedExpiresAt.toISOString(), 'the resumed session expiry, not the previous one');
+  assert.equal(calls.find(([name]) => name === 'start')[1].HS_DEADLINE_AT, resumedExpiresAt.toISOString());
+  assert.deepEqual(rpc(calls, 'online_visit_begin').map(body => body.provider_expiry), [resumedExpiresAt.toISOString(), resumedExpiresAt.toISOString()]);
+});
+
+test('a launch in the last minute ends the session as a timeout and starts a whole new one', async t => {
+  const resumedExpiresAt = new Date(Date.now() + 45 * 60_000);
+  const { calls, lib } = fixture(t, { serverVisit: visitId, expiresAt: new Date(Date.now() + 40_000), resumedExpiresAt });
+  const result = await lib.launchTryOnline(user, attempt);
+  const end = calls.findIndex(([path]) => path.endsWith?.('online_visit_end'));
+  const signal = calls.findIndex(([name]) => name === 'signal-stop');
+  const start = calls.findIndex(([name]) => name === 'start');
+  assert.ok(end >= 0 && end < signal && signal < calls.indexOf('stop') && calls.indexOf('stop') < start);
+  assert.equal(rpc(calls, 'online_visit_end')[0].reason, 'timeout');
+  assert.equal(calls[signal][3], 'timeout');
+  const visit = new URL(result.url).searchParams.get('hs_visit');
+  assert.notEqual(visit, visitId);
+  assert.equal(calls[start][1].HS_VISIT_ID, visit);
+  assert.equal(result.deadlineAt, resumedExpiresAt.toISOString());
 });
 
 test('an unavailable visit store never blocks the workspace', async t => {

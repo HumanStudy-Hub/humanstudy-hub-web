@@ -289,6 +289,27 @@ async function runningVisit(sandbox: Sandbox, deadline: AbortSignal): Promise<st
   }
 }
 
+/** How many server.cjs processes run in the sandbox. Null when the probe itself fails. */
+async function serverCount(sandbox: Sandbox, deadline: AbortSignal): Promise<number | null> {
+  const probe = SERVER_PROCESSES + `
+    process.stdout.write(String(servers(process.argv[1]).length));
+  `;
+  try {
+    const result = await sandbox.currentSession().runCommand({
+      cmd: "node", args: ["-e", probe, `${HS}/app/server.cjs`], signal: operationSignal(5000, deadline),
+    });
+    const count = result.exitCode === 0 ? Number((await result.stdout()).trim()) : NaN;
+    return Number.isSafeInteger(count) && count >= 0 ? count : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The fresh, resumed session of a stopped workspace, so its expiry is this session's and not the last one's. */
+async function resumeSession(name: string, deadline: AbortSignal): Promise<Sandbox> {
+  return Sandbox.get({ ...credentials(), name, resume: true, signal: operationSignal(25_000, deadline) });
+}
+
 /**
  * Lets the runtime record why it ends (humanstudy-desktop PR #161): atomically replaces the stop marker
  * with the server's own visit, sends SIGTERM to server.cjs and waits, bounded, for it to exit before the
@@ -389,6 +410,19 @@ export async function stopTryOnline(userId: string, attempt?: string, reason: "t
 
 // A scheduler calls the deadline sweep about once a minute; the stop itself takes up to ~25 s.
 const DEADLINE_MARGIN_MS = 90_000;
+// A launch this close to the provider limit renews the session (the runtime stops itself 25 s before it).
+const RENEW_MARGIN_MS = 60_000;
+
+/** After a stop, waits (bounded) until the workspace has finished saving. Null if it is still saving. */
+async function settledStop(name: string, deadline: AbortSignal): Promise<Sandbox | null> {
+  for (let check = 0; check < 15 && !deadline.aborted; check++) {
+    const current = await existing(name, deadline);
+    if (!current) throw FAILED();
+    if (current.status === "stopped") return current;
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  return null;
+}
 
 /**
  * The Hub's deadline stop. Ends every running session of this deployment that will reach the provider's
@@ -446,12 +480,12 @@ async function runningWithDevHub(sandbox: Sandbox, origin: string, deadline: Abo
 }
 
 /**
- * The provider's hard limit for the running session, as an ISO time. The SDK derives it from the session's
- * start and timeout; without a usable value (a session the SDK has not refreshed) the full timeout from now is
- * an upper bound, since the session cannot have started later than this call.
+ * The provider's hard limit for the current session, as an ISO time. Only a running session's expiry is
+ * used (the SDK derives it from that session's start and timeout); a stopped sandbox reports its previous
+ * session's. Callers resume first. Without a usable running expiry, the full timeout from now is used.
  */
 function hardLimit(sandbox: Sandbox, timeout: number, now = Date.now()): string {
-  const expires = sandbox.expiresAt?.getTime();
+  const expires = sandbox.status === "running" ? sandbox.expiresAt?.getTime() : undefined;
   const at = expires && expires > now && expires <= now + timeout ? expires : now + timeout;
   return new Date(at).toISOString();
 }
@@ -478,6 +512,19 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
   try {
     sandbox = await existing(name, deadline);
     if (sandbox && transitioning(sandbox)) throw new TryError(409, "workspace_transition", "Your workspace is saving. Try again in a moment.");
+    // A session about to reach its provider limit is ended as a timeout (its runtime would stop itself within
+    // seconds) and then resumed like any stopped workspace, so the visit gets a whole session.
+    const ends = sandbox?.status === "running" ? sandbox.expiresAt?.getTime() : undefined;
+    if (sandbox && ends !== undefined && ends - Date.now() < RENEW_MARGIN_MS) {
+      await endVisit(config, name, null, "timeout");
+      await signalServerStop(sandbox, "timeout");
+      await stopRunning(sandbox);
+      sandbox = await settledStop(name, deadline);
+      if (!sandbox) {
+        release = true;
+        throw new TryError(409, "workspace_transition", "Your previous session is still saving. Try again in a moment.");
+      }
+    }
     if (!sandbox || !running(sandbox)) {
       if (!(await roomFor(name, config.maxRunning, deadline))) {
         release = true;
@@ -513,13 +560,23 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
     }
     let base = !started && sandbox.status === "running" ? workspaceOrigin(sandbox) : null;
     let payload = base ? await health(base, deadline) : null;
-    // A running sandbox whose server is gone (for example after a Stop whose provider stop failed) gets a fresh server.
-    if (base && !(payload as { ready?: boolean } | null)?.ready) base = null;
+    for (let check = 0; base && check < 2 && !(payload as { ready?: boolean } | null)?.ready && !deadline.aborted; check++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      payload = await health(base, deadline);
+    }
+    // A running sandbox whose server is gone (for example after a Stop whose provider stop failed) gets a fresh
+    // server. A server that is only slow to answer is never replaced: that would kill the user's live work.
+    if (base && !(payload as { ready?: boolean } | null)?.ready) {
+      if ((await serverCount(sandbox, deadline)) !== 0) throw new TryError(503, "workspace_busy", "Your workspace is busy and did not answer. Try again in a moment.");
+      base = null;
+    }
     // A reconnect keeps the running server's visit. A server without one, or a failed probe, gets none from
     // the Hub: the runtime keeps the visit it already bound and a new id would not reach it.
     if (base) visit = await runningVisit(sandbox, deadline);
     if (!base) {
       started = true;
+      // Resume before reading the expiry: a stopped sandbox still reports its previous session's.
+      if (sandbox.status !== "running") sandbox = await resumeSession(name, deadline);
       visit = randomUUID();
       freshVisit = true;
       await beginVisit(config, visit, user.id, name, sandbox.expiresAt);

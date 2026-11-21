@@ -5,6 +5,9 @@
 -- online_workspace_visits holds the Hub's own record of each visit and of the terminal reason it decided,
 -- kept apart from the runtime's per-process session.start / session.end sequence.
 
+-- Fail fast instead of queueing behind live research_events traffic (the migration runs in one transaction).
+set local lock_timeout = '5s';
+
 -- ---------------------------------------------------------------------------------------------
 -- research_events.visit_id
 -- ---------------------------------------------------------------------------------------------

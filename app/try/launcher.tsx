@@ -16,7 +16,6 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [url, setUrl] = useState("");
-  const [deadlineAt, setDeadlineAt] = useState("");
   const [message, setMessage] = useState("");
   const updateAttempted = useRef(false);
   const [updating, setUpdating] = useState(false);
@@ -24,6 +23,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
   const stopRequested = useRef(false);
   const activeAttempt = useRef<string | null>(null);
   const actionRevision = useRef(0);
+  const [deadlineAt, setDeadlineAt] = useState("");
 
   async function checkStatus(signal?: AbortSignal) {
     const revision = actionRevision.current;
