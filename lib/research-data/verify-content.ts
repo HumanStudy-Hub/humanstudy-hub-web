@@ -16,11 +16,12 @@ function decode(row: StoredContent, stored: Uint8Array): Buffer {
   if (bytes.length > PART) throw new Error('content_part_too_large');
   return bytes;
 }
-export async function verifyContent(row: StoredContent, read: Reader): Promise<void> {
+export async function verifyContent(row: StoredContent, read: Reader, onBytes?: (bytes: Buffer) => void): Promise<void> {
   if (!/^[a-f0-9]{64}$/.test(row.sha256)) throw new Error('invalid_hash');
   const bytes = decode(row, await read.object(row.owner_id, row.sha256));
   if (row.kind !== 'manifest') {
     if (bytes.length !== row.bytes || sha(bytes) !== row.sha256) throw new Error('content_hash_mismatch');
+    onBytes?.(bytes);
     return;
   }
   const manifest = JSON.parse(bytes.toString('utf8')) as ContentManifest;
@@ -35,9 +36,32 @@ export async function verifyContent(row: StoredContent, read: Reader): Promise<v
     if (child.owner_id !== row.owner_id || child.sha256 !== part.sha256 || child.kind === 'manifest' || child.bytes !== part.bytes) throw new Error('invalid_part_row');
     const data = decode(child, await read.object(row.owner_id, part.sha256));
     if (data.length !== part.bytes || sha(data) !== part.sha256) throw new Error('part_hash_mismatch');
+    onBytes?.(data);
     hash.update(data); count += data.length;
   }
   if (count !== row.bytes || hash.digest('hex') !== row.sha256) throw new Error('manifest_hash_mismatch');
+}
+
+export async function readStoredObject(response: Response): Promise<Buffer> {
+  if (Number(response.headers.get('content-length')) > OBJECT) {
+    await response.body?.cancel();
+    throw new Error('stored_object_too_large');
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('object_missing');
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > OBJECT) {
+      await reader.cancel();
+      throw new Error('stored_object_too_large');
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
 }
 
 export async function verifyPendingContent(config: { url: string; key: string; fetch?: typeof fetch; limit?: number }) {
@@ -54,14 +78,7 @@ export async function verifyPendingContent(config: { url: string; key: string; f
   const rows = await list.json() as StoredContent[], outcome = { checked: 0, verified: 0, pending: 0, failed: 0 };
   const read: Reader = {
     row: async (owner, hash) => (await (await request(`/rest/v1/research_content?owner_id=eq.${owner}&sha256=eq.${hash}&select=*&limit=1`)).json())[0] ?? null,
-    object: async (owner, hash) => {
-      const r = await request(`/storage/v1/object/authenticated/research-content/${owner}/${hash}`);
-      if (Number(r.headers.get('content-length')) > OBJECT) { await r.body?.cancel(); throw new Error('stored_object_too_large'); }
-      const reader = r.body?.getReader(); if (!reader) throw new Error('object_missing');
-      const chunks: Uint8Array[] = []; let total = 0;
-      for (;;) { const { value, done } = await reader.read(); if (done) break; total += value.length; if (total > OBJECT) { await reader.cancel(); throw new Error('stored_object_too_large'); } chunks.push(value); }
-      return Buffer.concat(chunks);
-    },
+    object: async (owner, hash) => readStoredObject(await request(`/storage/v1/object/authenticated/research-content/${owner}/${hash}`)),
   };
   for (const row of rows) {
     outcome.checked++;
