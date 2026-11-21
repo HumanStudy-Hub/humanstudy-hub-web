@@ -48,7 +48,7 @@ function fixture(t, options = {}) {
     status: options.stopped ? 'stopped' : 'running',
     timeout: (options.providerMinutes ?? Number(env.TRY_SESSION_MINUTES)) * 60_000,
     currentSnapshotId: 'snap_previous',
-    expiresAt: new Date('2030-01-01T01:00:00Z'),
+    expiresAt: options.expiresAt ?? new Date('2030-01-01T01:00:00Z'),
     domain: () => 'https://workspace.vercel.run',
     async runCommand(input) {
       calls.push([input.cmd === 'node' ? 'probe' : 'start', input.env]);
@@ -543,6 +543,32 @@ test('a fresh launch issues one visit, starts the server with it and puts it on 
   const again = fixture(t, { stopped: true });
   const next = new URL((await again.lib.launchTryOnline(user, attempt)).url).searchParams.get('hs_visit');
   assert.notEqual(next, visit, 'a fresh launch is a new visit');
+});
+
+test('a fresh server is told the provider hard limit and the launcher receives it', async t => {
+  const expiresAt = new Date(Date.now() + 44 * 60_000);
+  const { calls, lib } = fixture(t, { stopped: true, expiresAt });
+  const result = await lib.launchTryOnline(user, attempt);
+  const env = calls.find(([name]) => name === 'start')[1];
+  assert.equal(env.HS_DEADLINE_AT, expiresAt.toISOString());
+  assert.equal(result.deadlineAt, expiresAt.toISOString());
+});
+
+test('without a usable provider expiry the deadline is the full session timeout from now', async t => {
+  const before = Date.now();
+  const { calls, lib } = fixture(t, { stopped: true, sessionMinutes: '30' });
+  const result = await lib.launchTryOnline(user, attempt);
+  const deadline = Date.parse(calls.find(([name]) => name === 'start')[1].HS_DEADLINE_AT);
+  assert.ok(deadline >= before + 30 * 60_000 && deadline <= Date.now() + 30 * 60_000);
+  assert.equal(result.deadlineAt, new Date(deadline).toISOString(), 'the launcher sees what the server was given');
+});
+
+test('a reconnect reports the running session deadline without restarting the server', async t => {
+  const expiresAt = new Date(Date.now() + 12 * 60_000);
+  const { calls, lib } = fixture(t, { serverVisit: visitId, expiresAt });
+  const result = await lib.launchTryOnline(user, attempt);
+  assert.ok(!calls.some(([name]) => name === 'start'));
+  assert.equal(result.deadlineAt, expiresAt.toISOString());
 });
 
 test('a reconnect to the running server keeps the visit it was started with', async t => {

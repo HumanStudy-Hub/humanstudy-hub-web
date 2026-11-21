@@ -8,7 +8,7 @@ import { ModelAllowance } from "@/components/model-allowance";
 
 type Workspace = "new" | "running" | "stopped" | "transition";
 type Phase = "idle" | "starting" | "stopping" | "saving" | "cancelling";
-type Reply = { status?: Workspace; url?: string; error?: string; message?: string; pending?: boolean; ignored?: boolean };
+type Reply = { status?: Workspace; url?: string; deadlineAt?: string; error?: string; message?: string; pending?: boolean; ignored?: boolean };
 
 export default function TryLauncher({ needsCode, sessionMinutes, target, paperTitle }: { needsCode: boolean; sessionMinutes: number; target?: PaperWorkspace | null; paperTitle?: string }) {
   const [codeRequired, setCodeRequired] = useState(needsCode);
@@ -16,6 +16,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [url, setUrl] = useState("");
+  const [deadlineAt, setDeadlineAt] = useState("");
   const [message, setMessage] = useState("");
   const updateAttempted = useRef(false);
   const [updating, setUpdating] = useState(false);
@@ -122,6 +123,7 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
       if (!stopRequested.current) {
         setWorkspace("running");
         setUrl(workspacePaperUrl(data.url, target));
+        setDeadlineAt(data.deadlineAt || "");
         setPhase("idle");
       }
     } catch (error) {
@@ -187,7 +189,8 @@ export default function TryLauncher({ needsCode, sessionMinutes, target, paperTi
         {!updating && (phase === "stopping" || phase === "saving") && <p role="status">Saving your workspace and stopping… This can take a little while.</p>}
         {phase === "cancelling" && <p role="status">Cancellation requested. The workspace will stop once startup finishes.</p>}
         {message && <p role="status" className="mb-4">{message}</p>}
-        {url && <p className="mb-4"><a href={url} target="_blank" rel="noreferrer" className={styles.button}>Open in browser ↗</a></p>}
+        {url && <p className="mb-4"><a href={url} target="_blank" rel="noreferrer" className={styles.button}>Open in browser ↗</a>
+          {deadlineAt && <span className="ml-3 text-sm opacity-70">Session ends at {new Date(deadlineAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span>}</p>}
         {!busy && !url && workspace !== "transition" && <form onSubmit={event => { event.preventDefault(); void start(); }} className="mb-4">
           {codeRequired && <label className="mb-3 block">
             <span className="block">Invitation code (asked once for this account)</span>

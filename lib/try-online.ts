@@ -445,8 +445,19 @@ async function runningWithDevHub(sandbox: Sandbox, origin: string, deadline: Abo
   }
 }
 
+/**
+ * The provider's hard limit for the running session, as an ISO time. The SDK derives it from the session's
+ * start and timeout; without a usable value (a session the SDK has not refreshed) the full timeout from now is
+ * an upper bound, since the session cannot have started later than this call.
+ */
+function hardLimit(sandbox: Sandbox, timeout: number, now = Date.now()): string {
+  const expires = sandbox.expiresAt?.getTime();
+  const at = expires && expires > now && expires <= now + timeout ? expires : now + timeout;
+  return new Date(at).toISOString();
+}
+
 /** Starts or reopens one private, persistent workspace. A missing prior snapshot is never replaced automatically. */
-export async function launchTryOnline(user: { id: string; email?: string | null }, attempt: string = randomUUID()): Promise<{ url: string; resumed: boolean }> {
+export async function launchTryOnline(user: { id: string; email?: string | null }, attempt: string = randomUUID()): Promise<{ url: string; resumed: boolean; deadlineAt: string }> {
   const config = configuration();
   if (!user.email) throw new TryError(403, "email_required", "Sign in with an email address to open an online workspace.");
   const hubOrigin = devHubOrigin();
@@ -463,6 +474,7 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
   let started = false, cancelled = false, release = false;
   // One canonical id per logical visit: a reconnect to the same server process keeps it.
   let visit: string | null = null, freshVisit = false, startFailed = false;
+  let deadlineAt = "";
   try {
     sandbox = await existing(name, deadline);
     if (sandbox && transitioning(sandbox)) throw new TryError(409, "workspace_transition", "Your workspace is saving. Try again in a moment.");
@@ -511,7 +523,9 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
       visit = randomUUID();
       freshVisit = true;
       await beginVisit(config, visit, user.id, name, sandbox.expiresAt);
-      const env: Record<string, string> = { HS_WEB_TOKEN: token, HS_VISIT_ID: visit, HUMANSTUDY_COMMUNITY_BRANCH: process.env.VERCEL_ENV === "preview" ? "dev" : "main" };
+      // The runtime ends the visit itself shortly before this limit, so the deadline needs no Hub scheduler.
+      deadlineAt = hardLimit(sandbox, timeout);
+      const env: Record<string, string> = { HS_WEB_TOKEN: token, HS_VISIT_ID: visit, HS_DEADLINE_AT: deadlineAt, HUMANSTUDY_COMMUNITY_BRANCH: process.env.VERCEL_ENV === "preview" ? "dev" : "main" };
       if (networkPolicy) {
         env.HUMANSTUDY_SERVER = hubOrigin;
         env.NODE_USE_SYSTEM_CA = "1";
@@ -566,7 +580,7 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
     const url = new URL("/", base);
     url.searchParams.set("t", token);
     if (visit) url.searchParams.set("hs_visit", visit);
-    return { url: url.href, resumed };
+    return { url: url.href, resumed, deadlineAt: deadlineAt || hardLimit(sandbox, timeout) };
   } catch (error) {
     if (!started && !cancelled && !release) {
       const completed = await finish(config, name, lease, false, sandbox?.expiresAt).catch(() => null);
