@@ -500,6 +500,11 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
       }
     }
     let base = !started && sandbox.status === "running" ? workspaceOrigin(sandbox) : null;
+    let payload = base ? await health(base, deadline) : null;
+    // A running sandbox whose server is gone (for example after a Stop whose provider stop failed) gets a fresh server.
+    if (base && !(payload as { ready?: boolean } | null)?.ready) base = null;
+    // A reconnect keeps the running server's visit. A server without one, or a failed probe, gets none from
+    // the Hub: the runtime keeps the visit it already bound and a new id would not reach it.
     if (base) visit = await runningVisit(sandbox, deadline);
     if (!base) {
       started = true;
@@ -518,12 +523,8 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
         throw FAILED();
       }
       base = workspaceOrigin(sandbox);
-    } else if (!visit) {
-      // A server started without a visit binds the first one its landing page receives.
-      visit = randomUUID();
-      freshVisit = true;
+      payload = await health(base, deadline);
     }
-    let payload = await health(base, deadline);
     if (started) {
       for (let check = 0; check < 2 && !(payload as { ready?: boolean } | null)?.ready && !deadline.aborted; check++) {
         await new Promise(resolve => setTimeout(resolve, 400));
@@ -561,10 +562,10 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
       cancelled = true;
       throw new TryError(409, "workspace_cancelled", "Startup was cancelled.");
     }
-    await beginVisit(config, visit, user.id, name, sandbox.expiresAt);
+    if (visit) await beginVisit(config, visit, user.id, name, sandbox.expiresAt);
     const url = new URL("/", base);
     url.searchParams.set("t", token);
-    url.searchParams.set("hs_visit", visit);
+    if (visit) url.searchParams.set("hs_visit", visit);
     return { url: url.href, resumed };
   } catch (error) {
     if (!started && !cancelled && !release) {

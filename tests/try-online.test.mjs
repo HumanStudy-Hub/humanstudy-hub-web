@@ -126,6 +126,7 @@ function fixture(t, options = {}) {
     if (path.endsWith('online_finish_workspace')) {
       return Response.json(options.cancelled ? Boolean(data.release_slot) : true);
     }
+    if (path === '/healthz' && options.deadServer && !calls.some(([name]) => name === 'start')) return new Response(null, { status: 502 });
     if (path === '/healthz') return Response.json({ ready: true, build: options.build ?? build });
     if (path === '/ipc/account:status') return Response.json({ value: { signedIn: true, email: options.storedEmail ?? user.email } });
     if (path === '/auth/v1/admin/generate_link') {
@@ -207,7 +208,7 @@ test('an existing matching workspace reopens without restarting', async t => {
   const { calls, lib } = fixture(t);
   const result = await lib.launchTryOnline(user, attempt);
   assert.equal(result.resumed, true);
-  assert.match(result.url, /^https:\/\/workspace\.vercel\.run\/\?t=[a-f0-9]{64}&hs_visit=[0-9a-f-]{36}$/);
+  assert.match(result.url, /^https:\/\/workspace\.vercel\.run\/\?t=[a-f0-9]{64}$/, 'a server started without a visit gets no Hub visit');
   assert.ok(!calls.some(([name]) => name === 'start'));
   const seed = calls.find(([name]) => name === '/__seed')[1];
   assert.equal(seed.session.accessToken, 'workspace-access');
@@ -553,12 +554,20 @@ test('a reconnect to the running server keeps the visit it was started with', as
   assert.deepEqual(rpc(calls, 'online_visit_begin').map(body => body.visit), [visitId]);
 });
 
-test('a running server without a visit gets one on the URL and is not restarted', async t => {
+test('a running server without a visit (or a failed probe) is not given a new one or restarted', async t => {
   const { calls, lib } = fixture(t);
-  const visit = new URL((await lib.launchTryOnline(user, attempt)).url).searchParams.get('hs_visit');
-  assert.match(visit, /^[0-9a-f-]{36}$/);
+  const url = new URL((await lib.launchTryOnline(user, attempt)).url);
+  assert.equal(url.searchParams.get('hs_visit'), null, 'the runtime keeps the visit it already bound');
   assert.ok(!calls.some(([name]) => name === 'start'));
-  assert.deepEqual(rpc(calls, 'online_visit_begin').map(body => body.visit), [visit]);
+  assert.deepEqual(rpc(calls, 'online_visit_begin'), []);
+});
+
+test('a running sandbox whose server is gone gets a fresh server and visit', async t => {
+  const { calls, lib } = fixture(t, { deadServer: true, serverVisit: visitId });
+  const visit = new URL((await lib.launchTryOnline(user, attempt)).url).searchParams.get('hs_visit');
+  assert.notEqual(visit, visitId);
+  assert.equal(calls.find(([name]) => name === 'start')[1].HS_VISIT_ID, visit);
+  assert.ok(!calls.some(([name]) => name === 'visit-probe'));
 });
 
 test('an unavailable visit store never blocks the workspace', async t => {
