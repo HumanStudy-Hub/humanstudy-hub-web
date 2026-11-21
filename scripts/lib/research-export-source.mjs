@@ -96,6 +96,11 @@ export function createSource({ url, key, fetcher = fetch }) {
         offset += page.length;
       }
     }),
+    // Hub visit records (online_workspace_visits) that overlap the range, and any referenced by events.
+    visits: ({ owner, from, to }) => byIdPage('online_workspace_visits', [...account('owner_id', owner),
+      ['started_at', 'lt.' + to], ['or', '(ended_at.is.null,ended_at.gte.' + from + ')']]),
+    visitsById: (ids, owner) => byIds(ids, (filter) => byIdPage('online_workspace_visits',
+      [...account('owner_id', owner), ['id', filter]])),
     reservations: ({ owner, from, to }) => byIdPage('online_model_reservations',
       [...account('account_id', owner), ...range('created_at', from, to)]),
     reservationsById: (ids, owner) => byIds(ids, (filter) => byIdPage('online_model_reservations',

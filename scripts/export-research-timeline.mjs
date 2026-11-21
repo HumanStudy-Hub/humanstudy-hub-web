@@ -16,6 +16,8 @@ const SESSION_COLUMNS = `owner_id visit_id surface install_id research_session_i
 const USAGE_COLUMNS = `id account_id environment model_id created_at settled_at state reserved_microusd
   actual_microusd matched_by event_ids sessions`.split(/\s+/);
 const CONTENT_COLUMNS = 'owner_id sha256 status path bytes mime'.split(' ');
+const VISIT_COLUMNS = `visit_id owner_id workspace started_at ended_at end_reason provider_expires_at
+  hub_record research_session_ids events_exported`.split(/\s+/);
 
 function utcDate(input) {
   const date = /^\d{4}-\d\d-\d\d/.exec(input ?? '')?.[0];
@@ -68,10 +70,11 @@ function gapFlags(delivery) {
   return flags;
 }
 
-function orderTimeline(events, deliveryRows) {
+function orderTimeline(events, deliveryRows, hubVisits = new Map()) {
   const deliveryBySession = new Map(deliveryRows.map((row) => [sessionKey(row), row]));
   // Some collectors may put a visit identifier on only part of a session.
   const visitBySession = new Map();
+  // The top-level column is the runtime's canonical stamp; metadata is a fallback for older collectors.
   const visitOf = (row) => row.visit_id || row.metadata?.visit_id || null;
   for (const event of [...events].sort(byTime)) {
     if (visitOf(event) && !visitBySession.has(sessionKey(event))) {
@@ -104,7 +107,12 @@ function orderTimeline(events, deliveryRows) {
   const start = (session) => Date.parse(session.delivery?.first_occurred_at ?? session.first_exported_at);
   const orderedVisits = [...visits.values()].map((visit) => visit.sort((a, b) =>
     start(a) - start(b) || compare(sessionKey(a), sessionKey(b))));
-  orderedVisits.sort(([a], [b]) => compare(a.owner_id, b.owner_id) || start(a) - start(b) ||
+  // A Hub record gives the visit's own start, before any runtime event.
+  const visitStart = (session) => {
+    const hub = session.visit_id && hubVisits.get(scope(session.owner_id, session.visit_id));
+    return hub ? Math.min(Date.parse(hub.started_at), start(session)) : start(session);
+  };
+  orderedVisits.sort(([a], [b]) => compare(a.owner_id, b.owner_id) || visitStart(a) - visitStart(b) ||
     compare(a.visit_id ?? sessionKey(a), b.visit_id ?? sessionKey(b)));
   return orderedVisits.flat();
 }
@@ -262,10 +270,52 @@ function addTable(zip, name, columns, rows) {
   zip.addFile(name + '.csv', Buffer.from(csv));
 }
 
+async function loadVisits(rows, source, options) {
+  const exportedOwners = new Set(rows.map((row) => row.owner_id));
+  const referenced = rows.map((row) => row.visit_id || row.metadata?.visit_id).filter(Boolean);
+  const byKey = new Map();
+  for (const row of [...await source.visits(options), ...await source.visitsById(referenced, options.owner)]) {
+    // A cohort export lists visits only for accounts with exported research events, like usage.
+    if (options.owner ? row.owner_id === options.owner : exportedOwners.has(row.owner_id)) {
+      byKey.set(scope(row.owner_id, row.id), row);
+    }
+  }
+  return byKey;
+}
+
+function visitTable(sessions, hubVisits) {
+  const rows = new Map();
+  const add = (owner_id, visit_id) => {
+    const key = scope(owner_id, visit_id);
+    if (!rows.has(key)) {
+      const hub = hubVisits.get(key);
+      rows.set(key, {
+        visit_id, owner_id, workspace: hub?.workspace ?? null, started_at: hub?.started_at ?? null,
+        ended_at: hub?.ended_at ?? null, end_reason: hub?.end_reason ?? null,
+        provider_expires_at: hub?.provider_expires_at ?? null, hub_record: Boolean(hub),
+        research_session_ids: [], events_exported: 0,
+      });
+    }
+    return rows.get(key);
+  };
+  for (const session of sessions) {
+    if (!session.visit_id) continue;
+    const row = add(session.owner_id, session.visit_id);
+    row.research_session_ids.push(session.research_session_id);
+    row.events_exported += session.events.length;
+  }
+  // Visits the Hub recorded but no runtime event reached (a crash, or a queue never delivered).
+  for (const hub of hubVisits.values()) add(hub.owner_id, hub.id);
+  return [...rows.values()].sort((a, b) => compare(a.owner_id, b.owner_id) ||
+    compare(a.started_at ?? '', b.started_at ?? '') || compare(a.visit_id, b.visit_id));
+}
+
 export async function buildExport(source, options) {
   const rows = await source.events(options);
   const delivery = await source.delivery(rows.map((row) => row.research_session_id), options.owner);
-  const sessions = orderTimeline(rows, delivery);
+  const hubVisits = await loadVisits(rows, source, options);
+  const sessions = orderTimeline(rows, delivery, hubVisits);
+  const visits = visitTable(sessions, hubVisits);
   const events = sessions.flatMap((session) => session.events.map((event) => {
     event.gap_flags = session.gap_flags;
     const stage = event.event_type.startsWith('simulation.') ? event.event_type.slice('simulation.'.length) : null;
@@ -284,11 +334,12 @@ export async function buildExport(source, options) {
     ...sessionIdentity(session), delivery: session.delivery, gap_flags: session.gap_flags,
     first_exported_at: session.first_exported_at, last_exported_at: session.last_exported_at,
   })));
+  addTable(zip, 'visits', VISIT_COLUMNS, visits);
   addTable(zip, 'hosted-model-usage', USAGE_COLUMNS, usage);
   addTable(zip, 'content-index', CONTENT_COLUMNS, content);
   zip.addFile('export.json', Buffer.from(JSON.stringify({
     version: 1, from: options.from, to: options.to, owner_id: options.owner ?? null,
-    events: events.length, sessions: sessions.length, reservations: usage.length,
+    events: events.length, sessions: sessions.length, visits: visits.length, reservations: usage.length,
     content_included: content.filter((item) => item.status === 'included').length,
   }, null, 2) + '\n'));
   return { zip, count: events.length };

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 
 const require = createRequire(import.meta.url);
@@ -33,7 +34,7 @@ function fixture(t, options = {}) {
       else process.env[key] = value;
     }
   });
-  const calls = [];
+  const calls = [], scripts = [];
   class APIError extends Error {
     constructor(status) {
       super('sandbox not found');
@@ -49,9 +50,22 @@ function fixture(t, options = {}) {
     currentSnapshotId: 'snap_previous',
     expiresAt: new Date('2030-01-01T01:00:00Z'),
     domain: () => 'https://workspace.vercel.run',
-    async runCommand(input) { calls.push([input.cmd === 'node' ? 'probe' : 'start', input.env]); this.status = 'running'; return { exitCode: 0 }; },
+    async runCommand(input) {
+      calls.push([input.cmd === 'node' ? 'probe' : 'start', input.env]);
+      this.status = 'running';
+      return { exitCode: options.startFails && input.cmd !== 'node' ? 1 : 0 };
+    },
     currentSession() {
       return { sessionId: 'fixture-session', timeout: activeTimeout, runCommand: async input => {
+        scripts.push(input.args);
+        if (input.args[1].includes('process.stdout.write(VISIT.test')) {
+          calls.push(['visit-probe']);
+          return { exitCode: 0, stdout: async () => options.serverVisit ?? '' };
+        }
+        if (input.args[1].includes('"SIGTERM"')) {
+          calls.push(['signal-stop', ...input.args.slice(2)]);
+          return { exitCode: 0, stdout: async () => JSON.stringify({ visit: options.serverVisit ?? null, servers: 1, exited: true }) };
+        }
         calls.push(['inspect-runtime', input.args.at(-1)]);
         return { exitCode: options.runtimeMatches ? 0 : 1 };
       } };
@@ -106,6 +120,9 @@ function fixture(t, options = {}) {
     if (path.endsWith('online_claim_workspace')) {
       return options.admissionFails ? new Response(null, { status: 503 }) : Response.json(Object.hasOwn(options, 'claim') ? options.claim : lease);
     }
+    if (path.endsWith('online_visit_begin') || path.endsWith('online_visit_end')) {
+      return options.visitsFail ? new Response(null, { status: 503 }) : Response.json(true);
+    }
     if (path.endsWith('online_finish_workspace')) {
       return Response.json(options.cancelled ? Boolean(data.release_slot) : true);
     }
@@ -133,7 +150,7 @@ function fixture(t, options = {}) {
       devModelNetwork: async () => options.networkPolicy ?? null, isDevPreview: () => process.env.VERCEL_ENV === 'preview' && process.env.VERCEL_GIT_COMMIT_REF === 'dev',
     },
   });
-  return { calls, config, lib, sandbox };
+  return { calls, config, lib, sandbox, scripts };
 }
 
 test('a stopped persistent workspace adopts the configured hour before managed policy resumes it', async t => {
@@ -190,7 +207,7 @@ test('an existing matching workspace reopens without restarting', async t => {
   const { calls, lib } = fixture(t);
   const result = await lib.launchTryOnline(user, attempt);
   assert.equal(result.resumed, true);
-  assert.match(result.url, /^https:\/\/workspace\.vercel\.run\/\?t=[a-f0-9]{64}$/);
+  assert.match(result.url, /^https:\/\/workspace\.vercel\.run\/\?t=[a-f0-9]{64}&hs_visit=[0-9a-f-]{36}$/);
   assert.ok(!calls.some(([name]) => name === 'start'));
   const seed = calls.find(([name]) => name === '/__seed')[1];
   assert.equal(seed.session.accessToken, 'workspace-access');
@@ -503,3 +520,169 @@ for (const count of [49, 50]) {
     assert.ok(calls.findIndex(([name]) => name.endsWith?.('online_claim_workspace')) < calls.indexOf('list'));
   });
 }
+
+const visitId = '44444444-4444-4444-8444-444444444444';
+const rpc = (calls, name) => calls.filter(([path]) => path.endsWith?.(name)).map(([, body]) => body);
+
+test('a fresh launch issues one visit, starts the server with it and puts it on the URL', async t => {
+  const { calls, lib } = fixture(t, { stopped: true });
+  const { url } = await lib.launchTryOnline(user, attempt);
+  const visit = new URL(url).searchParams.get('hs_visit');
+  assert.match(visit, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.match(new URL(url).searchParams.get('t'), /^[a-f0-9]{64}$/);
+  assert.equal(calls.find(([name]) => name === 'start')[1].HS_VISIT_ID, visit);
+  const begins = rpc(calls, 'online_visit_begin');
+  assert.equal(begins.length, 2, 'recorded before the server starts and again with the final provider expiry');
+  for (const begin of begins) {
+    assert.deepEqual(begin, { visit, owner: user.id, workspace_name: begin.workspace_name, provider_expiry: '2030-01-01T01:00:00.000Z' });
+    assert.match(begin.workspace_name, /^try-preview-[a-f0-9]{12}-11111111/);
+  }
+  assert.ok(calls.findIndex(([path]) => path.endsWith?.('online_visit_begin')) < calls.findIndex(([name]) => name === 'start'));
+
+  const again = fixture(t, { stopped: true });
+  const next = new URL((await again.lib.launchTryOnline(user, attempt)).url).searchParams.get('hs_visit');
+  assert.notEqual(next, visit, 'a fresh launch is a new visit');
+});
+
+test('a reconnect to the running server keeps the visit it was started with', async t => {
+  const { calls, lib } = fixture(t, { serverVisit: visitId });
+  const { url } = await lib.launchTryOnline(user, attempt);
+  assert.equal(new URL(url).searchParams.get('hs_visit'), visitId);
+  assert.ok(!calls.some(([name]) => name === 'start'));
+  assert.ok(calls.some(([name]) => name === 'visit-probe'));
+  assert.deepEqual(rpc(calls, 'online_visit_begin').map(body => body.visit), [visitId]);
+});
+
+test('a running server without a visit gets one on the URL and is not restarted', async t => {
+  const { calls, lib } = fixture(t);
+  const visit = new URL((await lib.launchTryOnline(user, attempt)).url).searchParams.get('hs_visit');
+  assert.match(visit, /^[0-9a-f-]{36}$/);
+  assert.ok(!calls.some(([name]) => name === 'start'));
+  assert.deepEqual(rpc(calls, 'online_visit_begin').map(body => body.visit), [visit]);
+});
+
+test('an unavailable visit store never blocks the workspace', async t => {
+  const { lib } = fixture(t, { stopped: true, visitsFail: true });
+  t.mock.method(console, 'warn', () => {});
+  assert.match((await lib.launchTryOnline(user, attempt)).url, /hs_visit=/);
+  assert.deepEqual(await lib.stopTryOnline(user.id), { pending: false });
+});
+
+test('a server that fails to start ends its visit as a crash and releases compute', async t => {
+  const { calls, lib } = fixture(t, { stopped: true, startFails: true });
+  await assert.rejects(lib.launchTryOnline(user, attempt), { code: 'start_failed' });
+  const visit = calls.find(([name]) => name === 'start')[1].HS_VISIT_ID;
+  assert.deepEqual(rpc(calls, 'online_visit_end').map(({ visit: id, reason }) => [id, reason]), [[visit, 'crash']]);
+  assert.equal(calls.at(-1)[1].release_slot, true);
+});
+
+test('Stop records the Hub reason, signals the server and waits before stopping the sandbox', async t => {
+  const { calls, lib, scripts } = fixture(t, { serverVisit: visitId });
+  assert.deepEqual(await lib.stopTryOnline(user.id), { pending: false });
+  const end = calls.findIndex(([path]) => path.endsWith?.('online_visit_end'));
+  const signal = calls.findIndex(([name]) => name === 'signal-stop');
+  assert.ok(end >= 0 && end < signal && signal < calls.indexOf('stop'), 'decision recorded, then SIGTERM, then provider stop');
+  assert.deepEqual(rpc(calls, 'online_visit_end')[0], { workspace_name: calls[1][1], visit: null, reason: 'user_stop' });
+  assert.deepEqual(calls[signal].slice(1), ['/vercel/sandbox/hs/app/server.cjs', '/vercel/sandbox/hs/userData/web-stop-reason.json', 'user_stop', '10000']);
+  assert.equal(scripts.length, 1);
+});
+
+test('a stopped workspace is not signalled', async t => {
+  const { calls, lib } = fixture(t, { stopped: true });
+  assert.deepEqual(await lib.stopTryOnline(user.id), { pending: false });
+  assert.ok(!calls.some(([name]) => name === 'signal-stop'));
+  assert.deepEqual(rpc(calls, 'online_visit_end'), []);
+});
+
+test('the deadline sweep stops only sessions near the provider limit, with reason timeout', async t => {
+  const prefix = 'try-preview-' + createHash('sha256').update('dev').digest('hex').slice(0, 12) + '-';
+  const providerSessions = [
+    { name: prefix + user.id, status: 'running' },
+    { name: 'try-' + attempt, status: 'running' }, // production workspace: another deployment's
+    { name: prefix + lease, status: 'stopped' },
+  ];
+  const later = fixture(t, { providerSessions });
+  assert.deepEqual(await later.lib.stopDueTryOnline(Date.parse('2030-01-01T00:50:00Z')), { due: 0, stopped: 0 });
+  assert.ok(!later.calls.includes('stop'));
+
+  const { calls, lib } = fixture(t, { providerSessions, serverVisit: visitId });
+  assert.deepEqual(await lib.stopDueTryOnline(Date.parse('2030-01-01T00:59:00Z')), { due: 1, stopped: 1 });
+  assert.deepEqual(calls.filter(([name]) => name === 'get').map(([, name]) => name), [prefix + user.id, prefix + user.id]);
+  assert.equal(rpc(calls, 'online_visit_end')[0].reason, 'timeout');
+  assert.equal(calls.find(([name]) => name === 'signal-stop')[3], 'timeout');
+  assert.ok(calls.includes('stop'));
+});
+
+function guest(script, { processes, files = {}, args }) {
+  const written = {}, renamed = [], signals = [], out = [];
+  const alive = new Set(processes.map(({ pid }) => pid));
+  const fs = {
+    readdirSync: dir => (assert.equal(dir, '/proc'), [...processes.map(({ pid }) => String(pid)), 'self']),
+    readFileSync(path) {
+      const [, , pid, kind] = path.split('/');
+      const proc = processes.find(entry => String(entry.pid) === pid);
+      if (!proc) throw Object.assign(new Error('missing'), { code: 'ENOENT' });
+      if (kind === 'cmdline') return proc.args.join('\0') + '\0';
+      if (kind === 'environ') return Object.entries(proc.env).map(([key, value]) => key + '=' + value).join('\0') + '\0';
+      if (kind === 'stat') {
+        if (!alive.has(proc.pid)) throw Object.assign(new Error('gone'), { code: 'ENOENT' });
+        return proc.pid + ' (node) S 1';
+      }
+      return files[path];
+    },
+    mkdirSync() {},
+    writeFileSync(path, data, options) { written[path] = { data, mode: options?.mode }; },
+    renameSync(from, to) { renamed.push([from, to]); written[to] = written[from]; delete written[from]; },
+  };
+  const proc = {
+    argv: ['node', ...args], pid: 77, exitCode: undefined,
+    kill(pid, signal) { signals.push([pid, signal]); setTimeout(() => alive.delete(pid), 150); },
+    stdout: { write: text => out.push(text) },
+  };
+  const modules = { 'node:fs': fs, 'node:path': require('node:path') };
+  new Function('require', 'process', script)(name => modules[name], proc);
+  return { written, renamed, signals, out, proc };
+}
+
+test('guest stop script atomically writes the marker for the server visit, signals and waits for exit', async t => {
+  const { lib, scripts } = fixture(t, { serverVisit: visitId });
+  await lib.stopTryOnline(user.id);
+  const [, script, server, marker, reason, wait] = scripts[0];
+  const node = ['/usr/bin/node', server];
+  const run = guest(script, { args: [server, marker, reason, wait], processes: [
+    { pid: 10, args: node, env: { HS_VISIT_ID: visitId.toUpperCase(), HS_USER_DATA: '/data/user' } },
+    { pid: 11, args: ['/usr/bin/node', '/other.cjs'], env: { HS_VISIT_ID: attempt } },
+  ] });
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.deepEqual(run.signals, [[10, 'SIGTERM']]);
+  assert.deepEqual(Object.keys(run.written), ['/data/user/web-stop-reason.json']);
+  assert.deepEqual(JSON.parse(run.written['/data/user/web-stop-reason.json'].data), { visit_id: visitId, reason: 'user_stop' });
+  assert.equal(run.written['/data/user/web-stop-reason.json'].mode, 0o600);
+  assert.equal(run.renamed[0][1], '/data/user/web-stop-reason.json');
+  assert.notEqual(run.renamed[0][0], run.renamed[0][1]);
+  assert.deepEqual(JSON.parse(run.out.join('')), { visit: visitId, servers: 1, exited: true });
+
+  const override = guest(script, { args: [server, marker, 'timeout', wait], processes: [
+    { pid: 12, args: node, env: { HS_VISIT_ID: visitId, HS_WEB_STOP_REASON_FILE: '/custom/stop.json' } },
+  ] });
+  const legacy = guest(script, { args: [server, marker, 'timeout', '200'], processes: [{ pid: 13, args: node, env: {} }] });
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.deepEqual(JSON.parse(override.written['/custom/stop.json'].data), { visit_id: visitId, reason: 'timeout' });
+  assert.deepEqual(legacy.written, {}, 'no marker without a visit: the runtime records an ordinary close');
+  assert.deepEqual(legacy.signals, [[13, 'SIGTERM']]);
+});
+
+test('guest visit probe reads HS_VISIT_ID only from the single server process', async t => {
+  const { lib, scripts } = fixture(t, { serverVisit: visitId });
+  await lib.launchTryOnline(user, attempt);
+  const [, script, server] = scripts.find(args => args[1].includes('process.stdout.write(VISIT.test'));
+  const node = ['/usr/bin/node', server];
+  const one = guest(script, { args: [server], processes: [{ pid: 10, args: node, env: { HS_VISIT_ID: visitId.toUpperCase() } }] });
+  assert.equal(one.out.join(''), visitId);
+  const two = guest(script, { args: [server], processes: [
+    { pid: 10, args: node, env: { HS_VISIT_ID: visitId } }, { pid: 11, args: node, env: { HS_VISIT_ID: visitId } },
+  ] });
+  assert.equal(two.out.join(''), '');
+  const invalid = guest(script, { args: [server], processes: [{ pid: 10, args: node, env: { HS_VISIT_ID: 'not-a-visit' } }] });
+  assert.equal(invalid.out.join(''), '');
+});
