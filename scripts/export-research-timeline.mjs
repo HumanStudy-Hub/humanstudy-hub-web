@@ -177,7 +177,8 @@ async function joinUsage(sessions, source, options) {
   const seen = new Set(inRange.map((row) => scope(row.account_id, row.id)));
   const exactOnly = await source.reservationsById([...candidates]
     .filter(([key]) => !seen.has(key)).map(([, { id }]) => id), options.owner);
-  const reservations = new Map(inRange.map((row) => [row.id, row]));
+  // Only accounts with exported (consented) research sessions; never other accounts' usage.
+  const reservations = new Map(inRange.filter((row) => sessionsByOwner.has(row.account_id)).map((row) => [row.id, row]));
   for (const row of exactOnly) {
     if (candidates.has(scope(row.account_id, row.id))) reservations.set(row.id, row);
   }

@@ -463,6 +463,20 @@ Run the CLI from the web repo with Node.js 22.18+ and dependencies installed. Se
 server-only credentials. The CLI makes read-only requests and creates a private local ZIP.
 Keep the ZIP in restricted storage since it contains research records and private files.
 
+For the pilot, use the **production** Supabase project. Get the server-only values with
+`vercel env pull .env.local --environment=production` (or from the Supabase dashboard).
+Node does not load `.env.local` automatically, so pass it with `--env-file`. The output folder
+must already exist on a local disk.
+
+```sh
+node --env-file=.env.local scripts/export-research-timeline.mjs --email tester@example.com \
+  --from 2026-11-20 --to 2026-11-21 --out /private/path/tester.zip
+```
+
+Hosted model usage is joined exactly when the event carries the Hub request id (the
+`x-humanstudy-request-id` header the model proxy returns); otherwise it is an estimate by
+account and time window. Only accounts with exported research sessions appear in usage.
+
 ```sh
 node scripts/export-research-timeline.mjs --user-id ACCOUNT_UUID \
   --from 2026-11-20 --to 2026-11-21 --out /private/path/tester.zip
@@ -482,7 +496,7 @@ Each table in the ZIP has JSONL and CSV versions:
   Every `simulation.*` event includes its stage, run ID when available and recorded outcome.
 - `sessions` includes full-session counts and gap flags from `research_session_delivery`,
   including when only part of a session falls in the export window.
-- `hosted-model-usage` includes reservation costs and state. An exact request ID links to events
+- `hosted-model-usage` includes reservation costs and state. An exact Hub request ID (when the client recorded it) links to events
   even if the reservation started outside the date range. Otherwise, the reservation lists
   same-account session windows covering its creation time, or is marked account-only. Overlapping
   windows remain candidates. Each reservation appears once.

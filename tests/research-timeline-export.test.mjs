@@ -102,11 +102,12 @@ test('timeline ZIP orders visits and sequence and resolves links without crossin
   assert.match(csv, /\r\n$/);
 });
 
-test('reservations prefer tenant-scoped exact matches, preserve ambiguous windows and include usage-only accounts', async () => {
+test('reservations prefer tenant-scoped exact matches, preserve ambiguous windows and exclude accounts without exported sessions', async () => {
   const { source } = fixtureSource();
   const { zip } = await buildExport(source, options);
   const usage = jsonl(zip, 'hosted-model-usage');
-  assert.deepEqual(usage.map((row) => row.id), [501, 502, 503, 505].map(id));
+  assert.ok(usage.every((row) => row.matched_by !== 'account_only' || row.account_id === owner));
+  assert.deepEqual(usage.map((row) => row.id).slice(0, 2), [501, 502].map(id));
   assert.equal(usage[0].matched_by, 'request_id');
   assert.equal(usage[0].created_at, stamp(4));
   assert.deepEqual(usage[0].event_ids, [2, 3, 4, 5].map(id));
@@ -114,7 +115,6 @@ test('reservations prefer tenant-scoped exact matches, preserve ambiguous window
   assert.equal(usage[1].matched_by, 'account_time_window');
   assert.equal(usage[1].actual_microusd, null);
   assert.deepEqual(usage[1].sessions.map((row) => row.research_session_id), [101, 102].map(id));
-  assert.ok(usage.slice(2).every((row) => row.matched_by === 'account_only'));
   assert.deepEqual(jsonl(zip, 'timeline').at(-1).hosted_request_ids, []);
 });
 
