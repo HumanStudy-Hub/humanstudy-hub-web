@@ -75,3 +75,13 @@ export const reservations = [
   { id: id(504), account_id: other, created_at: stamp(3), actual_microusd: 100, state: 'settled' },
   { id: id(505), account_id: id(400), created_at: stamp(18), actual_microusd: 7, state: 'settled' },
 ];
+// Hub visit records: one with runtime events, one the runtime never reached, one for an account
+// without exported research events.
+export const visits = [
+  { id: id(300), owner_id: owner, workspace: 'try-' + owner, started_at: stamp(10), ended_at: stamp(27),
+    end_reason: 'timeout', provider_expires_at: stamp(27) },
+  { id: id(301), owner_id: owner, workspace: 'try-' + owner, started_at: stamp(28), ended_at: null,
+    end_reason: null, provider_expires_at: stamp(59) },
+  { id: id(302), owner_id: id(400), workspace: 'try-' + id(400), started_at: stamp(15), ended_at: stamp(16),
+    end_reason: 'crash', provider_expires_at: null },
+];

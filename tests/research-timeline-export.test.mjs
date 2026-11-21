@@ -6,7 +6,7 @@ import { buildExport, parseOptions } from '../scripts/export-research-timeline.m
 import { createSource } from '../scripts/lib/research-export-source.mjs';
 import {
   absent, content, corrupt, delivery, event, events, from, id, missing, old, other, owner,
-  ref, reservations, stamp, stored, to, whole,
+  ref, reservations, stamp, stored, to, visits, whole,
 } from './fixtures/research-timeline.mjs';
 
 const key = 'sb_secret_fixture';
@@ -23,6 +23,7 @@ function fixtureSource() {
     ],
     research_session_delivery: delivery,
     online_model_reservations: reservations,
+    online_workspace_visits: visits,
     research_content: [...stored.map(({ row }) => row), absent.row],
   };
   const source = createSource({ url: project, key, fetcher: async (url, init) => {
@@ -96,6 +97,14 @@ test('timeline ZIP orders visits and sequence and resolves links without crossin
   assert.deepEqual(timeline[5].gap_flags, ['session_start_missing']);
   assert.equal(jsonl(reopened, 'sessions')[0].delivery.events_missing, 3);
 
+  const visitRows = jsonl(reopened, 'visits');
+  assert.deepEqual(visitRows.map((row) => [row.visit_id, row.hub_record, row.end_reason, row.events_exported]), [
+    [id(300), true, 'timeout', 6], [id(301), true, null, 0],
+  ], 'Hub visits join runtime sessions; a cohort export omits accounts without exported events');
+  assert.deepEqual(visitRows[0].research_session_ids.sort(), [id(101), id(102)].sort());
+  assert.equal(visitRows[0].started_at, stamp(10));
+  assert.equal(JSON.parse(reopened.readAsText('export.json')).visits, 2);
+
   const csv = reopened.readAsText('timeline.csv');
   assert.ok(csv.startsWith('"id","owner_id","visit_id"'));
   assert.ok(csv.includes(`"'=HYPERLINK(""potential formula"")"`));
@@ -144,6 +153,10 @@ test('email lookup paginates, single-owner exports filter every table, and empty
   assert.ok(requests.filter(({ pathname }) => pathname.startsWith('/rest/'))
     .every(({ searchParams }) => ['owner_id', 'account_id'].some((key) => searchParams.get(key) === 'eq.' + owner)));
   assert.doesNotMatch(zip.readAsText('export.json'), /@|fixture/);
+  assert.deepEqual(jsonl(zip, 'visits').map((row) => row.visit_id), [id(300), id(301)]);
+  const { zip: onlyHub } = await buildExport(source, { ...options, owner: id(400) });
+  assert.deepEqual(jsonl(onlyHub, 'visits').map((row) => [row.visit_id, row.end_reason, row.events_exported]),
+    [[id(302), 'crash', 0]], 'a single-account export keeps Hub visits the runtime never reached');
   const { zip: emptyZip } = await buildExport(source, { ...options, owner: id(800) });
   assert.equal(emptyZip.readAsText('timeline.jsonl'), '');
   assert.match(emptyZip.readAsText('timeline.csv'), /^"id","owner_id"/);

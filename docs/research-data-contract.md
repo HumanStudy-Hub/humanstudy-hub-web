@@ -490,10 +490,16 @@ The range includes `--from` and excludes `--to`. Date-only values start at midni
 Each table in the ZIP has JSONL and CSV versions:
 
 - `timeline` groups captured events by account, visit and session, using the research session
-  when a visit ID is absent. Events within a session are ordered by client sequence. Direct
+  when a visit ID is absent. The visit is the `research_events.visit_id` column (falling back to
+  `metadata.visit_id` from older collectors). Events within a session are ordered by client sequence. Direct
   cause and action links indicate whether the target is included, outside the export or missing.
   Thread, message and tool links point to representative events with the same IDs in the export.
   Every `simulation.*` event includes its stage, run ID when available and recorded outcome.
+- `visits` lists each cloud workspace visit: the Hub's own record from `online_workspace_visits`
+  (start, provider limit, end and the terminal reason the Hub decided: `timeout`, `user_stop`,
+  `crash` or `unknown`) joined to the runtime sessions stamped with the same `visit_id`. Visits the
+  runtime never reached appear with no sessions. A cohort (`--all`) export lists visits only for
+  accounts with exported research events; a single-account export lists all of that account's visits.
 - `sessions` includes full-session counts and gap flags from `research_session_delivery`,
   including when only part of a session falls in the export window.
 - `hosted-model-usage` includes reservation costs and state. An exact Hub request ID (when the client recorded it) links to events
