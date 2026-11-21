@@ -64,6 +64,6 @@ export async function POST(request: Request) {
   }) : upstream.body;
   return new Response(responseBody, {
     status: upstream.status,
-    headers: { "Content-Type": upstream.headers.get("content-type") || "application/json", "Cache-Control": "no-store" },
+    headers: { "Content-Type": upstream.headers.get("content-type") || "application/json", "Cache-Control": "no-store", ...(reservationId ? { "x-humanstudy-request-id": reservationId } : {}) },
   });
 }
