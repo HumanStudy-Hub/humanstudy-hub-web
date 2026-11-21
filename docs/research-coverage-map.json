@@ -1,6 +1,6 @@
 {
   "format": "humanstudy-research-coverage-v1",
-  "contract_version": "1.0.0",
+  "contract_version": "1.1.0",
   "issue": "HumanStudy-Hub/humanstudy-desktop#27 (tracker #30, items T08 web + T10 causality)",
   "checked_by": [
     "humanstudy-desktop: app/src/main/research-coverage.test.mjs",
@@ -91,6 +91,11 @@
     "interaction": {
       "linkage": "self",
       "event_types": {
+        "artifact.interact": {
+          "desktop": "ArtifactFrame validates the source and payload in bridge.ts; the main process keeps only ids the artifact file declares (artifact-interaction-guard.ts)",
+          "headless": "not_applicable",
+          "web": "gap: not captured by the web collector; desktop-only capture point added in contract 1.1.0"
+        },
         "action.invoke": {
           "desktop": "renderer capture.ts (document click, shortcut keydown) + Chat.tsx (composer Enter) + App.tsx menu.onCommand -> shared/research-operations.ts createOperations -> telemetry:track IPC -> research-agent.ts interaction/action; downstream IPCs (kernel:send/abort/reply/answerQuestion/rejectQuestion/native, project:writeText/importFiles/startBuild/retryBuild, projects:create) carry the operation id",
           "headless": "scripts/headless-research.mjs: command.start (worker launch) and command.<op> for every JSON-lines command; UI clicks/shortcuts/menus not_applicable",
@@ -101,6 +106,11 @@
     "navigation": {
       "linkage": "when_initiated",
       "event_types": {
+        "artifact.dwell": {
+          "desktop": "ArtifactFrame and capture.ts measure passive visible time in the current artifact view",
+          "headless": "not_applicable",
+          "web": "gap: not captured by the web collector; desktop-only capture point added in contract 1.1.0"
+        },
         "view.dwell": {
           "desktop": "tab.switch / thread.switch / source.page with duration (Workbench, Studies, useSession, SourceDrawer); linked to the click that ended the dwell",
           "headless": "not_applicable",
@@ -166,6 +176,36 @@
     "agent_execution": {
       "linkage": "required",
       "event_types": {
+        "simulation.approved": {
+          "desktop": "index.ts and simulation-research.ts record the app-owned protocol run, linked to its initiating action",
+          "headless": "not_applicable",
+          "web": "gap: not captured by the web collector; desktop-only capture point added in contract 1.1.0"
+        },
+        "simulation.started": {
+          "desktop": "index.ts and simulation-research.ts record the app-owned protocol run, linked to its initiating action",
+          "headless": "not_applicable",
+          "web": "gap: not captured by the web collector; desktop-only capture point added in contract 1.1.0"
+        },
+        "simulation.completed": {
+          "desktop": "index.ts and simulation-research.ts record the app-owned protocol run, linked to its initiating action",
+          "headless": "not_applicable",
+          "web": "gap: not captured by the web collector; desktop-only capture point added in contract 1.1.0"
+        },
+        "simulation.failed": {
+          "desktop": "index.ts and simulation-research.ts record the app-owned protocol run, linked to its initiating action",
+          "headless": "not_applicable",
+          "web": "gap: not captured by the web collector; desktop-only capture point added in contract 1.1.0"
+        },
+        "simulation.stopped": {
+          "desktop": "index.ts and simulation-research.ts record the app-owned protocol run, linked to its initiating action",
+          "headless": "not_applicable",
+          "web": "gap: not captured by the web collector; desktop-only capture point added in contract 1.1.0"
+        },
+        "simulation.interrupted": {
+          "desktop": "index.ts and simulation-research.ts record the app-owned protocol run, linked to its initiating action",
+          "headless": "not_applicable",
+          "web": "gap: not captured by the web collector; desktop-only capture point added in contract 1.1.0"
+        },
         "agent.turn_start": {
           "desktop": "research-agent.ts start",
           "headless": "same adapter",

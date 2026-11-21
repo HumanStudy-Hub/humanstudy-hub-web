@@ -23,7 +23,7 @@ const sha = 'a'.repeat(64);
 test('contract file is vendorable: no imports, versioned', () => {
   assert.doesNotMatch(source, /^\s*import\s/m);
   assert.doesNotMatch(source, /require\(/);
-  assert.equal(c.CONTRACT_VERSION, '1.0.0');
+  assert.equal(c.CONTRACT_VERSION, '1.1.0');
 });
 
 test('catalog covers every agreed data type', () => {
@@ -99,4 +99,30 @@ test('parts split content without losing bytes', () => {
   assert.equal(r.at(-1)[1], 9 * 1024 * 1024);
   for (let i = 1; i < r.length; i++) assert.equal(r[i][0], r[i - 1][1]);
   assert.deepEqual(c.partRanges(10), [[0, 10]]);
+});
+
+test('contract 1.1: artifact interaction and dwell carry semantic metadata only', () => {
+  const context = { artifact_revision: '123-456-789-42', study_id: 'study', study_revision: sha };
+  const interaction = { action: 'answer', controlId: 'question-1', label: 'response', step: 3, arm: 'control', valueKind: 'text' };
+  const interact = base({ event_type: 'artifact.interact', project_id: 'project-0001', artifact_id: 'artifacts/preview.html',
+    target: null, view: null, action_id: null, metadata: { ...context, interaction } });
+  assert.deepEqual(c.validateResearchEvent(interact, NOW), []);
+  const dwell = base({ data_type: 'navigation', event_type: 'artifact.dwell', project_id: 'project-0001', artifact_id: 'artifacts/preview.html',
+    duration_ms: 1200, target: null, view: null, action_id: null, metadata: context });
+  assert.deepEqual(c.validateResearchEvent(dwell, NOW), []);
+  assert.ok(c.validateResearchEvent(base({ ...interact, metadata: { ...context, interaction: { ...interaction, value: 'typed' } } }), NOW)
+    .includes('artifact interaction invalid'));
+  assert.ok(c.validateResearchEvent(base({ ...interact, artifact_id: 'artifacts/../x.html' }), NOW).includes('artifact path invalid'));
+  assert.ok(c.validateResearchEvent(base({ ...dwell, metadata: { ...context, extra: 1 } }), NOW).includes('artifact metadata has unexpected fields'));
+});
+
+test('contract 1.1: simulation lifecycle events are bounded and content-free', () => {
+  const action = '33333333-3333-4333-8333-333333333333';
+  const ev = (stage, over = {}) => base({ id: '44444444-4444-4444-8444-444444444444', data_type: 'agent_execution', event_type: `simulation.${stage}`,
+    project_id: 'project-0001', thread_id: 'thread-1', action_id: action, caused_by: action, target: null, view: null,
+    metadata: { run_id: '55555555-5555-4555-8555-555555555555', scope: { study_id: 'study', revision: sha, per_condition: 3, model: 'anthropic/model' },
+      outputs: ['artifacts/simulations/one/results.html'], model_request_ids: ['req_1'], exit_code: 0, ...over } });
+  for (const stage of c.SIMULATION_STAGES) assert.deepEqual(c.validateResearchEvent(ev(stage), NOW), [], stage);
+  assert.ok(c.validateResearchEvent(ev('completed', { outputs: ['artifacts/simulations/../results.html'] }), NOW).includes('simulation outputs invalid'));
+  assert.ok(c.validateResearchEvent(ev('completed', { scope: { study_id: 'study', revision: sha, per_condition: 61, model: 'm' } }), NOW).includes('simulation scope invalid'));
 });
