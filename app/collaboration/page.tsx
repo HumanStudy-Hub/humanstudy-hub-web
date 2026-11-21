@@ -16,7 +16,7 @@ const team = [
     name: "Haoyang Shang",
     portrait: "haoyang-shang",
     email: "hs5533@nyu.edu",
-    website: "https://github.com/assassin808",
+    website: "https://assassin808.github.io/",
   },
   {
     name: "Yuanjun Feng",
@@ -63,10 +63,10 @@ export default function CollaborationPage() {
                 />
                 <span className={styles.websiteTab}><TeamIcon kind="website" /></span>
               </a>
-              <h3>
-                <a className={styles.name} href={`mailto:${member.email}`}
+              <h3 className={styles.nameLine}>
+                <a className={styles.name} href={member.website}>{member.name}</a>
+                <a className={styles.email} href={`mailto:${member.email}`}
                   aria-label={`Email ${member.name} at ${member.email}`} title={member.email}>
-                  {member.name}
                   <TeamIcon kind="email" />
                 </a>
               </h3>
