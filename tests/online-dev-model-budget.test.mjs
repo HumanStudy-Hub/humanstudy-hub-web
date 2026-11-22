@@ -40,6 +40,15 @@ test('dev reservation preserves large text, output and supported generation sett
   assert.equal(lib.boundedDevCompletion({ ...prompt, max_completion_tokens: 32_768 }, user).model, model);
 });
 
+test('anthropic models drop seed and penalties that require_parameters routing would refuse (simulation runs send a seed)', () => {
+  const simulation = { model, messages: [{ role: 'user', content: 'hi' }], temperature: 1, seed: 42, frequency_penalty: 0.1, presence_penalty: 0.1, max_tokens: 512 };
+  const sent = JSON.parse(lib.boundedDevCompletion(simulation, user).wire);
+  for (const key of ['seed', 'frequency_penalty', 'presence_penalty']) assert.equal(sent[key], undefined);
+  assert.equal(sent.temperature, 1);
+  assert.equal(sent.provider.require_parameters, true);
+  assert.equal(lib.boundedDevCompletion({ ...simulation, seed: 1.5 }, user), null);
+});
+
 test('dev reservation rejects oversized input, multimodal content and invalid output without clipping', () => {
   for (const patch of [
     { max_completion_tokens: 32_769 },
