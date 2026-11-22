@@ -6,7 +6,12 @@ const prices = new Map([
   ["deepseek/deepseek-v4.1-flash-1017", { input: 0.6, output: 1.2 }],
 ]);
 export const BOUNDED_HOSTED_MODELS = [...prices.keys()];
-const UNSUPPORTED_BY_ANTHROPIC = ["seed", "frequency_penalty", "presence_penalty"] as const;
+// Sampling parameters each hosted model's OpenRouter endpoint does NOT list in supported_parameters (checked
+// 2026-11-22 via GET /api/v1/models). With require_parameters, sending one makes OpenRouter answer 404
+// "No endpoints found", so the proxy drops them. Claude Haiku 5.5 takes no temperature/top_p/top_k/seed/penalties.
+const UNSUPPORTED_SAMPLING: Record<string, readonly string[]> = {
+  "anthropic/claude-haiku-5.5": ["temperature", "top_p", "top_k", "seed", "frequency_penalty", "presence_penalty"],
+};
 const MAX_INPUT_BYTES = 4_000_000;
 const MAX_OUTPUT_TOKENS = 32_768;
 const FORMAT_OVERHEAD_TOKENS = 4096;
@@ -140,8 +145,7 @@ export function boundedDevCompletion(body: unknown, userId: string) {
   const generation = generationOptions(body, requested);
   if (!generation) return null;
   // With require_parameters, OpenRouter refuses (404) any parameter the model's provider can't honour.
-  // Anthropic models support no seed or penalties; drop them rather than fail the call (simulation runs send a seed).
-  if (body.model.startsWith("anthropic/")) for (const key of UNSUPPORTED_BY_ANTHROPIC) delete (generation as Record<string, unknown>)[key];
+  for (const key of UNSUPPORTED_SAMPLING[body.model] ?? []) delete (generation as Record<string, unknown>)[key];
   const wire = JSON.stringify({
     model: body.model, messages, max_tokens: requested, ...generation, cache_control: cache,
     stream: body.stream === true, user: `hsd:${userId}`,
