@@ -35,6 +35,8 @@ test('revoked or expired grants show 0, missing row is unavailable', () => {
   assert.deepEqual(lib.summarizeAllowance(row(10_000_000, 500, { revoked: true }), now), { available: true, percentLeft: 0, requestsLeft: 0, revoked: true, expired: false });
   assert.deepEqual(lib.summarizeAllowance(row(10_000_000, 500, { expires_at: past }), now), { available: true, percentLeft: 0, requestsLeft: 0, revoked: false, expired: true });
   assert.equal(lib.summarizeAllowance(row(10_000_000, 500, { expires_at: null }), now).percentLeft, 0);
+  // Production grants never expire: Postgres sends 'infinity'.
+  assert.deepEqual(lib.summarizeAllowance(row(8_341_000, 422, { expires_at: 'infinity' }), now), { available: true, percentLeft: 83, requestsLeft: 422, revoked: false, expired: false });
   assert.deepEqual(lib.summarizeAllowance(null, now), { available: false, percentLeft: 0, requestsLeft: 0, revoked: false, expired: false });
 });
 
