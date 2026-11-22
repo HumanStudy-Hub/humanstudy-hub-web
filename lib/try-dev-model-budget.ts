@@ -10,7 +10,7 @@ export const BOUNDED_HOSTED_MODELS = [...prices.keys()];
 // 2026-11-22 via GET /api/v1/models). With require_parameters, sending one makes OpenRouter answer 404
 // "No endpoints found", so the proxy drops them. Claude Haiku 5.5 takes no temperature/top_p/top_k/seed/penalties.
 const UNSUPPORTED_SAMPLING: Record<string, readonly string[]> = {
-  "anthropic/claude-haiku-5.5": ["temperature", "top_p", "top_k", "seed", "frequency_penalty", "presence_penalty"],
+  "anthropic/claude-haiku-5.5": ["temperature", "top_p", "top_k", "seed", "frequency_penalty", "presence_penalty", "parallel_tool_calls"],
 };
 const MAX_INPUT_BYTES = 4_000_000;
 const MAX_OUTPUT_TOKENS = 32_768;

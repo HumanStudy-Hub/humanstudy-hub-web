@@ -28,13 +28,14 @@ const prompt = {
 test('dev reservation preserves large text, output and supported generation settings while pinning provider routing', () => {
   const bounded = lib.boundedDevCompletion(prompt, user);
   const sent = JSON.parse(bounded.wire);
-  for (const key of ['messages', 'reasoning', 'parallel_tool_calls', 'tool_choice', 'tools', 'stream']) {
+  for (const key of ['messages', 'reasoning', 'tool_choice', 'tools', 'stream']) {
     assert.deepEqual(sent[key], prompt[key]);
   }
   assert.equal(sent.max_tokens, prompt.max_completion_tokens);
   // Haiku 5.5's OpenRouter endpoint lists no temperature/top_p; require_parameters would 404, so they are dropped.
   assert.equal(sent.temperature, undefined);
   assert.equal(sent.top_p, undefined);
+  assert.equal(sent.parallel_tool_calls, undefined);
   assert.equal(sent.provider.allow_fallbacks, false);
   assert.equal(sent.provider.require_parameters, true);
   assert.deepEqual(sent.provider.max_price, { prompt: 1, completion: 2.5, request: 0 });
