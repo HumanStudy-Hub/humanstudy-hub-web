@@ -6,6 +6,7 @@ const prices = new Map([
   ["deepseek/deepseek-v4.1-flash-1017", { input: 0.6, output: 1.2 }],
 ]);
 export const BOUNDED_HOSTED_MODELS = [...prices.keys()];
+const UNSUPPORTED_BY_ANTHROPIC = ["seed", "frequency_penalty", "presence_penalty"] as const;
 const MAX_INPUT_BYTES = 4_000_000;
 const MAX_OUTPUT_TOKENS = 32_768;
 const FORMAT_OVERHEAD_TOKENS = 4096;
@@ -138,6 +139,9 @@ export function boundedDevCompletion(body: unknown, userId: string) {
   if (body.max_completion_tokens !== undefined && body.max_tokens !== undefined && body.max_completion_tokens !== body.max_tokens) return null;
   const generation = generationOptions(body, requested);
   if (!generation) return null;
+  // With require_parameters, OpenRouter refuses (404) any parameter the model's provider can't honour.
+  // Anthropic models support no seed or penalties; drop them rather than fail the call (simulation runs send a seed).
+  if (body.model.startsWith("anthropic/")) for (const key of UNSUPPORTED_BY_ANTHROPIC) delete (generation as Record<string, unknown>)[key];
   const wire = JSON.stringify({
     model: body.model, messages, max_tokens: requested, ...generation, cache_control: cache,
     stream: body.stream === true, user: `hsd:${userId}`,

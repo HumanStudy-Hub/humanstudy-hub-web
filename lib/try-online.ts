@@ -17,6 +17,13 @@ import { tokenSecret, tryServiceKey, trySettings } from "./try-online-config";
 const PORT = 3000;
 const HS = "/vercel/sandbox/hs";
 const TAG = { app: "try-online" };
+// The runtime's stop marker under start.sh ($HS_USER_DATA/web-stop-reason.json), unless the server says otherwise.
+const STOP_MARKER = `${HS}/userData/web-stop-reason.json`;
+// The runtime allows itself eight seconds to flush after SIGTERM.
+const STOP_WAIT_MS = 10_000;
+const VISIT = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+export type VisitEndReason = "timeout" | "user_stop" | "crash" | "unknown";
 
 export const TRY_ACCESS_COOKIE = "hs_try";
 export const TRY_ACCESS_DAYS = 30;
@@ -165,6 +172,31 @@ function finish(config: Settings, workspace_name: string, claim_id: string, rele
   });
 }
 
+/** The Hub's visit record. Best effort: losing it must not block or fail the workspace itself. */
+async function visitRpc(config: Settings, rpc: "online_visit_begin" | "online_visit_end", body: Record<string, unknown>) {
+  const service = tryServiceKey();
+  try {
+    const response = await fetch(`${config.supabaseOrigin}/rest/v1/rpc/${rpc}`, {
+      method: "POST", headers: { apikey: service, Authorization: `Bearer ${service}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body), cache: "no-store", redirect: "error", signal: AbortSignal.timeout(5000),
+    });
+    if (response.ok) return true;
+    console.warn(`online visit: ${rpc} returned HTTP ${response.status}`);
+  } catch {
+    console.warn(`online visit: ${rpc} unavailable`);
+  }
+  return false;
+}
+
+function beginVisit(config: Settings, visit: string, owner: string, workspace_name: string, expiry?: Date) {
+  return visitRpc(config, "online_visit_begin", { visit, owner, workspace_name, provider_expiry: expiry?.toISOString() ?? null });
+}
+
+/** A null visit ends whichever visit of the workspace is still open. */
+function endVisit(config: Settings, workspace_name: string, visit: string | null, reason: VisitEndReason) {
+  return visitRpc(config, "online_visit_end", { workspace_name, visit, reason });
+}
+
 function running(sandbox: Sandbox) {
   return sandbox.status === "running" || sandbox.status === "pending";
 }
@@ -216,6 +248,113 @@ function workspaceOrigin(sandbox: Sandbox) {
   return url.origin;
 }
 
+// Both scripts run inside the sandbox against the one server.cjs Node process that start.sh launched.
+const SERVER_PROCESSES = `
+  const fs = require("node:fs");
+  function servers(server) {
+    const found = [];
+    for (const pid of fs.readdirSync("/proc")) {
+      if (!/^\\d+$/.test(pid)) continue;
+      try {
+        const args = fs.readFileSync("/proc/" + pid + "/cmdline", "utf8").split("\\0");
+        if (args[1] !== server || !/(?:^|\\/)node$/.test(args[0])) continue;
+        const env = {};
+        for (const line of fs.readFileSync("/proc/" + pid + "/environ", "utf8").split("\\0")) {
+          const at = line.indexOf("=");
+          if (at > 0) env[line.slice(0, at)] = line.slice(at + 1);
+        }
+        found.push({ pid: Number(pid), env });
+      } catch { /* Processes may exit during enumeration. */ }
+    }
+    return found;
+  }
+  const VISIT = ${VISIT};
+`;
+
+/** The visit the running server was started with, so a reconnect keeps it. Null for a server without one. */
+async function runningVisit(sandbox: Sandbox, deadline: AbortSignal): Promise<string | null> {
+  const probe = SERVER_PROCESSES + `
+    const found = servers(process.argv[1]);
+    const visit = found.length === 1 ? found[0].env.HS_VISIT_ID : "";
+    process.stdout.write(VISIT.test(visit || "") ? visit.toLowerCase() : "");
+  `;
+  try {
+    const result = await sandbox.currentSession().runCommand({
+      cmd: "node", args: ["-e", probe, `${HS}/app/server.cjs`], signal: operationSignal(5000, deadline),
+    });
+    const visit = result.exitCode === 0 ? (await result.stdout()).trim() : "";
+    return VISIT.test(visit) ? visit : null;
+  } catch {
+    return null;
+  }
+}
+
+/** How many server.cjs processes run in the sandbox. Null when the probe itself fails. */
+async function serverCount(sandbox: Sandbox, deadline: AbortSignal): Promise<number | null> {
+  const probe = SERVER_PROCESSES + `
+    process.stdout.write(String(servers(process.argv[1]).length));
+  `;
+  try {
+    const result = await sandbox.currentSession().runCommand({
+      cmd: "node", args: ["-e", probe, `${HS}/app/server.cjs`], signal: operationSignal(5000, deadline),
+    });
+    const count = result.exitCode === 0 ? Number((await result.stdout()).trim()) : NaN;
+    return Number.isSafeInteger(count) && count >= 0 ? count : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The fresh, resumed session of a stopped workspace, so its expiry is this session's and not the last one's. */
+async function resumeSession(name: string, deadline: AbortSignal): Promise<Sandbox> {
+  return Sandbox.get({ ...credentials(), name, resume: true, signal: operationSignal(25_000, deadline) });
+}
+
+/**
+ * Lets the runtime record why it ends (humanstudy-desktop PR #161): atomically replaces the stop marker
+ * with the server's own visit, sends SIGTERM to server.cjs and waits, bounded, for it to exit before the
+ * caller stops or snapshots the sandbox. Returns the visit the server was running, if it had one.
+ */
+async function signalServerStop(sandbox: Sandbox, reason: "timeout" | "user_stop"): Promise<string | null> {
+  const script = SERVER_PROCESSES + `
+    const path = require("node:path");
+    const [server, marker, reason, wait] = process.argv.slice(1);
+    const found = servers(server);
+    let visit = null;
+    for (const { pid, env } of found) {
+      if (VISIT.test(env.HS_VISIT_ID || "")) {
+        visit = env.HS_VISIT_ID.toLowerCase();
+        const file = env.HS_WEB_STOP_REASON_FILE || (env.HS_USER_DATA ? path.join(env.HS_USER_DATA, "web-stop-reason.json") : marker);
+        const temporary = file + ".tmp-" + process.pid;
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(temporary, JSON.stringify({ visit_id: visit, reason }), { mode: 0o600 });
+        fs.renameSync(temporary, file);
+      }
+      try { process.kill(pid, "SIGTERM"); } catch { /* Already gone. */ }
+    }
+    const alive = ({ pid }) => {
+      try { return !/^\\d+ \\(.*\\) Z/.test(fs.readFileSync("/proc/" + pid + "/stat", "utf8")); } catch { return false; }
+    };
+    const until = Date.now() + Number(wait);
+    (async () => {
+      while (found.some(alive) && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 100));
+      process.stdout.write(JSON.stringify({ visit, servers: found.length, exited: !found.some(alive) }));
+    })();
+  `;
+  try {
+    const result = await sandbox.currentSession().runCommand({
+      cmd: "node", args: ["-e", script, `${HS}/app/server.cjs`, STOP_MARKER, reason, String(STOP_WAIT_MS)],
+      signal: AbortSignal.timeout(STOP_WAIT_MS + 5000),
+    });
+    const outcome = JSON.parse((await result.stdout()).trim() || "null") as { visit?: unknown; exited?: boolean } | null;
+    if (outcome && !outcome.exited) console.warn("online workspace: server did not exit before stop");
+    return typeof outcome?.visit === "string" && VISIT.test(outcome.visit) ? outcome.visit : null;
+  } catch {
+    // The provider stop below still ends the workspace; the runtime then records an ordinary close.
+    return null;
+  }
+}
+
 async function stopRunning(sandbox: Sandbox) {
   if (transitioning(sandbox)) throw new TryError(409, "workspace_transition", "Your workspace is already stopping. Check again in a moment.");
   if (running(sandbox)) await sandbox.stop({ signal: AbortSignal.timeout(15_000) });
@@ -231,8 +370,11 @@ async function savedStop(name: string, attempted: { sessionId: string; snapshotI
   return snapshots.some(snapshot => snapshot.id === snapshotId && snapshot.sourceSessionId === attempted.sessionId && snapshot.status === "created");
 }
 
-/** Stops the current session while retaining its workspace. A stop during launch records cancellation. */
-export async function stopTryOnline(userId: string, attempt?: string): Promise<{ pending: boolean; ignored?: boolean }> {
+/**
+ * Stops the current session while retaining its workspace. A stop during launch records cancellation.
+ * reason "timeout" is the Hub's deadline stop; otherwise it is the user's explicit Stop.
+ */
+export async function stopTryOnline(userId: string, attempt?: string, reason: "timeout" | "user_stop" = "user_stop"): Promise<{ pending: boolean; ignored?: boolean }> {
   const config = configuration(), name = sandboxName(userId);
   const lease = await claim(config, name, true, attempt);
   if (lease === "cancelling") return { pending: true };
@@ -244,6 +386,11 @@ export async function stopTryOnline(userId: string, attempt?: string): Promise<{
     const sandbox = await existing(name);
     if (sandbox && running(sandbox)) {
       prior = { sessionId: sandbox.currentSession().sessionId, snapshotId: sandbox.currentSnapshotId };
+    }
+    if (sandbox?.status === "running") {
+      // The Hub's decision is recorded first, so it survives a provider kill or a missing guest signal.
+      await endVisit(config, name, null, reason);
+      await signalServerStop(sandbox, reason);
     }
     if (sandbox) await stopRunning(sandbox);
     release = true;
@@ -259,6 +406,47 @@ export async function stopTryOnline(userId: string, attempt?: string): Promise<{
   } finally {
     await finish(config, name, lease, release).catch(() => false);
   }
+}
+
+// A scheduler calls the deadline sweep about once a minute; the stop itself takes up to ~25 s.
+const DEADLINE_MARGIN_MS = 90_000;
+// A launch this close to the provider limit renews the session (the runtime stops itself 25 s before it).
+const RENEW_MARGIN_MS = 60_000;
+
+/** After a stop, waits (bounded) until the workspace has finished saving. Null if it is still saving. */
+async function settledStop(name: string, deadline: AbortSignal): Promise<Sandbox | null> {
+  for (let check = 0; check < 15 && !deadline.aborted; check++) {
+    const current = await existing(name, deadline);
+    if (!current) throw FAILED();
+    if (current.status === "stopped") return current;
+    await new Promise(resolve => setTimeout(resolve, 1000));
+  }
+  return null;
+}
+
+/**
+ * The Hub's deadline stop. Ends every running session of this deployment that will reach the provider's
+ * hard limit within the margin, through the same path as Stop, so the runtime records "timeout".
+ */
+export async function stopDueTryOnline(now = Date.now()): Promise<{ due: number; stopped: number }> {
+  configuration();
+  const prefix = `try-${deploymentScope()}`;
+  const all = await (await Sandbox.list({ ...credentials(), tags: TAG, signal: AbortSignal.timeout(8000) })).toArray();
+  const users = all.filter(s => s.status === "running" && s.name?.startsWith(prefix)
+    && (prefix !== "try-" || !s.name.startsWith("try-preview-"))).map(s => s.name.slice(prefix.length))
+    .filter(id => VISIT.test(id));
+  const results = await Promise.allSettled(users.map(async userId => {
+    const sandbox = await existing(sandboxName(userId), AbortSignal.timeout(8000));
+    const expires = sandbox?.status === "running" ? sandbox.expiresAt?.getTime() : undefined;
+    if (!expires || expires - now > DEADLINE_MARGIN_MS) return false;
+    const result = await stopTryOnline(userId, undefined, "timeout");
+    if (result.pending || result.ignored) throw new Error("deadline stop deferred");
+    return true;
+  }));
+  return {
+    due: results.filter(r => r.status === "rejected" || r.value).length,
+    stopped: results.filter(r => r.status === "fulfilled" && r.value).length,
+  };
 }
 
 /** Inspect the already-running server without resuming or restarting its provider session. */
@@ -291,8 +479,19 @@ async function runningWithDevHub(sandbox: Sandbox, origin: string, deadline: Abo
   }
 }
 
+/**
+ * The provider's hard limit for the current session, as an ISO time. Only a running session's expiry is
+ * used (the SDK derives it from that session's start and timeout); a stopped sandbox reports its previous
+ * session's. Callers resume first. Without a usable running expiry, the full timeout from now is used.
+ */
+function hardLimit(sandbox: Sandbox, timeout: number, now = Date.now()): string {
+  const expires = sandbox.status === "running" ? sandbox.expiresAt?.getTime() : undefined;
+  const at = expires && expires > now && expires <= now + timeout ? expires : now + timeout;
+  return new Date(at).toISOString();
+}
+
 /** Starts or reopens one private, persistent workspace. A missing prior snapshot is never replaced automatically. */
-export async function launchTryOnline(user: { id: string; email?: string | null }, attempt: string = randomUUID()): Promise<{ url: string; resumed: boolean }> {
+export async function launchTryOnline(user: { id: string; email?: string | null }, attempt: string = randomUUID()): Promise<{ url: string; resumed: boolean; deadlineAt: string }> {
   const config = configuration();
   if (!user.email) throw new TryError(403, "email_required", "Sign in with an email address to open an online workspace.");
   const hubOrigin = devHubOrigin();
@@ -307,9 +506,25 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
 
   let sandbox: Sandbox | null = null;
   let started = false, cancelled = false, release = false;
+  // One canonical id per logical visit: a reconnect to the same server process keeps it.
+  let visit: string | null = null, freshVisit = false, startFailed = false;
+  let deadlineAt = "";
   try {
     sandbox = await existing(name, deadline);
     if (sandbox && transitioning(sandbox)) throw new TryError(409, "workspace_transition", "Your workspace is saving. Try again in a moment.");
+    // A session about to reach its provider limit is ended as a timeout (its runtime would stop itself within
+    // seconds) and then resumed like any stopped workspace, so the visit gets a whole session.
+    const ends = sandbox?.status === "running" ? sandbox.expiresAt?.getTime() : undefined;
+    if (sandbox && ends !== undefined && ends - Date.now() < RENEW_MARGIN_MS) {
+      await endVisit(config, name, null, "timeout");
+      await signalServerStop(sandbox, "timeout");
+      await stopRunning(sandbox);
+      sandbox = await settledStop(name, deadline);
+      if (!sandbox) {
+        release = true;
+        throw new TryError(409, "workspace_transition", "Your previous session is still saving. Try again in a moment.");
+      }
+    }
     if (!sandbox || !running(sandbox)) {
       if (!(await roomFor(name, config.maxRunning, deadline))) {
         release = true;
@@ -344,19 +559,43 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
       }
     }
     let base = !started && sandbox.status === "running" ? workspaceOrigin(sandbox) : null;
+    let payload = base ? await health(base, deadline) : null;
+    for (let check = 0; base && check < 2 && !(payload as { ready?: boolean } | null)?.ready && !deadline.aborted; check++) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      payload = await health(base, deadline);
+    }
+    // A running sandbox whose server is gone (for example after a Stop whose provider stop failed) gets a fresh
+    // server. A server that is only slow to answer is never replaced: that would kill the user's live work.
+    if (base && !(payload as { ready?: boolean } | null)?.ready) {
+      if ((await serverCount(sandbox, deadline)) !== 0) throw new TryError(503, "workspace_busy", "Your workspace is busy and did not answer. Try again in a moment.");
+      base = null;
+    }
+    // A reconnect keeps the running server's visit. A server without one, or a failed probe, gets none from
+    // the Hub: the runtime keeps the visit it already bound and a new id would not reach it.
+    if (base) visit = await runningVisit(sandbox, deadline);
     if (!base) {
       started = true;
-      const env: Record<string, string> = { HS_WEB_TOKEN: token, HUMANSTUDY_COMMUNITY_BRANCH: process.env.VERCEL_ENV === "preview" ? "dev" : "main" };
+      // Resume before reading the expiry: a stopped sandbox still reports its previous session's.
+      if (sandbox.status !== "running") sandbox = await resumeSession(name, deadline);
+      visit = randomUUID();
+      freshVisit = true;
+      await beginVisit(config, visit, user.id, name, sandbox.expiresAt);
+      // The runtime ends the visit itself shortly before this limit, so the deadline needs no Hub scheduler.
+      deadlineAt = hardLimit(sandbox, timeout);
+      const env: Record<string, string> = { HS_WEB_TOKEN: token, HS_VISIT_ID: visit, HS_DEADLINE_AT: deadlineAt, HUMANSTUDY_COMMUNITY_BRANCH: process.env.VERCEL_ENV === "preview" ? "dev" : "main" };
       if (networkPolicy) {
         env.HUMANSTUDY_SERVER = hubOrigin;
         env.NODE_USE_SYSTEM_CA = "1";
       }
       if (config.appUrl) Object.assign(env, { HS_APP_URL: config.appUrl, HS_APP_SHA256: config.appSha });
       const command = await sandbox.runCommand({ cmd: "bash", args: [`${HS}/app/start.sh`], env, signal: operationSignal(28_000, deadline) });
-      if (command.exitCode !== 0) throw FAILED();
+      if (command.exitCode !== 0) {
+        startFailed = true;
+        throw FAILED();
+      }
       base = workspaceOrigin(sandbox);
+      payload = await health(base, deadline);
     }
-    let payload = await health(base, deadline);
     if (started) {
       for (let check = 0; check < 2 && !(payload as { ready?: boolean } | null)?.ready && !deadline.aborted; check++) {
         await new Promise(resolve => setTimeout(resolve, 400));
@@ -394,9 +633,11 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
       cancelled = true;
       throw new TryError(409, "workspace_cancelled", "Startup was cancelled.");
     }
+    if (visit) await beginVisit(config, visit, user.id, name, sandbox.expiresAt);
     const url = new URL("/", base);
     url.searchParams.set("t", token);
-    return { url: url.href, resumed };
+    if (visit) url.searchParams.set("hs_visit", visit);
+    return { url: url.href, resumed, deadlineAt: deadlineAt || hardLimit(sandbox, timeout) };
   } catch (error) {
     if (!started && !cancelled && !release) {
       const completed = await finish(config, name, lease, false, sandbox?.expiresAt).catch(() => null);
@@ -414,6 +655,7 @@ export async function launchTryOnline(user: { id: string; email?: string | null 
         }
       } catch { /* Keep the lease when provider state is uncertain. */ }
     }
+    if (freshVisit && visit && release) await endVisit(config, name, visit, cancelled ? "user_stop" : startFailed ? "crash" : "unknown");
     await finish(config, name, lease, release).catch(() => false);
     if (cancelled && release) throw new TryError(409, "workspace_cancelled", "Startup was cancelled.");
     if (error instanceof TryError) throw error;
