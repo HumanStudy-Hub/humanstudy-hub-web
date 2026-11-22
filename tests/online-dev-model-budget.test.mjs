@@ -28,10 +28,14 @@ const prompt = {
 test('dev reservation preserves large text, output and supported generation settings while pinning provider routing', () => {
   const bounded = lib.boundedDevCompletion(prompt, user);
   const sent = JSON.parse(bounded.wire);
-  for (const key of ['messages', 'reasoning', 'temperature', 'top_p', 'parallel_tool_calls', 'tool_choice', 'tools', 'stream']) {
+  for (const key of ['messages', 'reasoning', 'tool_choice', 'tools', 'stream']) {
     assert.deepEqual(sent[key], prompt[key]);
   }
   assert.equal(sent.max_tokens, prompt.max_completion_tokens);
+  // Haiku 5.5's OpenRouter endpoint lists no temperature/top_p; require_parameters would 404, so they are dropped.
+  assert.equal(sent.temperature, undefined);
+  assert.equal(sent.top_p, undefined);
+  assert.equal(sent.parallel_tool_calls, undefined);
   assert.equal(sent.provider.allow_fallbacks, false);
   assert.equal(sent.provider.require_parameters, true);
   assert.deepEqual(sent.provider.max_price, { prompt: 1, completion: 2.5, request: 0 });
@@ -40,11 +44,13 @@ test('dev reservation preserves large text, output and supported generation sett
   assert.equal(lib.boundedDevCompletion({ ...prompt, max_completion_tokens: 32_768 }, user).model, model);
 });
 
-test('anthropic models drop seed and penalties that require_parameters routing would refuse (simulation runs send a seed)', () => {
+test('Haiku drops sampling parameters its endpoint does not support (simulation runs send temperature); other models keep them', () => {
   const simulation = { model, messages: [{ role: 'user', content: 'hi' }], temperature: 1, seed: 42, frequency_penalty: 0.1, presence_penalty: 0.1, max_tokens: 512 };
   const sent = JSON.parse(lib.boundedDevCompletion(simulation, user).wire);
-  for (const key of ['seed', 'frequency_penalty', 'presence_penalty']) assert.equal(sent[key], undefined);
-  assert.equal(sent.temperature, 1);
+  for (const key of ['seed', 'frequency_penalty', 'presence_penalty', 'temperature']) assert.equal(sent[key], undefined);
+  const deepseek = JSON.parse(lib.boundedDevCompletion({ ...simulation, model: 'deepseek/deepseek-v4.1-flash-1017' }, user).wire);
+  assert.equal(deepseek.temperature, 1);
+  assert.equal(deepseek.seed, 42);
   assert.equal(sent.provider.require_parameters, true);
   assert.equal(lib.boundedDevCompletion({ ...simulation, seed: 1.5 }, user), null);
 });
