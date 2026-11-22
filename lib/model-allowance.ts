@@ -21,8 +21,10 @@ const percent = (left: number, total: number) => Math.max(0, Math.min(100, Math.
 export function summarizeAllowance(row: AllowanceRow | null | undefined, now = Date.now()): Allowance {
   if (!row) return NONE;
   const revoked = row.revoked !== false;
-  const expiry = typeof row.expires_at === "string" ? Date.parse(row.expires_at) : NaN;
-  const expired = !Number.isFinite(expiry) || expiry <= now;
+  // Postgres returns "infinity" for grants that never expire (all production grants), which Date.parse can't read.
+  const raw = typeof row.expires_at === "string" ? row.expires_at.trim().toLowerCase() : "";
+  const expiry = raw === "infinity" ? Infinity : raw ? Date.parse(raw) : NaN;
+  const expired = Number.isNaN(expiry) || expiry <= now;
   if (revoked || expired) return { available: true, percentLeft: 0, requestsLeft: 0, revoked, expired };
   const microusd = count(row.remaining_microusd), requests = Math.floor(count(row.remaining_requests));
   return {
