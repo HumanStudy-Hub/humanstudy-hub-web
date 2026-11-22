@@ -49,6 +49,7 @@ test('atomic pool/account admission, revocation, settlement and privileges; smok
   const migration=fs.readdirSync(new URL('../supabase/migrations/',import.meta.url)).find(x=>x.endsWith('_hosted_account_model_allowances.sql'));
   assert.ok(migration);await db.exec(fs.readFileSync(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8'));
   await db.query('insert into auth.users values($1),($2)',[user,other]);
+  await db.exec(fs.readFileSync(new URL('../supabase/migrations/20261122120000_refund_zero_cost_requests.sql',import.meta.url),'utf8'));
   await db.query("insert into public.online_dev_model_budget(singleton,user_id,models,expires_at,remaining_microusd,remaining_requests) values(true,$1,array[$2],now()+interval '1 hour',125,5)",[user,model]);
   await db.query("insert into public.online_dev_model_budget(singleton,user_id,models,expires_at,remaining_microusd,remaining_requests,budget_key,environment,scope) values(NULL,NULL,array[$2],now()+interval '1 hour',125,5,'dev:pool','dev','pool'),(NULL,$1,array[$2],now()+interval '1 hour',125,5,'dev:account:'||($1::uuid)::text,'dev','account')",[user,model]);
   await db.exec('set role authenticated');await assert.rejects(reserve(),/permission denied/);await assert.rejects(settle(randomUUID(),0),/permission denied/);await assert.rejects(db.query('select public.online_account_model_access($1,$2)',['dev',user]),/permission denied/);await assert.rejects(db.exec('select * from public.online_model_reservations'),/permission denied/);
@@ -58,6 +59,19 @@ test('atomic pool/account admission, revocation, settlement and privileges; smok
   assert.deepEqual((await db.query('select public.online_account_model_access($1,$2) as models',['dev',user])).rows[0].models,[model]);
   assert.deepEqual((await db.query('select public.online_account_model_access($1,$2) as models',['production',user])).rows[0].models,[]);
   assert.equal((await reserve(10,'production')).ok,false);assert.equal((await reserve(10,'dev',other)).ok,false);
+  const rejected = await reserve();
+  assert.equal(rejected.ok,true);
+  const outcomes = [];
+  const {withProviderUsageSettlement} = load('lib/provider-usage-settlement.ts');
+  const body = withProviderUsageSettlement(new Response('unknown model',{status:404}), {
+    streaming:true, signal:new AbortController().signal,
+    settle:cost=>settle(rejected.id,cost), report:outcome=>outcomes.push(outcome),
+  });
+  assert.equal(await new Response(body).text(),'unknown model');
+  assert.equal(outcomes[0].state,'settled');
+  assert.equal(await settle(rejected.id,0),true); // Retrying cannot refund twice.
+  const balances = await db.query("select remaining_microusd,remaining_requests from public.online_dev_model_budget where scope in ('account','pool')");
+  assert.deepEqual(balances.rows,Array(2).fill({remaining_microusd:125,remaining_requests:5}));
   const attempts=await Promise.all(Array.from({length:5},()=>reserve()));const admitted=attempts.filter(x=>x.ok);assert.equal(admitted.length,2);
   assert.equal((await db.query("select remaining_microusd from public.online_dev_model_budget where budget_key='dev:pool'")).rows[0].remaining_microusd,25);
   assert.equal((await reserve(1,'dev',user,admitted[0].id)).ok,false);
