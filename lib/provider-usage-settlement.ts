@@ -114,7 +114,9 @@ export function withProviderUsageSettlement(upstream: Response, options: {
   settle: (actualMicrousd: number) => Promise<boolean>;
   report: (outcome: AccountingOutcome) => void;
 }): ReadableStream<Uint8Array> | null {
-  if (!upstream.body) {
+  const unbilled = !upstream.redirected && upstream.status >= 400 && upstream.status < 500 && upstream.status !== 408;
+  const body = upstream.body ?? (unbilled ? new Blob([]).stream() : null);
+  if (!body) {
     try { options.report({ state: 'retained', reason: 'missing_response_body' }); } catch { /* no response bytes to alter */ }
     return null;
   }
@@ -122,23 +124,25 @@ export function withProviderUsageSettlement(upstream: Response, options: {
   const supported = upstream.ok && !upstream.redirected && (options.streaming ? contentType.includes('text/event-stream') : contentType.includes('application/json'));
   const observer = new UsageObserver(options.streaming, upstream.headers.get('x-generation-id') || undefined);
   if (!supported) observer.invalidate('unsuccessful_or_unsupported_response');
-  const reader = upstream.body.getReader();
+  const reader = body.getReader();
   let cancelled = false, finalized = false;
   let pendingRead: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
   let pendingError: Error | undefined;
   const abort = () => { cancelled = true; observer.invalidate('cancelled'); void reader.cancel().catch(() => undefined); };
   options.signal.addEventListener('abort', abort, { once: true });
   if (options.signal.aborted) abort();
-  const finish = async () => {
+  const finish = async (reachedEOF = false) => {
     if (finalized) return;
     finalized = true;
     options.signal.removeEventListener('abort', abort);
     if (cancelled || options.signal.aborted) observer.invalidate('cancelled');
-    let outcome = observer.complete();
+    let outcome: AccountingOutcome = unbilled && reachedEOF && !cancelled && !options.signal.aborted
+      ? { state: 'retained', reason: 'unbilled_upstream_error', actualMicrousd: 0 }
+      : observer.complete();
     if (outcome.actualMicrousd !== undefined) {
       try {
         const settled = await options.settle(outcome.actualMicrousd);
-        outcome = { ...outcome, state: settled ? 'settled' : 'retained', reason: settled ? 'verified_complete_usage' : 'settlement_unconfirmed_or_overrun' };
+        outcome = { ...outcome, state: settled ? 'settled' : 'retained', reason: settled ? outcome.reason : 'settlement_unconfirmed_or_overrun' };
       } catch { outcome = { ...outcome, state: 'retained', reason: 'settlement_failed' }; }
     }
     try { options.report(outcome); } catch { /* accounting diagnostics must not alter output */ }
@@ -149,7 +153,7 @@ export function withProviderUsageSettlement(upstream: Response, options: {
         if (pendingError) throw pendingError;
         const result = await (pendingRead ?? reader.read());
         pendingRead = undefined;
-        if (result.done) { await finish(); controller.close(); return; }
+        if (result.done) { await finish(true); controller.close(); return; }
         observer.observe(result.value);
         // Most SDKs cancel after [DONE]. Verify actual upstream EOF before releasing that
         // terminal chunk, so normal SDK completion is not mistaken for an interrupted request.

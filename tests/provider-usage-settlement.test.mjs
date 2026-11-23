@@ -43,7 +43,7 @@ test('missing, conflicting, malformed or incomplete accounting never refunds',as
   event(frame({usage})).slice(0,-2),
  ];
  for(const text of variants){const h=harness(text);assert.equal(await new Response(h.body).text(),text);assert.equal(h.calls.length,0);assert.equal(h.reports[0].state,'retained');}
- for(const options of [{status:500},{headers:{'x-generation-id':'other'}}]){const h=harness(good,options);await new Response(h.body).text();assert.equal(h.calls.length,0);}
+ for(const options of [{status:408},{status:500},{headers:{'x-generation-id':'other'}}]){const h=harness(good,options);await new Response(h.body).text();assert.equal(h.calls.length,0);assert.equal(h.reports[0].state,'retained');}
 });
 test('bounded observers retain reservation without clipping huge SSE or JSON',async()=>{
  for(const streaming of [true,false]){
