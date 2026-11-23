@@ -3,6 +3,7 @@ import { tryServiceKey } from "./try-online-config";
 // Conservative USD per million tokens, including a margin for input cache writes.
 const prices = new Map([
   ["anthropic/claude-haiku-5.5", { input: 1, output: 2.5 }],
+  ["deepseek/deepseek-v4.1-flash", { input: 0.1, output: 0.4 }],
   ["deepseek/deepseek-v4.1-flash-1017", { input: 0.6, output: 1.2 }],
 ]);
 export const BOUNDED_HOSTED_MODELS = [...prices.keys()];

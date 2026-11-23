@@ -52,7 +52,7 @@ test('service failures fail closed and only valid codes are remembered', async t
   assert.deepEqual(writes, [{ url: `https://db.test/auth/v1/admin/users/${user}`, body: { user_metadata: { invitation_code: 'HumanStudy' } } }]);
 });
 
-test('allowance v2 grants 10 USD / 500 requests and tops up live old grants exactly once', async () => {
+test('invitation migrations preserve spending, top up once and admit Flash for existing and new grants', async () => {
   const db = new PGlite();
   const third = '33333333-3333-4333-8333-333333333333', fourth = '44444444-4444-4444-8444-444444444444';
   const migration = suffix => fs.readFileSync(new URL('../supabase/migrations/' + fs.readdirSync(new URL('../supabase/migrations/', import.meta.url)).find(name => name.endsWith(suffix)), import.meta.url), 'utf8');
@@ -93,5 +93,31 @@ test('allowance v2 grants 10 USD / 500 requests and tops up live old grants exac
     assert.deepEqual((await read()).find(row => row.budget_key.endsWith(fourth)), { budget_key: `production:account:${fourth}`, remaining_microusd: 100, remaining_requests: 3, models: [model] });
     await db.exec('set role service_role');
     await assert.rejects(db.query('select * from hosted_quota_private.invitation_allowance_v2'), /permission denied/);
+    await db.exec('reset role');
+
+    const flash = 'deepseek/deepseek-v4.1-flash';
+    const v3 = migration('_invitation_allowance_v3.sql');
+    const fresh = '55555555-5555-4555-8555-555555555555';
+    await db.exec(v3);
+    await db.query('insert into auth.users values($1,now(),null,false)', [fresh]);
+    await db.exec('set role service_role');
+    assert.equal(await grant(fresh), true);
+    const balances = await read();
+    assert.deepEqual(balances.map(b => [b.remaining_microusd, b.remaining_requests]), [
+      [6200000, 2937], [5000000, 100], [5000000, 2600], [100, 2503], [10000000, 3000], [50000000, 150000],
+    ]);
+    for (const b of balances) assert.deepEqual(b.models, [model, flash]);
+    const reserve = id => db.query(
+      "select public.online_reserve_account_model_budget(gen_random_uuid(),'production',$1,$2,1) as ok", [id, flash],
+    ).then(r => r.rows[0].ok);
+    assert.equal(await reserve(user), true);
+    assert.equal(await reserve(fresh), true);
+    assert.equal(await reserve(other), false);
+    assert.equal(await reserve(third), false);
+    await assert.rejects(db.query('select * from hosted_quota_private.invitation_allowance_v3'), /permission denied/);
+    await db.exec('reset role');
+    const spent = await read();
+    await db.exec(v3);
+    assert.deepEqual(await read(), spent);
   } finally { await db.close(); }
 });

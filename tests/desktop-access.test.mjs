@@ -57,3 +57,12 @@ test('codeEquals is the shared trimmed, case-insensitive check used by /api/acce
   assert.equal(lib.codeEquals('  ', ''), false);
   assert.equal(lib.codeEquals(undefined, 'OPEN-SESAME'), false);
 });
+
+test('unconfigured desktop model list contains the three priced models', t => {
+  const saved = process.env.DESKTOP_MODELS;
+  delete process.env.DESKTOP_MODELS;
+  t.after(() => { if (saved !== undefined) process.env.DESKTOP_MODELS = saved; });
+  assert.deepEqual(load('lib/desktop-access.ts', { './access': access }).DESKTOP_MODELS, [
+    'anthropic/claude-haiku-5.5', 'deepseek/deepseek-v4.1-flash', 'deepseek/deepseek-v4.1-flash-1017',
+  ]);
+});
