@@ -89,7 +89,7 @@ type MetricRow = { arm: string; metric: string; value: number };
 type Transcript = Array<{ participantId: number | string; profile: Record<string, string | number>; prompt: string | null; response: string | null; arm?: string; events?: string[] }>;
 
 const MODELS: SelectOption[] = [
-  { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", note: "fast, inexpensive" },
+  { id: "deepseek/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash", note: "fast, inexpensive" },
   { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro", note: "open weights" },
   { id: "anthropic/claude-sonnet-5", label: "Claude Sonnet 5", note: "strong instruction following" },
   { id: "openai/gpt-5-mini", label: "GPT-5 mini", note: "fast, inexpensive" },

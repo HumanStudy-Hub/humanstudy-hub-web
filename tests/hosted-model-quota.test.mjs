@@ -19,6 +19,7 @@ test('quota scope comes only from explicit server release configuration',t=>{
 test('enabled route never contacts provider on denied grants or oversized UTF8 and preserves legacy production when disabled',async t=>{
  const keys=['HOSTED_MODEL_QUOTAS','VERCEL_ENV','OPENROUTER_API_KEY'];const old=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
  t.after(()=>{for(const k of keys)old[k]===undefined?delete process.env[k]:process.env[k]=old[k];});
+ const flash='deepseek/deepseek-v4.1-flash';
  let environment='production',allow=false,forwards=0,reserves=0;
  process.env.VERCEL_ENV='production';process.env.HOSTED_MODEL_QUOTAS='1';process.env.OPENROUTER_API_KEY='fixture';
  const bounds=load('lib/try-dev-model-budget.ts',{'./try-online-config':{tryServiceKey:()=> 'fixture'}});
@@ -26,17 +27,26 @@ test('enabled route never contacts provider on denied grants or oversized UTF8 a
   'next/server':{NextResponse:{json:Response.json}},
   '@/lib/provider-usage-settlement': load('lib/provider-usage-settlement.ts'),
     '@/lib/bounded-request':load('lib/bounded-request.ts'),
-  '@/lib/desktop-access':{bearer:()=> 'signed',verifyDesktopKey:()=>user,DESKTOP_MODELS:[model]},
+  '@/lib/desktop-access':{bearer:()=> 'signed',verifyDesktopKey:()=>user,DESKTOP_MODELS:[model,flash]},
   '@/lib/try-dev-models':{isDevPreview:()=>false,devModelAccess:()=>false},
   '@/lib/try-dev-model-budget':bounds,
   '@/lib/hosted-model-quota':{hostedQuotaEnvironment:()=>environment,reserveHostedCompletion:async(account)=>{assert.equal(account,user);reserves++;return allow?'server-request-id':null;}}
  });
- t.mock.method(globalThis,'fetch',async()=>{forwards++;return new Response('{}');});
+ t.mock.method(globalThis,'fetch',async(_url,init)=>{
+   const wire=JSON.parse(init.body);
+   if(environment){
+     assert.equal(wire.model,flash);
+     assert.equal(wire.temperature,0.7);
+     assert.equal(wire.seed,42);
+     assert.deepEqual(wire.provider.max_price,{prompt:0.15,completion:0.6,request:0});
+   }
+   forwards++;return new Response('{}');
+ });
  const request=(content='small',extra={})=>new Request('https://fixture.test',{method:'POST',body:JSON.stringify({model,messages:[{role:'user',content}],...extra})});
  assert.equal((await route.POST(request())).status,429);assert.equal(forwards,0);
  assert.equal((await route.POST(request('研'.repeat(1400000)))).status,413);assert.equal(reserves,1);assert.equal(forwards,0);
  assert.equal((await route.POST(request('small',{account_id:other,environment:'dev'}))).status,400);assert.equal(forwards,0);
- allow=true;assert.equal((await route.POST(request())).status,200);assert.equal(forwards,1);
+ allow=true;assert.equal((await route.POST(request('small',{model:flash,temperature:0.7,seed:42}))).status,200);assert.equal(forwards,1);
  environment=null;delete process.env.HOSTED_MODEL_QUOTAS;assert.equal((await route.POST(request())).status,200);assert.equal(forwards,2);
 });
 test('atomic pool/account admission, revocation, settlement and privileges; smoke route survives',async()=>{
@@ -58,6 +68,19 @@ test('atomic pool/account admission, revocation, settlement and privileges; smok
   assert.deepEqual((await db.query('select public.online_account_model_access($1,$2) as models',['dev',user])).rows[0].models,[model]);
   assert.deepEqual((await db.query('select public.online_account_model_access($1,$2) as models',['production',user])).rows[0].models,[]);
   assert.equal((await reserve(10,'production')).ok,false);assert.equal((await reserve(10,'dev',other)).ok,false);
+  const rejected = await reserve();
+  assert.equal(rejected.ok,true);
+  const outcomes = [];
+  const {withProviderUsageSettlement} = load('lib/provider-usage-settlement.ts');
+  const body = withProviderUsageSettlement(new Response('unknown model',{status:404}), {
+    streaming:true, signal:new AbortController().signal,
+    settle:cost=>settle(rejected.id,cost), report:outcome=>outcomes.push(outcome),
+  });
+  assert.equal(await new Response(body).text(),'unknown model');
+  assert.equal(outcomes[0].state,'settled');
+  assert.equal(await settle(rejected.id,0),true); // Retrying cannot refund twice.
+  const balances = await db.query("select remaining_microusd,remaining_requests from public.online_dev_model_budget where scope in ('account','pool')");
+  assert.deepEqual(balances.rows,Array(2).fill({remaining_microusd:125,remaining_requests:4}));
   const attempts=await Promise.all(Array.from({length:5},()=>reserve()));const admitted=attempts.filter(x=>x.ok);assert.equal(admitted.length,2);
   assert.equal((await db.query("select remaining_microusd from public.online_dev_model_budget where budget_key='dev:pool'")).rows[0].remaining_microusd,25);
   assert.equal((await reserve(1,'dev',user,admitted[0].id)).ok,false);

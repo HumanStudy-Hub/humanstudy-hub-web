@@ -2,10 +2,10 @@ import "server-only";
 import { hostedQuotaEnvironment } from "./hosted-model-quota";
 import { tryServiceKey } from "./try-online-config";
 
-/** Current per-account hosted model grant (supabase/migrations/20261119120000_invitation_allowance_v2.sql).
+/** Current per-account hosted model grant (supabase/migrations/20261123004929_invitation_allowance_v3.sql).
  *  Change these together with the grant migration. */
 export const ALLOWANCE_TOTAL_MICROUSD = 10_000_000;
-export const ALLOWANCE_TOTAL_REQUESTS = 500;
+export const ALLOWANCE_TOTAL_REQUESTS = 3_000;
 
 export type AllowanceRow = { remaining_microusd?: unknown; remaining_requests?: unknown; expires_at?: unknown; revoked?: unknown };
 /** User-facing summary. Never carries dollar amounts. */
