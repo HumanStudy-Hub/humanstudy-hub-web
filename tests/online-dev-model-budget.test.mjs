@@ -36,7 +36,7 @@ test('dev reservation preserves large text, output and supported generation sett
   assert.equal(sent.temperature, undefined);
   assert.equal(sent.top_p, undefined);
   assert.equal(sent.parallel_tool_calls, undefined);
-  assert.equal(sent.provider.allow_fallbacks, false);
+  assert.equal(sent.provider.allow_fallbacks, true); // within the price cap and parameter filter only
   assert.equal(sent.provider.require_parameters, true);
   assert.deepEqual(sent.provider.max_price, { prompt: 1, completion: 2.5, request: 0 });
   for (const key of ['plugins', 'models', 'n']) assert.equal(sent[key], undefined);

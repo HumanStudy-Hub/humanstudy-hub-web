@@ -156,7 +156,9 @@ export function boundedDevCompletion(body: unknown, userId: string) {
         name: tool.function.name, description: tool.function.description, parameters: tool.function.parameters, strict: tool.function.strict,
       },
     })) } : {}),
-    provider: { allow_fallbacks: false, require_parameters: true, max_price: { prompt: price.input, completion: price.output, request: 0 } },
+    // Fallbacks only move between providers that already pass require_parameters and max_price, so cost stays
+    // bounded; without them one rate-limited provider (429) fails every parallel simulation call.
+    provider: { allow_fallbacks: true, require_parameters: true, max_price: { prompt: price.input, completion: price.output, request: 0 } },
   });
   const bytes = Buffer.byteLength(wire);
   if (bytes > MAX_INPUT_BYTES) return null;
