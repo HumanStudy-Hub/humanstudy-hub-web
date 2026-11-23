@@ -14,44 +14,44 @@ const now = Date.parse('2026-11-20T00:00:00Z'), future = '2027-01-01T00:00:00Z',
 const row = (microusd, requests, extra = {}) => ({ remaining_microusd: microusd, remaining_requests: requests, expires_at: future, revoked: false, ...extra });
 
 test('percent left is the smaller of dollar and request share, floored', () => {
-  assert.equal(lib.ALLOWANCE_TOTAL_MICROUSD, 10_000_000); assert.equal(lib.ALLOWANCE_TOTAL_REQUESTS, 500);
-  assert.deepEqual(lib.summarizeAllowance(row(10_000_000, 500), now), { available: true, percentLeft: 100, requestsLeft: 500, revoked: false, expired: false });
-  assert.equal(lib.summarizeAllowance(row(8_700_000, 490), now).percentLeft, 87);
-  assert.equal(lib.summarizeAllowance(row(9_900_000, 250), now).percentLeft, 50);
-  assert.equal(lib.summarizeAllowance(row(9_999, 500), now).percentLeft, 1); // still usable: never show 0%
+  assert.equal(lib.ALLOWANCE_TOTAL_MICROUSD, 10_000_000); assert.equal(lib.ALLOWANCE_TOTAL_REQUESTS, 3000);
+  assert.deepEqual(lib.summarizeAllowance(row(10_000_000, 3000), now), { available: true, percentLeft: 100, requestsLeft: 3000, revoked: false, expired: false });
+  assert.equal(lib.summarizeAllowance(row(8_700_000, 2940), now).percentLeft, 87);
+  assert.equal(lib.summarizeAllowance(row(9_900_000, 1500), now).percentLeft, 50);
+  assert.equal(lib.summarizeAllowance(row(9_999, 3000), now).percentLeft, 1); // still usable: never show 0%
   assert.equal(lib.summarizeAllowance(row(10_000_000, 1), now).percentLeft, 1);
-  assert.equal(lib.summarizeAllowance(row(0, 500), now).percentLeft, 0);
+  assert.equal(lib.summarizeAllowance(row(0, 3000), now).percentLeft, 0);
   assert.equal(lib.summarizeAllowance(row(10_000_000, 0), now).percentLeft, 0);
-  assert.equal(lib.summarizeAllowance(row('5000000', '400'), now).percentLeft, 50); // bigint columns may arrive as strings
+  assert.equal(lib.summarizeAllowance(row('5000000', '2400'), now).percentLeft, 50); // bigint columns may arrive as strings
 });
 
 test('percent is clamped to 0-100', () => {
-  assert.equal(lib.summarizeAllowance(row(25_000_000, 900), now).percentLeft, 100);
+  assert.equal(lib.summarizeAllowance(row(25_000_000, 5400), now).percentLeft, 100);
   assert.deepEqual(lib.summarizeAllowance(row(-5, -1), now), { available: true, percentLeft: 0, requestsLeft: 0, revoked: false, expired: false });
   assert.equal(lib.summarizeAllowance(row(null, 'x'), now).percentLeft, 0);
 });
 
 test('revoked or expired grants show 0, missing row is unavailable', () => {
-  assert.deepEqual(lib.summarizeAllowance(row(10_000_000, 500, { revoked: true }), now), { available: true, percentLeft: 0, requestsLeft: 0, revoked: true, expired: false });
-  assert.deepEqual(lib.summarizeAllowance(row(10_000_000, 500, { expires_at: past }), now), { available: true, percentLeft: 0, requestsLeft: 0, revoked: false, expired: true });
-  assert.equal(lib.summarizeAllowance(row(10_000_000, 500, { expires_at: null }), now).percentLeft, 0);
+  assert.deepEqual(lib.summarizeAllowance(row(10_000_000, 3000, { revoked: true }), now), { available: true, percentLeft: 0, requestsLeft: 0, revoked: true, expired: false });
+  assert.deepEqual(lib.summarizeAllowance(row(10_000_000, 3000, { expires_at: past }), now), { available: true, percentLeft: 0, requestsLeft: 0, revoked: false, expired: true });
+  assert.equal(lib.summarizeAllowance(row(10_000_000, 3000, { expires_at: null }), now).percentLeft, 0);
   // Production grants never expire: Postgres sends 'infinity'.
-  assert.deepEqual(lib.summarizeAllowance(row(8_341_000, 422, { expires_at: 'infinity' }), now), { available: true, percentLeft: 83, requestsLeft: 422, revoked: false, expired: false });
+  assert.deepEqual(lib.summarizeAllowance(row(8_341_000, 2532, { expires_at: 'infinity' }), now), { available: true, percentLeft: 83, requestsLeft: 2532, revoked: false, expired: false });
   assert.deepEqual(lib.summarizeAllowance(null, now), { available: false, percentLeft: 0, requestsLeft: 0, revoked: false, expired: false });
 });
 
 test('accountAllowance reads only this account production row with the service role and never returns dollars', async t => {
   const saved = process.env.SUPABASE_URL; process.env.SUPABASE_URL = 'https://db.test';
   t.after(() => { if (saved === undefined) delete process.env.SUPABASE_URL; else process.env.SUPABASE_URL = saved; });
-  const urls = []; let rows = [row(5_000_000, 450)];
+  const urls = []; let rows = [row(5_000_000, 2700)];
   t.mock.method(globalThis, 'fetch', async (url, init) => { urls.push(String(url)); assert.equal(init.headers.Authorization, 'Bearer service-fixture'); return Response.json(rows); });
   const result = await lib.accountAllowance(user);
-  assert.deepEqual(result, { available: true, percentLeft: 50, requestsLeft: 450, revoked: false, expired: false });
+  assert.deepEqual(result, { available: true, percentLeft: 50, requestsLeft: 2700, revoked: false, expired: false });
   assert.ok(!('remaining_microusd' in result));
   assert.match(urls[0], new RegExp(`budget_key=eq\\.${encodeURIComponent(`production:account:${user}`)}`));
   rows = []; assert.equal((await lib.accountAllowance(user)).available, false);
   assert.equal((await lib.accountAllowance('not-a-uuid')).available, false); assert.equal(urls.length, 2);
-  quotaEnvironment = 'dev'; rows = [row(10_000_000, 500)];
+  quotaEnvironment = 'dev'; rows = [row(10_000_000, 3000)];
   assert.equal((await lib.accountAllowance(user)).percentLeft, 100);
   assert.match(urls[2], new RegExp(`budget_key=eq\\.${encodeURIComponent(`dev:account:${user}`)}`));
   quotaEnvironment = null;
