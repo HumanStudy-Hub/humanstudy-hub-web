@@ -1,3 +1,5 @@
+-- Apply as one transaction (LOCK TABLE needs a transaction block).
+begin;
 -- Record both migrated balances and fresh grants so replay cannot restore spent requests.
 create table if not exists hosted_quota_private.invitation_allowance_v3 (
   budget_key text primary key,
@@ -55,4 +57,6 @@ from newly_recorded n where n.budget_key=b.budget_key;
 
 update public.online_dev_model_budget
 set models = array['anthropic/claude-haiku-5.5', 'deepseek/deepseek-v4.1-flash']
-where environment='production' and scope in ('pool','account');
+where environment='production' and scope in ('pool','account')
+  and not (models @> array['anthropic/claude-haiku-5.5', 'deepseek/deepseek-v4.1-flash']);
+commit;
