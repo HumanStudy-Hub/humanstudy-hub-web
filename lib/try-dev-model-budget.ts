@@ -1,13 +1,17 @@
 import { tryServiceKey } from "./try-online-config";
 
-// USD per million tokens: 2x the OpenRouter list price (checked 2026-11-24 via GET /api/v1/models: Haiku 5.5
+// USD per million tokens: 2x the OpenRouter list price (DeepSeek: see below) (checked 2026-11-24 via GET /api/v1/models: Haiku 5.5
 // 0.10/0.50, V4.1 Flash 0.05/0.199, -1017 0.03/0.20), a margin for cache writes and provider spread. These size
 // the reservation and cap provider choice (max_price); the allowance is settled from OpenRouter's actual usage.cost.
 // They were 5-20x the list price before, so every in-flight call held far more allowance than it could cost.
 const prices = new Map([
   ["anthropic/claude-haiku-5.5", { input: 0.2, output: 1 }],
-  ["deepseek/deepseek-v4.1-flash", { input: 0.1, output: 0.4 }],
-  ["deepseek/deepseek-v4.1-flash-1017", { input: 0.06, output: 0.4 }],
+  // DeepSeek's list price is its cheapest provider (Baidu), which lacks `seed`; simulations send a seed and
+  // require_parameters is on, so the cap must admit the seed-capable providers (Wafer, DeepInfra, InferenceNet,
+  // River, Novita, ... all <= 0.20/0.80 on GET /api/v1/models/deepseek/deepseek-v4.1-flash/endpoints, 2026-11-24).
+  // At 0.10/0.40 every seed-capable provider was excluded and each call was a 404 "No endpoints found".
+  ["deepseek/deepseek-v4.1-flash", { input: 0.2, output: 0.8 }],
+  ["deepseek/deepseek-v4.1-flash-1017", { input: 0.2, output: 0.8 }],
 ]);
 export const BOUNDED_HOSTED_MODELS = [...prices.keys()];
 // Sampling parameters each hosted model's OpenRouter endpoint does NOT list in supported_parameters (checked
