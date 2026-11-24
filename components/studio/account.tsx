@@ -19,6 +19,7 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
   const [notice, setNotice] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
   const [cooldown, setCooldown] = useState(0);
+  const [usage, setUsage] = useState<{ line: string; message?: string } | null>(null);
   const continueTo = (destination: string) => window.location.replace(destination);
   useEffect(() => {
     let cancelled = false;
@@ -30,6 +31,15 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [returnTo, logout]);
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    // One line of this month's hosted-model usage; absent while usage plans are off.
+    fetch('/api/usage', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null))
+      .then((u: { enabled?: boolean; line?: string; message?: string } | null) => { if (!cancelled && u?.enabled && u.line) setUsage({ line: u.line, message: u.message }); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [user]);
   useEffect(() => { if (cooldown <= 0) return; const timer = setTimeout(() => setCooldown(value => value - 1), 1000); return () => clearTimeout(timer); }, [cooldown]);
   async function authenticate(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError(''); setNotice('');
@@ -78,6 +88,7 @@ export default function Account({ returnTo, logout }: { returnTo?: string; logou
             <h2>{logout ? 'Sign out?' : 'Your account'}</h2>
             <p>{user.email}</p>
             <p>One account for HumanStudy Hub, the desktop app, and the forum.</p>
+            {usage && <p role="status">{usage.message || usage.line}</p>}
             {!logout && (
               <nav className={s.accountLinks} aria-label="Account links">
                 <Link className={s.back} href={accountPath(returnTo, '/auth/reset?mode=change')}>Change password</Link>
