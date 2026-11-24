@@ -38,7 +38,7 @@ test('enabled route never contacts provider on denied grants or oversized UTF8 a
      assert.equal(wire.model,flash);
      assert.equal(wire.temperature,0.7);
      assert.equal(wire.seed,42);
-     assert.deepEqual(wire.provider.max_price,{prompt:0.1,completion:0.4,request:0});
+     assert.deepEqual(wire.provider.max_price,{prompt:0.2,completion:0.8,request:0});
    }
    forwards++;return new Response('{}');
  });
