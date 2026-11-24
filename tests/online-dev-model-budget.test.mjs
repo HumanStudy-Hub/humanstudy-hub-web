@@ -38,9 +38,9 @@ test('dev reservation preserves large text, output and supported generation sett
   assert.equal(sent.parallel_tool_calls, undefined);
   assert.equal(sent.provider.allow_fallbacks, true); // within the price cap and parameter filter only
   assert.equal(sent.provider.require_parameters, true);
-  assert.deepEqual(sent.provider.max_price, { prompt: 1, completion: 2.5, request: 0 });
+  assert.deepEqual(sent.provider.max_price, { prompt: 0.2, completion: 1, request: 0 });
   for (const key of ['plugins', 'models', 'n']) assert.equal(sent[key], undefined);
-  assert.equal(bounded.reservationMicrousd, Math.ceil(2 * (Buffer.byteLength(bounded.wire) + 4096 + 16_384 * 2.5)));
+  assert.equal(bounded.reservationMicrousd, Math.ceil(2 * ((Buffer.byteLength(bounded.wire) + 4096) * 0.2 + 16_384 * 1)));
   assert.equal(lib.boundedDevCompletion({ ...prompt, max_completion_tokens: 32_768 }, user).model, model);
 });
 
