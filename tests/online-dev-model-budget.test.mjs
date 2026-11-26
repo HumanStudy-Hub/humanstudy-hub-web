@@ -72,6 +72,59 @@ test('dev reservation rejects oversized input, multimodal content and invalid ou
   ]) assert.equal(lib.boundedDevCompletion({ ...prompt, ...patch }, user), null);
 });
 
+const pngHead = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const dataUrl = (mime, head, size) => `data:image/${mime};base64,` + Buffer.concat([head, Buffer.alloc(Math.max(0, size - head.length))]).toString('base64');
+const png = (size = 64) => dataUrl('png', pngHead, size);
+const picture = (url, extra = {}) => ({ type: 'image_url', image_url: { url, ...extra } });
+const pictures = (...parts) => ({ model, max_tokens: 512, messages: [
+  { role: 'system', content: 'You are a study participant.' },
+  { role: 'user', content: [{ type: 'text', text: 'Page 1' }, ...parts] },
+] });
+
+test('image-capable models accept inline PNG/JPEG/GIF/WebP parts in user messages, passing only a valid detail', () => {
+  const jpeg = dataUrl('jpeg', Buffer.from([0xff, 0xd8, 0xff, 0xe0]), 64);
+  const gif = dataUrl('gif', Buffer.from('GIF89a'), 64);
+  const webp = dataUrl('webp', Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP')]), 64);
+  const bounded = lib.boundedDevCompletion(pictures(picture(png(), { detail: 'low' }), picture(jpeg), picture(gif), picture(webp)), user);
+  assert.ok(bounded);
+  const content = JSON.parse(bounded.wire).messages[1].content;
+  assert.deepEqual(content.slice(1), [
+    picture(png(), { detail: 'low' }), picture(jpeg), picture(gif), picture(webp),
+  ]);
+  // Eight pictures of 1,000,000 base64 bytes would exceed the 4,000,000-byte wire; three fit.
+  assert.ok(lib.boundedDevCompletion(pictures(...Array.from({ length: 3 }, () => picture(png(750_000)))), user));
+  assert.ok(lib.boundedDevCompletion(pictures(...Array.from({ length: 8 }, () => picture(png()))), user));
+});
+
+test('image parts are refused outside their limits', () => {
+  const cases = {
+    'remote URL': pictures(picture('https://example.test/a.png')),
+    'wrong mime': pictures(picture(png().replace('image/png', 'image/svg+xml'))),
+    'non-image data URL': pictures(picture('data:text/html;base64,PGh0bWw+')),
+    'content not matching its mime': pictures(picture(png().replace('image/png', 'image/jpeg'))),
+    'invalid base64': pictures(picture('data:image/png;base64,iVBORw0KGgo*AAAA')),
+    'unpadded base64': pictures(picture('data:image/png;base64,iVBORw0KGgoAAA')),
+    'bad detail': pictures(picture(png(), { detail: 'ultra' })),
+    'image in a system message': { ...pictures(), messages: [{ role: 'system', content: [{ type: 'text', text: 'x' }, picture(png())] }, { role: 'user', content: 'p' }] },
+    'image in an assistant message': { ...pictures(), messages: [{ role: 'user', content: 'p' }, { role: 'assistant', content: [picture(png())] }] },
+    'image for DeepSeek': { ...pictures(picture(png())), model: 'deepseek/deepseek-v4.1-flash' },
+    'too many images': pictures(...Array.from({ length: 9 }, () => picture(png()))),
+    'oversized image': pictures(picture(png(750_001))),
+    'whole wire over 4,000,000 bytes': pictures(...Array.from({ length: 5 }, () => picture(png(749_000)))),
+  };
+  for (const [name, body] of Object.entries(cases)) assert.equal(lib.boundedDevCompletion(body, user), null, name);
+});
+
+test('a picture reserves a fixed 5,000 input tokens, not its base64 bytes', () => {
+  const url = png(600_000);
+  const bounded = lib.boundedDevCompletion(pictures(picture(url), picture(url)), user);
+  const bytes = Buffer.byteLength(bounded.wire);
+  const base64 = 2 * (url.length - 'data:image/png;base64,'.length);
+  assert.equal(bounded.reservationMicrousd, Math.ceil(2 * ((bytes - base64 + 2 * 5000 + 4096) * 0.2 + 512 * 1)));
+  const bytesBased = Math.ceil(2 * ((bytes + 4096) * 0.2 + 512 * 1));
+  assert.ok(bounded.reservationMicrousd < bytesBased / 20, `${bounded.reservationMicrousd} vs ${bytesBased}`);
+});
+
 test('dev model route forwards only after reservation; production forwards its existing payload', async t => {
   const env = { OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY, VERCEL_ENV: process.env.VERCEL_ENV };
   process.env.VERCEL_ENV = 'preview';

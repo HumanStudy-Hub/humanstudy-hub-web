@@ -21,6 +21,17 @@ const UNSUPPORTED_SAMPLING: Record<string, readonly string[]> = {
   "anthropic/claude-haiku-5.5": ["temperature", "top_p", "top_k", "seed", "frequency_penalty", "presence_penalty", "parallel_tool_calls"],
 };
 const MAX_INPUT_BYTES = 4_000_000;
+// Pictures (desktop protocol simulations show participants the study's images; desktop model-relay.ts sends them):
+// inline data URLs only, in user messages only, for models that take images. The incoming body is capped at
+// 4,000,000 bytes by the route (Vercel refuses function bodies over 4.5 MB), so these keep a request well inside it.
+const IMAGE_MODELS = new Set(["anthropic/claude-haiku-5.5"]);
+const MAX_IMAGES = 8;
+const MAX_IMAGE_BASE64_BYTES = 1_000_000;
+// Reserved per picture instead of its base64 bytes: a model bills a picture by its pixels, and Claude models stay
+// under this. Same figure as desktop model-relay.ts IMAGE_RESERVE_TOKENS and skills/run/participants.py (budget.py).
+const IMAGE_RESERVE_TOKENS = 5000;
+const DATA_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
+const imageDetails = ["low", "high", "auto"];
 const MAX_OUTPUT_TOKENS = 32_768;
 const FORMAT_OVERHEAD_TOKENS = 4096;
 const supportedFields = new Set([
@@ -40,16 +51,55 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function textMessage(value: unknown) {
+/** Whether decoded base64 starts with the signature of the declared image type. */
+function matchesImageType(mime: string, base64: string) {
+  const head = Buffer.from(base64.slice(0, 24), "base64");
+  if (mime === "png") return head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (mime === "jpeg") return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+  if (mime === "gif") return ["GIF87a", "GIF89a"].includes(head.subarray(0, 6).toString("latin1"));
+  return head.subarray(0, 4).toString("latin1") === "RIFF" && head.subarray(8, 12).toString("latin1") === "WEBP";
+}
+
+/** An inline picture part, or null. Never a remote URL (the provider would fetch it). */
+function imagePart(part: Record<string, unknown>) {
+  const image = part.image_url;
+  if (!isRecord(image) || typeof image.url !== "string") return null;
+  if (image.detail !== undefined && (typeof image.detail !== "string" || !imageDetails.includes(image.detail))) return null;
+  const cache = cacheControl(part.cache_control);
+  if (cache === null) return null;
+  const match = DATA_IMAGE.exec(image.url);
+  if (!match || match[2].length % 4 !== 0 || match[2].length > MAX_IMAGE_BASE64_BYTES || !matchesImageType(match[1], match[2])) return null;
+  return {
+    part: { type: "image_url", image_url: { url: image.url, ...(image.detail !== undefined ? { detail: image.detail } : {}) }, cache_control: cache },
+    base64Bytes: match[2].length,
+  };
+}
+
+type Pictures = { count: number; base64Bytes: number };
+
+function textMessage(value: unknown, images: boolean, pictures: Pictures) {
   if (!isRecord(value) || typeof value.role !== "string" || !["system", "developer", "user", "assistant", "tool"].includes(value.role)) return null;
   const { role, name, content, tool_call_id, tool_calls } = value;
   const cache = cacheControl(value.cache_control);
   if (cache === null) return null;
   let text = content;
   if (Array.isArray(content)) {
-    if (!content.every(part => isRecord(part) && part.type === "text" && typeof part.text === "string"
-      && cacheControl(part.cache_control) !== null)) return null;
-    text = content.map(part => ({ type: "text", text: part.text, cache_control: cacheControl(part.cache_control) }));
+    const parts = [];
+    for (const part of content) {
+      if (!isRecord(part)) return null;
+      if (part.type === "text" && typeof part.text === "string") {
+        const partCache = cacheControl(part.cache_control);
+        if (partCache === null) return null;
+        parts.push({ type: "text", text: part.text, cache_control: partCache });
+      } else if (part.type === "image_url" && images && role === "user") {
+        const picture = imagePart(part);
+        if (!picture) return null;
+        pictures.count++;
+        pictures.base64Bytes += picture.base64Bytes;
+        parts.push(picture.part);
+      } else return null;
+    }
+    text = parts;
   } else if (typeof content !== "string" && content !== null && !(role === "assistant" && content === undefined && Array.isArray(tool_calls))) return null;
   if (value.reasoning !== undefined && typeof value.reasoning !== "string") return null;
   if (value.reasoning_details !== undefined && (!Array.isArray(value.reasoning_details) || !value.reasoning_details.every(detail =>
@@ -139,8 +189,9 @@ export function boundedDevCompletion(body: unknown, userId: string) {
   if (cache === null) return null;
   const price = prices.get(body.model);
   if (!price) return null;
-  const messages = body.messages.map(textMessage);
-  if (messages.some(message => message === null)) return null;
+  const pictures: Pictures = { count: 0, base64Bytes: 0 };
+  const messages = body.messages.map(message => textMessage(message, IMAGE_MODELS.has(body.model as string), pictures));
+  if (messages.some(message => message === null) || pictures.count > MAX_IMAGES) return null;
   const tools = body.tools;
   if (tools !== undefined && (!Array.isArray(tools) || !tools.every(tool => isRecord(tool) && tool.type === "function"
     && isRecord(tool.function) && typeof tool.function.name === "string"
@@ -169,7 +220,10 @@ export function boundedDevCompletion(body: unknown, userId: string) {
   });
   const bytes = Buffer.byteLength(wire);
   if (bytes > MAX_INPUT_BYTES) return null;
-  const reservationMicrousd = Math.ceil(2 * ((bytes + FORMAT_OVERHEAD_TOKENS) * price.input + requested * price.output));
+  // Text is charged by its wire bytes (an upper bound on its tokens); each picture a fixed IMAGE_RESERVE_TOKENS
+  // instead of its base64 bytes, which would reserve far more than the picture can cost.
+  const inputTokens = bytes - pictures.base64Bytes + pictures.count * IMAGE_RESERVE_TOKENS + FORMAT_OVERHEAD_TOKENS;
+  const reservationMicrousd = Math.ceil(2 * (inputTokens * price.input + requested * price.output));
   return { wire, model: body.model, reservationMicrousd };
 }
 
