@@ -102,8 +102,11 @@
   letter-spacing: -0.045em;
 }
 
-.name { display: inline-flex; align-items: center; gap: .38rem; min-height: 44px; }
-.name .inkIcon { font-size: .56em; }
+.nameLine { display: flex; align-items: center; justify-content: center; gap: .3rem; }
+.name { display: inline-flex; align-items: center; min-height: 44px; }
+.email { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; }
+.email .inkIcon { font-size: .56em; }
+.email:hover .inkIcon, .email:focus-visible .inkIcon { color: var(--foreground); }
 .name:hover, .name:focus-visible {
   color: var(--site-accent);
   text-decoration: underline;
