@@ -44,9 +44,12 @@ export function verifyDesktopKey(key: string | null | undefined, now = Date.now(
   }
 }
 
-/** Extra desktop-only invitation codes (comma-separated), accepted alongside the site's PROMO_CODE.
- *  Lets the team hand out and retire beta codes without touching PROMO_CODE, which also signs web access. */
-const DESKTOP_INVITE_CODES = (process.env.DESKTOP_INVITE_CODES ?? "").split(",").map((c) => c.trim()).filter(Boolean);
+/** Extra invitation codes (comma-separated), accepted alongside the site's PROMO_CODE.
+ *  Lets the team hand out and retire codes without touching PROMO_CODE, which also signs web access.
+ *  TESTER_INVITE_CODES holds the per-tester codes (one per person; the code an account used is kept in
+ *  its user metadata, so a leaked code is traceable and is retired by removing it from the list). */
+const codeList = (value: string | undefined) => (value ?? "").split(",").map((c) => c.trim()).filter(Boolean);
+const DESKTOP_INVITE_CODES = [...codeList(process.env.DESKTOP_INVITE_CODES), ...codeList(process.env.TESTER_INVITE_CODES)];
 
 function sameCode(a: string, b: string): boolean {
   const x = Buffer.from(a), y = Buffer.from(b);

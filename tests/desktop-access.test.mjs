@@ -51,6 +51,18 @@ test('desktop invite codes from the environment match case-insensitively', t => 
   for (const code of ['human study', 'humanstudy2', '']) assert.equal(invited.promoMatches(code), false, code);
 });
 
+test('per-tester invite codes are accepted next to the desktop codes', t => {
+  const saved = { d: process.env.DESKTOP_INVITE_CODES, t: process.env.TESTER_INVITE_CODES };
+  t.after(() => {
+    for (const [k, v] of [['DESKTOP_INVITE_CODES', saved.d], ['TESTER_INVITE_CODES', saved.t]]) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  });
+  process.env.DESKTOP_INVITE_CODES = 'beta-1';
+  process.env.TESTER_INVITE_CODES = 'hs-aaaa-bbbb,hs-cccc-dddd ,';
+  const invited = load('lib/desktop-access.ts', { './access': access });
+  for (const code of ['beta-1', 'HS-AAAA-BBBB', ' hs-cccc-dddd ']) assert.equal(invited.promoMatches(code), true, code);
+  for (const code of ['hs-aaaa-bbbc', 'hs-aaaa-bbbb,hs-cccc-dddd', '']) assert.equal(invited.promoMatches(code), false, code);
+});
+
 test('codeEquals is the shared trimmed, case-insensitive check used by /api/access', () => {
   assert.equal(lib.codeEquals(' Open-Sesame ', 'OPEN-SESAME'), true);
   assert.equal(lib.codeEquals('open', 'OPEN-SESAME'), false);
