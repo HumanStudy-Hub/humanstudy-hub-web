@@ -30,6 +30,12 @@ const MAX_IMAGE_BASE64_BYTES = 1_000_000;
 // Reserved per picture instead of its base64 bytes: a model bills a picture by its pixels, and Claude models stay
 // under this. Same figure as desktop model-relay.ts IMAGE_RESERVE_TOKENS and skills/run/participants.py (budget.py).
 const IMAGE_RESERVE_TOKENS = 5000;
+// Larger pictures are refused rather than resized (the provider would downscale them anyway).
+const MAX_IMAGE_SIDE = 8000;
+// A request with pictures stays inside the standard (not long-context) price tier the reservation's prices assume:
+// estimated input tokens, on the reservation's basis (pictures x IMAGE_RESERVE_TOKENS + the other wire bytes), at most
+// this. Text-only requests keep their existing limit (MAX_INPUT_BYTES) so large agent contexts are unchanged.
+const MAX_IMAGE_REQUEST_INPUT_TOKENS = 100_000;
 const DATA_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
 const imageDetails = ["low", "high", "auto"];
 const MAX_OUTPUT_TOKENS = 32_768;
@@ -51,13 +57,48 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-/** Whether decoded base64 starts with the signature of the declared image type. */
-function matchesImageType(mime: string, base64: string) {
-  const head = Buffer.from(base64.slice(0, 24), "base64");
-  if (mime === "png") return head.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  if (mime === "jpeg") return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
-  if (mime === "gif") return ["GIF87a", "GIF89a"].includes(head.subarray(0, 6).toString("latin1"));
-  return head.subarray(0, 4).toString("latin1") === "RIFF" && head.subarray(8, 12).toString("latin1") === "WEBP";
+/** Width and height read from the image header, or null when the bytes are not a readable header of the declared
+ *  type (which also catches a picture whose bytes do not match its mime type). */
+export function imageSize(mime: string, data: Buffer): { width: number; height: number } | null {
+  const ascii = (at: number, length: number) => data.subarray(at, at + length).toString("latin1");
+  let size: { width: number; height: number } | null = null;
+  if (mime === "png") {
+    if (data.length >= 24 && data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) && ascii(12, 4) === "IHDR") {
+      size = { width: data.readUInt32BE(16), height: data.readUInt32BE(20) };
+    }
+  } else if (mime === "gif") {
+    if (data.length >= 10 && ["GIF87a", "GIF89a"].includes(ascii(0, 6))) size = { width: data.readUInt16LE(6), height: data.readUInt16LE(8) };
+  } else if (mime === "webp") {
+    if (data.length >= 30 && ascii(0, 4) === "RIFF" && ascii(8, 4) === "WEBP") {
+      const chunk = ascii(12, 4);
+      if (chunk === "VP8 " && data[23] === 0x9d && data[24] === 0x01 && data[25] === 0x2a) {
+        size = { width: data.readUInt16LE(26) & 0x3fff, height: data.readUInt16LE(28) & 0x3fff };
+      } else if (chunk === "VP8L" && data[20] === 0x2f) {
+        const bits = data.readUInt32LE(21);
+        size = { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
+      } else if (chunk === "VP8X") {
+        size = { width: data.readUIntLE(24, 3) + 1, height: data.readUIntLE(27, 3) + 1 };
+      }
+    }
+  } else if (mime === "jpeg" && data.length >= 4 && data[0] === 0xff && data[1] === 0xd8) {
+    // Walk the marker segments to the first baseline/extended/progressive frame header (SOF0/1/2).
+    let at = 2;
+    while (at + 4 <= data.length && !size) {
+      if (data[at] !== 0xff) return null;
+      const marker = data[at + 1];
+      if (marker === 0xff) { at++; continue; }
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { at += 2; continue; }
+      if (marker === 0xd9 || marker === 0xda) return null;
+      const length = data.readUInt16BE(at + 2);
+      if (length < 2) return null;
+      if (marker >= 0xc0 && marker <= 0xc2) {
+        if (at + 9 > data.length) return null;
+        size = { width: data.readUInt16BE(at + 7), height: data.readUInt16BE(at + 5) };
+      }
+      at += 2 + length;
+    }
+  }
+  return size && size.width > 0 && size.height > 0 ? size : null;
 }
 
 /** An inline picture part, or null. Never a remote URL (the provider would fetch it). */
@@ -68,7 +109,9 @@ function imagePart(part: Record<string, unknown>) {
   const cache = cacheControl(part.cache_control);
   if (cache === null) return null;
   const match = DATA_IMAGE.exec(image.url);
-  if (!match || match[2].length % 4 !== 0 || match[2].length > MAX_IMAGE_BASE64_BYTES || !matchesImageType(match[1], match[2])) return null;
+  if (!match || match[2].length % 4 !== 0 || match[2].length > MAX_IMAGE_BASE64_BYTES) return null;
+  const size = imageSize(match[1], Buffer.from(match[2], "base64"));
+  if (!size || size.width > MAX_IMAGE_SIDE || size.height > MAX_IMAGE_SIDE) return null;
   return {
     part: { type: "image_url", image_url: { url: image.url, ...(image.detail !== undefined ? { detail: image.detail } : {}) }, cache_control: cache },
     base64Bytes: match[2].length,
@@ -222,7 +265,9 @@ export function boundedDevCompletion(body: unknown, userId: string) {
   if (bytes > MAX_INPUT_BYTES) return null;
   // Text is charged by its wire bytes (an upper bound on its tokens); each picture a fixed IMAGE_RESERVE_TOKENS
   // instead of its base64 bytes, which would reserve far more than the picture can cost.
-  const inputTokens = bytes - pictures.base64Bytes + pictures.count * IMAGE_RESERVE_TOKENS + FORMAT_OVERHEAD_TOKENS;
+  const estimatedInput = bytes - pictures.base64Bytes + pictures.count * IMAGE_RESERVE_TOKENS;
+  if (pictures.count && estimatedInput > MAX_IMAGE_REQUEST_INPUT_TOKENS) return null;
+  const inputTokens = estimatedInput + FORMAT_OVERHEAD_TOKENS;
   const reservationMicrousd = Math.ceil(2 * (inputTokens * price.input + requested * price.output));
   return { wire, model: body.model, reservationMicrousd };
 }

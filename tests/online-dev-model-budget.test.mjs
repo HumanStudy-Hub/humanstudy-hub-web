@@ -72,9 +72,22 @@ test('dev reservation rejects oversized input, multimodal content and invalid ou
   ]) assert.equal(lib.boundedDevCompletion({ ...prompt, ...patch }, user), null);
 });
 
-const pngHead = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const u32be = n => { const b = Buffer.alloc(4); b.writeUInt32BE(n); return b; };
+const u16be = n => { const b = Buffer.alloc(2); b.writeUInt16BE(n); return b; };
+const u16le = n => { const b = Buffer.alloc(2); b.writeUInt16LE(n); return b; };
+const u24le = n => Buffer.from([n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff]);
+const pngHeader = (w, h) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), u32be(13), Buffer.from('IHDR'), u32be(w), u32be(h), Buffer.from([8, 6, 0, 0, 0])]);
+const jpegHeader = (w, h) => Buffer.concat([
+  Buffer.from([0xff, 0xd8, 0xff, 0xe0]), u16be(16), Buffer.from('JFIF\0'), Buffer.alloc(9),
+  Buffer.from([0xff, 0xc2]), u16be(17), Buffer.from([8]), u16be(h), u16be(w), Buffer.alloc(10),
+]);
+const gifHeader = (w, h) => Buffer.concat([Buffer.from('GIF89a'), u16le(w), u16le(h), Buffer.alloc(3)]);
+const riff = (chunk, body) => Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP' + chunk), u32be(0), body]);
+const vp8 = (w, h) => riff('VP8 ', Buffer.concat([Buffer.alloc(3), Buffer.from([0x9d, 0x01, 0x2a]), u16le(w), u16le(h)]));
+const vp8l = (w, h) => { const b = Buffer.alloc(5); b[0] = 0x2f; b.writeUInt32LE(((w - 1) | ((h - 1) << 14)) >>> 0, 1); return riff('VP8L', b); };
+const vp8x = (w, h) => riff('VP8X', Buffer.concat([Buffer.alloc(4), u24le(w - 1), u24le(h - 1)]));
 const dataUrl = (mime, head, size) => `data:image/${mime};base64,` + Buffer.concat([head, Buffer.alloc(Math.max(0, size - head.length))]).toString('base64');
-const png = (size = 64) => dataUrl('png', pngHead, size);
+const png = (size = 64, w = 640, h = 480) => dataUrl('png', pngHeader(w, h), size);
 const picture = (url, extra = {}) => ({ type: 'image_url', image_url: { url, ...extra } });
 const pictures = (...parts) => ({ model, max_tokens: 512, messages: [
   { role: 'system', content: 'You are a study participant.' },
@@ -82,9 +95,9 @@ const pictures = (...parts) => ({ model, max_tokens: 512, messages: [
 ] });
 
 test('image-capable models accept inline PNG/JPEG/GIF/WebP parts in user messages, passing only a valid detail', () => {
-  const jpeg = dataUrl('jpeg', Buffer.from([0xff, 0xd8, 0xff, 0xe0]), 64);
-  const gif = dataUrl('gif', Buffer.from('GIF89a'), 64);
-  const webp = dataUrl('webp', Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBP')]), 64);
+  const jpeg = dataUrl('jpeg', jpegHeader(800, 600), 64);
+  const gif = dataUrl('gif', gifHeader(320, 240), 64);
+  const webp = dataUrl('webp', vp8x(1024, 768), 64);
   const bounded = lib.boundedDevCompletion(pictures(picture(png(), { detail: 'low' }), picture(jpeg), picture(gif), picture(webp)), user);
   assert.ok(bounded);
   const content = JSON.parse(bounded.wire).messages[1].content;
@@ -110,9 +123,38 @@ test('image parts are refused outside their limits', () => {
     'image for DeepSeek': { ...pictures(picture(png())), model: 'deepseek/deepseek-v4.1-flash' },
     'too many images': pictures(...Array.from({ length: 9 }, () => picture(png()))),
     'oversized image': pictures(picture(png(750_001))),
+    '9,000 x 9,000 PNG': pictures(picture(png(64, 9000, 9000))),
+    'PNG 8,001 px wide': pictures(picture(png(64, 8001, 10))),
+    'JPEG over 8,000 px tall': pictures(picture(dataUrl('jpeg', jpegHeader(100, 8001), 64))),
+    'WebP VP8L over 8,000 px': pictures(picture(dataUrl('webp', vp8l(9000, 100), 64))),
+    'PNG without IHDR': pictures(picture(dataUrl('png', pngHeader(10, 10).subarray(0, 12), 64))),
+    'JPEG with no frame header': pictures(picture(dataUrl('jpeg', Buffer.from([0xff, 0xd8, 0xff, 0xda, 0, 2]), 64))),
+    'zero-sized GIF': pictures(picture(dataUrl('gif', gifHeader(0, 10), 64))),
     'whole wire over 4,000,000 bytes': pictures(...Array.from({ length: 5 }, () => picture(png(749_000)))),
   };
   for (const [name, body] of Object.entries(cases)) assert.equal(lib.boundedDevCompletion(body, user), null, name);
+});
+
+test('picture dimensions are read from PNG, GIF, JPEG and WebP headers', () => {
+  const size = (mime, head) => lib.imageSize(mime, Buffer.concat([head, Buffer.alloc(32)]));
+  assert.deepEqual(size('png', pngHeader(9000, 9000)), { width: 9000, height: 9000 });
+  assert.deepEqual(size('gif', gifHeader(320, 240)), { width: 320, height: 240 });
+  assert.deepEqual(size('jpeg', jpegHeader(800, 600)), { width: 800, height: 600 });
+  assert.deepEqual(size('webp', vp8(1000, 700)), { width: 1000, height: 700 });
+  assert.deepEqual(size('webp', vp8l(8000, 16)), { width: 8000, height: 16 });
+  assert.deepEqual(size('webp', vp8x(4000, 3000)), { width: 4000, height: 3000 });
+  assert.equal(size('jpeg', pngHeader(10, 10)), null);
+  assert.ok(lib.boundedDevCompletion(pictures(picture(png(64, 8000, 8000))), user), '8,000 px is the limit, inclusive');
+});
+
+test('a request with pictures stays under 100,000 estimated input tokens (standard price tier); text-only is unchanged', () => {
+  const text = n => ({ type: 'text', text: 'a'.repeat(n) });
+  // 8 pictures = 40,000 tokens; about 60,000 bytes of other wire fits, 61,000 more does not.
+  const fits = pictures(...Array.from({ length: 8 }, () => picture(png())), text(59_000));
+  assert.ok(lib.boundedDevCompletion(fits, user));
+  const over = pictures(...Array.from({ length: 8 }, () => picture(png())), text(61_000));
+  assert.equal(lib.boundedDevCompletion(over, user), null);
+  assert.ok(lib.boundedDevCompletion({ ...pictures(text(500_000)) }, user), 'text-only keeps the 4,000,000-byte limit');
 });
 
 test('a picture reserves a fixed 5,000 input tokens, not its base64 bytes', () => {
